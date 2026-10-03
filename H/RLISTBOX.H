@@ -15,7 +15,6 @@ class CRListBox : public DlgItem // RERUN DlgItem is the real base class for all
 protected:
 	DECLARE_DYNCREATE(CRListBox)
 public:
-	CAC_view(CWnd* pParent = NULL);   // standard constructor
 	CLSID const& GetClsid()
 	{
 		static CLSID const clsid

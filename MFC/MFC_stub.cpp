@@ -56,8 +56,12 @@ extern void InterruptSmack();
 // --- Base Class Message Map Implementations ---
 
 const AFX_MSGMAP* PASCAL CCmdTarget::_GetBaseMessageMap() { return nullptr; }
-const AFX_MSGMAP CCmdTarget::messageMap = { &CCmdTarget::_GetBaseMessageMap, nullptr };
-const AFX_MSGMAP_ENTRY CCmdTarget::_messageEntries[] = { {0,0,0,0,0} };
+const AFX_MSGMAP_ENTRY* CCmdTarget::_GetMessageEntries()
+{
+    static const AFX_MSGMAP_ENTRY entries[] = { {0,0,0,0,0} };
+    return entries;
+}
+const AFX_MSGMAP CCmdTarget::messageMap = { &CCmdTarget::_GetBaseMessageMap, CCmdTarget::_GetMessageEntries() };
 const AFX_MSGMAP* CCmdTarget::GetMessageMap() const
 {
 	return &CCmdTarget::messageMap;

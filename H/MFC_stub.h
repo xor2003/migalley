@@ -154,136 +154,144 @@ struct AFX_MSGMAP {
 
 #define DECLARE_MESSAGE_MAP() \
 private: \
-    static const AFX_MSGMAP_ENTRY _messageEntries[]; \
+    static const AFX_MSGMAP_ENTRY* _GetMessageEntries(); \
 protected: \
     static const AFX_MSGMAP* PASCAL _GetBaseMessageMap(); \
     static const AFX_MSGMAP messageMap; \
     virtual const AFX_MSGMAP* GetMessageMap() const;
 
+// Entries are built inside _GetMessageEntries() so that &OnPaint-style
+// member addresses resolve in member-function scope. Clang rejects the
+// unqualified form in out-of-class member-initializer context; a member
+// function body is legal everywhere (MSVC-era sources rely on it).
 #define BEGIN_MESSAGE_MAP(theClass, baseClass) \
     const AFX_MSGMAP* PASCAL theClass::_GetBaseMessageMap() \
         { return &baseClass::messageMap; } \
     const AFX_MSGMAP* theClass::GetMessageMap() const \
         { return &theClass::messageMap; } \
     const AFX_MSGMAP theClass::messageMap = \
-        { &theClass::_GetBaseMessageMap, &theClass::_messageEntries[0] }; \
-    const AFX_MSGMAP_ENTRY theClass::_messageEntries[] = {
+        { &theClass::_GetBaseMessageMap, theClass::_GetMessageEntries() }; \
+    const AFX_MSGMAP_ENTRY* theClass::_GetMessageEntries() { \
+        typedef theClass thisClass; \
+        static const AFX_MSGMAP_ENTRY entries[] = {
 
 #define END_MESSAGE_MAP() \
-        {0, 0, 0, 0, (AFX_PMSG)0 } \
-    };
+            {0, 0, 0, 0, (AFX_PMSG)0 } \
+        }; \
+        return entries; \
+    }
 
 #define ON_COMMAND(id, memberFxn) \
-    { WM_COMMAND, 0, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&memberFxn },
+    { WM_COMMAND, 0, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::memberFxn },
 
 #define ON_UPDATE_COMMAND_UI(id, memberFxn) \
-    { WM_COMMAND, CN_UPDATE_COMMAND_UI, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CCmdTarget::*)(CCmdUI*))&memberFxn },
+    { WM_COMMAND, CN_UPDATE_COMMAND_UI, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CCmdTarget::*)(CCmdUI*))&thisClass::memberFxn },
 
 #define ON_MESSAGE(message, memberFxn) \
-    { message, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(LRESULT (CWnd::*)(WPARAM, LPARAM))&memberFxn },
+    { message, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(LRESULT (CWnd::*)(WPARAM, LPARAM))&thisClass::memberFxn },
 
 #define ON_WM_PAINT() \
-    { WM_PAINT, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&OnPaint },
+    { WM_PAINT, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::OnPaint },
 
 #define ON_WM_CREATE() \
-    { WM_CREATE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(int (CWnd::*)(LPCREATESTRUCT))&OnCreate },
+    { WM_CREATE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(int (CWnd::*)(LPCREATESTRUCT))&thisClass::OnCreate },
 
 #define ON_WM_SIZE() \
-    { WM_SIZE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, int, int))&OnSize },
+    { WM_SIZE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, int, int))&thisClass::OnSize },
 
 #define ON_WM_MOVE() \
-    { WM_MOVE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(int, int))&OnMove },
+    { WM_MOVE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(int, int))&thisClass::OnMove },
 
 #define ON_WM_CLOSE() \
-    { WM_CLOSE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&OnClose },
+    { WM_CLOSE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::OnClose },
 
 #define ON_WM_DESTROY() \
-    { WM_DESTROY, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&OnDestroy },
+    { WM_DESTROY, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::OnDestroy },
 
 #define ON_WM_ERASEBKGND() \
-    { WM_ERASEBKGND, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(CDC*))&OnEraseBkgnd },
+    { WM_ERASEBKGND, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(CDC*))&thisClass::OnEraseBkgnd },
 
 #define ON_WM_HSCROLL() \
-    { WM_HSCROLL, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, CScrollBar*))&OnHScroll },
+    { WM_HSCROLL, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, CScrollBar*))&thisClass::OnHScroll },
 
 #define ON_WM_VSCROLL() \
-    { WM_VSCROLL, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, CScrollBar*))&OnVScroll },
+    { WM_VSCROLL, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, CScrollBar*))&thisClass::OnVScroll },
 
 #define ON_WM_GETMINMAXINFO() \
-    { WM_GETMINMAXINFO, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(MINMAXINFO*))&OnGetMinMaxInfo },
+    { WM_GETMINMAXINFO, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(MINMAXINFO*))&thisClass::OnGetMinMaxInfo },
 
 #define ON_WM_ACTIVATE() \
-    { WM_ACTIVATE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CWnd*, BOOL))&OnActivate },
+    { WM_ACTIVATE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CWnd*, BOOL))&thisClass::OnActivate },
 
 #define ON_WM_ACTIVATEAPP() \
-    { WM_ACTIVATEAPP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(BOOL, DWORD))&OnActivateApp },
+    { WM_ACTIVATEAPP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(BOOL, DWORD))&thisClass::OnActivateApp },
 
 #define ON_WM_ENABLE() \
-    { WM_ENABLE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(BOOL))&OnEnable },
+    { WM_ENABLE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(BOOL))&thisClass::OnEnable },
 
 // --- ADDED ---
 #define ON_WM_TIMER() \
-    { WM_TIMER, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT))&OnTimer },
+    { WM_TIMER, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT))&thisClass::OnTimer },
 
 #define ON_WM_LBUTTONDOWN() \
-    { WM_LBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnLButtonDown },
+    { WM_LBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnLButtonDown },
 
 #define ON_WM_LBUTTONUP() \
-    { WM_LBUTTONUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnLButtonUp },
+    { WM_LBUTTONUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnLButtonUp },
 
 #define ON_WM_MOUSEMOVE() \
-    { WM_MOUSEMOVE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnMouseMove },
+    { WM_MOUSEMOVE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnMouseMove },
 
 #define ON_WM_CONTEXTMENU() \
-    { WM_CONTEXTMENU, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CWnd*, CPoint))&OnContextMenu },
+    { WM_CONTEXTMENU, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CWnd*, CPoint))&thisClass::OnContextMenu },
 
 #define ON_WM_MOUSEWHEEL() \
-    { WM_MOUSEWHEEL, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(UINT, short, CPoint))&OnMouseWheel },
+    { WM_MOUSEWHEEL, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(UINT, short, CPoint))&thisClass::OnMouseWheel },
 
 #define ON_WM_SHOWWINDOW() \
-    { WM_SHOWWINDOW, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(BOOL, UINT))&OnShowWindow },
+    { WM_SHOWWINDOW, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(BOOL, UINT))&thisClass::OnShowWindow },
 
 #define ON_WM_SETCURSOR() \
-    { WM_SETCURSOR, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(CWnd*, UINT, UINT))&OnSetCursor },
+    { WM_SETCURSOR, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(CWnd*, UINT, UINT))&thisClass::OnSetCursor },
 
 #define ON_WM_NCMOUSEMOVE() \
-    { WM_NCMOUSEMOVE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnNcMouseMove },
+    { WM_NCMOUSEMOVE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnNcMouseMove },
 
 #define ON_WM_NCLBUTTONDOWN() \
-    { WM_NCLBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnNcLButtonDown },
+    { WM_NCLBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnNcLButtonDown },
 
 #define ON_WM_NCLBUTTONUP() \
-    { WM_NCLBUTTONUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnNcLButtonUp },
+    { WM_NCLBUTTONUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnNcLButtonUp },
 
 #define ON_WM_KILLFOCUS() \
-    { WM_KILLFOCUS, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CWnd*))&OnKillFocus },
+    { WM_KILLFOCUS, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CWnd*))&thisClass::OnKillFocus },
 
 #define ON_WM_INITMENU() \
-    { WM_INITMENU, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CMenu*))&OnInitMenu },
+    { WM_INITMENU, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CMenu*))&thisClass::OnInitMenu },
 
 #define ON_WM_CANCELMODE() \
-    { WM_CANCELMODE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&OnCancelMode },
+    { WM_CANCELMODE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::OnCancelMode },
 
 #define ON_BN_CLICKED(id, memberFxn) \
-    { WM_COMMAND, BN_CLICKED, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&memberFxn },
+    { WM_COMMAND, BN_CLICKED, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::memberFxn },
 
 #define ON_WM_CAPTURECHANGED() \
-    { WM_CAPTURECHANGED, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CWnd*))&OnCaptureChanged },
+    { WM_CAPTURECHANGED, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CWnd*))&thisClass::OnCaptureChanged },
 
 #define ON_WM_CHAR() \
-    { WM_CHAR, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, UINT))&OnChar },
+    { WM_CHAR, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, UINT))&thisClass::OnChar },
 
 #define ON_WM_RBUTTONDOWN() \
-    { WM_RBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnRButtonDown },
+    { WM_RBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnRButtonDown },
 
 #define ON_WM_RBUTTONUP() \
-    { WM_RBUTTONUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&OnRButtonUp },
+    { WM_RBUTTONUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnRButtonUp },
 
 #define ON_WM_CHARTOITEM() \
-    { WM_CHARTOITEM, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(int (CWnd::*)(UINT, CListBox*, UINT))&OnCharToItem },
+    { WM_CHARTOITEM, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(int (CWnd::*)(UINT, CListBox*, UINT))&thisClass::OnCharToItem },
 
 #define ON_EN_UPDATE(id, memberFxn) \
-    { WM_COMMAND, EN_UPDATE, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&memberFxn },
+    { WM_COMMAND, EN_UPDATE, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)())&thisClass::memberFxn },
 // --- End Message Map ---
 
 #define AFX_IDW_DOCKBAR_TOP        0xE81B

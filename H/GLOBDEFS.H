@@ -20,7 +20,7 @@
 #else
 #undef ON_MESSAGE
 #define ON_MESSAGE(message, memberFxn) \
-    { message, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(LRESULT (CWnd::*)(WPARAM, LPARAM))&MSG2_##memberFxn },
+    { message, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(LRESULT (CWnd::*)(WPARAM, LPARAM))&thisClass::MSG2_##memberFxn },
 
 #define ON_MESSAGE_CLASS(msg, type, func) \
     { msg, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(LRESULT (CWnd::*)(WPARAM, LPARAM))&type::MSG2_##func },
