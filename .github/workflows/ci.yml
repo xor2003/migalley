@@ -116,14 +116,18 @@ jobs:
             '*.cpp' '*.CPP' '*.cc' '*.cxx' '*.h' '*.H' '*.hpp' \
             | grep -v '^build' > /tmp/changed.txt || true
           cat /tmp/changed.txt
+          # headers can't be linted standalone (no MFC type context);
+          # they are checked transitively via changed .cpp TUs, and stay
+          # in changed.txt so errors located in them still gate
+          grep -Ei '\.(cpp|cc|cxx)$' /tmp/changed.txt > /tmp/lint_files.txt || true
 
       # lint.sh runs clang-check + clang-tidy + cppcheck per file.
       # Legacy headers produce pre-existing noise, so only *errors* whose
       # location is inside one of the changed files fail the job.
       - name: Run linters
         run: |
-          mapfile -t FILES < /tmp/changed.txt
-          if [ ${#FILES[@]} -eq 0 ]; then echo "no source changes"; exit 0; fi
+          mapfile -t FILES < /tmp/lint_files.txt
+          if [ ${#FILES[@]} -eq 0 ]; then echo "no lintable .cpp changes"; exit 0; fi
           OUT=$(bash scripts/lint.sh "${FILES[@]}" 2>&1) || true
           echo "$OUT"
           sed 's|$|:|' /tmp/changed.txt > /tmp/changed_loc.txt
