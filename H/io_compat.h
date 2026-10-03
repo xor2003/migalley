@@ -2,6 +2,7 @@
 
 #include <sys/types.h>
 #include <time.h>
+#include <stdio.h>
 
 #ifndef _MAX_PATH
 #define _MAX_PATH 260
@@ -31,6 +32,9 @@ extern "C" {
 long _findfirst(const char *filespec, struct _finddata_t *fileinfo);
 int _findnext(long handle, struct _finddata_t *fileinfo);
 int _findclose(long handle);
+
+// fopen with Windows-style case-insensitive path resolution on read modes.
+FILE* fopen_ci(const char* path, const char* mode);
 
 #ifdef __cplusplus
 }

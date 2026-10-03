@@ -104,7 +104,7 @@ int _findnext(long handle, struct _finddata_t *fileinfo) {
             continue;
         }
 
-        if (fnmatch(handle_info->pattern.c_str(), entry->d_name, 0) == 0) {
+        if (fnmatch(handle_info->pattern.c_str(), entry->d_name, FNM_CASEFOLD) == 0) {
             strncpy(fileinfo->name, entry->d_name, _MAX_PATH);
             fileinfo->name[_MAX_PATH - 1] = '\0';
 
@@ -133,6 +133,65 @@ int _findclose(long handle) {
     closedir(handle_info->dir);
     remove_handle(handle);
     return 0;
+}
+
+// Case-insensitive fopen. Windows file APIs are case-insensitive; the game
+// data on disk is a mix of cases (PILOT1.X8, b26eng.x8, ...) while stored
+// names come back as e.g. "imagemap/PILOT1.x8". On failure we walk each
+// path component and match it case-insensitively in its directory.
+FILE* fopen_ci(const char* path, const char* mode) {
+    if (!path) {
+        return nullptr;
+    }
+    FILE* f = fopen(path, mode);
+    if (f || !strchr(mode, 'r')) {
+        return f; // literal hit, or a write-mode failure we shouldn't fix
+    }
+
+    // Resolve component-by-component under a case-insensitive match.
+    std::string resolved;
+    std::string input = path;
+    std::replace(input.begin(), input.end(), '\\', '/');
+
+    size_t pos = 0;
+    if (!input.empty() && input[0] == '/') {
+        resolved = "/";
+        pos = 1;
+    } else {
+        resolved = ".";
+    }
+
+    while (pos < input.size()) {
+        size_t slash = input.find('/', pos);
+        std::string comp = (slash == std::string::npos)
+            ? input.substr(pos)
+            : input.substr(pos, slash - pos);
+        pos = (slash == std::string::npos) ? input.size() : slash + 1;
+        if (comp.empty() || comp == ".") {
+            if (comp == ".") resolved += "/.";
+            continue;
+        }
+
+        DIR* dir = opendir(resolved.c_str());
+        if (!dir) {
+            return nullptr;
+        }
+        std::string found;
+        struct dirent* entry;
+        while ((entry = readdir(dir)) != nullptr) {
+            if (strcasecmp(comp.c_str(), entry->d_name) == 0) {
+                found = entry->d_name;
+                break;
+            }
+        }
+        closedir(dir);
+        if (found.empty()) {
+            return nullptr;
+        }
+        resolved += "/" + found;
+    }
+
+    return fopen(resolved.c_str(), mode);
 }
 
 } // extern "C"

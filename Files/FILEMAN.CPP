@@ -91,6 +91,7 @@ questions about this file may be asked at http://www.simhq.com/
 #include <unistd.h>
 #include <sys/stat.h>
 #include <limits.h>   // PATH_MAX
+#include "io_compat.h" // RERUN: fopen_ci for case-insensitive game data paths
 
 // MSVC-style aliases
 #define _chdir   chdir
@@ -1071,7 +1072,7 @@ string	fileman::namenumberedfile(FileNum	MyFile)
 FILE*	fileman::easyopennumberedfile(FileNum	MyFile)
 {
 string	name=namenumberedfile(MyFile);
-		FILE* rv=fopen(name,"rb");
+		FILE* rv=fopen_ci(name,"rb");
 		if (!rv) 
 			std::cout << "fopen failed!!" << std::endl;
 		return(rv);
@@ -1155,7 +1156,7 @@ Bool	fileman::existnumberedfile(FileNum	MyFile)
 		if (name==NULL || name[0]==0 || name[1]==0)
 			return(FALSE);
 		//else
-			FILE* retval=fopen(name,"rb");
+			FILE* retval=fopen_ci(name,"rb");
 		if (retval==NULL)
 		{
 			std::cout << "fopen failed!!!" << std::endl;
