@@ -118,6 +118,15 @@ int			wait=0;
 */
 extern	int	introsmk;
 
+// Any-key video interrupt: arms the one-shot skip flag that DoSmack()
+// consumes on its next call. Gated on smk so a keypress with no video
+// playing can't leave a stale skip armed for the next OpenSmack().
+void	InterruptSmack()
+{
+	if (smk)
+		introsmk = 1;
+}
+
 #ifdef MIG_DEMO_VER
 extern DPlay _DPlay;
 #endif

@@ -544,5 +544,6 @@ typedef struct SmackBufTag {
 extern	Smack*	OpenSmack(FileNum filenumber,int win,int X,int Y,int w,int h); //RERUN for Fullpane.cpp
 extern	UWord	DoSmack(int poo);
 extern	void	CloseSmack();
+extern	void	InterruptSmack();
 
 #endif

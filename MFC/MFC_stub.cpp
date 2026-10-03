@@ -40,6 +40,9 @@ float g_dluY = 1.5;
 // Forward declaration for composition logic
 static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int parentAbsX, int parentAbsY);
 
+// WINSMACK.CPP: arms the skip flag while a smack video is playing
+extern void InterruptSmack();
+
 #ifndef GetRValue
 #define GetRValue(rgb)      ((BYTE)(rgb))
 #define GetGValue(rgb)      ((BYTE)(((WORD)(rgb)) >> 8))
@@ -641,6 +644,10 @@ void PumpSDL()
             case SDL_KEYDOWN:
             case SDL_KEYUP:
             {
+                // Any key press skips a playing intro/smack video
+                if (e.type == SDL_KEYDOWN)
+                    InterruptSmack();
+
                 // Handle special keys for focused controls (e.g. Backspace for CREdit)
                 if (e.type == SDL_KEYDOWN && g_pFocusWnd) {
                     if (e.key.keysym.sym == SDLK_BACKSPACE) {
