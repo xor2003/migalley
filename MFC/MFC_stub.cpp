@@ -149,7 +149,10 @@ static std::string GetSystemFontPath(const char* faceName = nullptr)
         "/usr/share/fonts/Intel/Intel.ttf",
         "/usr/share/fonts/TTF/DejaVuSans.ttf",
         "/usr/share/fonts/TTF/IosevkaNerdFont-Regular.ttf",
-        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf"
+        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "./INTEL.TTF",
+        "./Intel.ttf"
     };
     
     // First try to find the specific target
@@ -569,7 +572,11 @@ void PumpSDL()
                     //if (msg.message == WM_LBUTTONDOWN) std::cout << "[Input] MouseDown HWND=" << targetHwnd << " at (" << x << "," << y << ")" << std::endl;
                     else if (e.button.button == SDL_BUTTON_RIGHT)
                         msg.message = (e.type == SDL_MOUSEBUTTONDOWN) ? 0x0204 /*WM_RBUTTONDOWN*/ : 0x0205 /*WM_RBUTTONUP*/;
-                    
+                    std::cout << "[IN] " << (e.type == SDL_MOUSEBUTTONDOWN ? "DOWN" : "UP")
+                              << " btn=" << (int)e.button.button
+                              << " hwnd=" << targetHwnd << " wnd=" << (void*)wnd
+                              << " sdlwin=" << (void*)sdlWin << " at " << x << "," << y
+                              << " cap=" << (void*)g_pCaptureWnd << std::endl;
                     // Pack coordinates into lParam
                     msg.lParam = MAKELPARAM(x, y);
                     msg.wParam = (e.type == SDL_MOUSEBUTTONDOWN) ? 1 : 0; // MK_LBUTTON approx
@@ -622,6 +629,9 @@ void PumpSDL()
                     msg.message = WM_MOUSEMOVE;
                     msg.pt_x = x;
                     msg.pt_y = y;
+                    msg.wParam = 0;
+                    if (e.motion.state & SDL_BUTTON_LMASK) msg.wParam |= MK_LBUTTON;
+                    if (e.motion.state & SDL_BUTTON_RMASK) msg.wParam |= MK_RBUTTON;
                     msg.lParam = MAKELPARAM(x, y);
                     g_msgQueue.push_back(msg);
                 }
@@ -1008,6 +1018,41 @@ BOOL CWnd::Create(
         }
     }
 
+    // RERUN: route top-level dialogs into the existing game window once it
+    // exists. Giving each dialog its own SDL window scatters UI pieces
+    // across the desktop under a real window manager.
+    CWnd* host = pParentWnd;
+    if (!isChild) {
+        CWnd* main = AfxGetMainWnd();
+        if (main && main != this && main->GetSafeHwnd()) {
+            WindowBackend* mainBe = backend_from_hwnd(main->GetSafeHwnd());
+            if (mainBe && mainBe->window && mainBe->renderer) {
+                backend.window = mainBe->window;
+                backend.renderer = mainBe->renderer;
+                backend.isChild = true;
+                backend.parent = main;
+                isChild = true;
+                host = main;
+            }
+        }
+        if (!isChild) {
+            // No CFrameWnd exists in this UI (top sheet is an RDEmptyD), so
+            // fall back to the first real window backend in the registry.
+            for (auto& kv : g_hwndRegistry) {
+                WindowBackend& be = kv.second;
+                if (be.window && !be.isChild && be.owner && be.owner != this) {
+                    backend.window = be.window;
+                    backend.renderer = be.renderer;
+                    backend.isChild = true;
+                    backend.parent = be.owner;
+                    isChild = true;
+                    host = be.owner;
+                    break;
+                }
+            }
+        }
+    }
+
     if (!backend.isChild) {
     backend.window = SDL_CreateWindow(
         lpszWindowName ? lpszWindowName : "",
@@ -1046,14 +1091,12 @@ BOOL CWnd::Create(
         m_rect = rect;
     }
 
-    // Attach to parent
-    if (pParentWnd) {
-        if (pParentWnd->m_hWnd) {
-             g_hwndRegistry[pParentWnd->m_hWnd].children.push_back(h);
-        } else {
-             // Parent HWND is NULL
+    // Attach to parent (or to the host main window for routed dialogs)
+    if (host) {
+        if (host->m_hWnd) {
+             g_hwndRegistry[host->m_hWnd].children.push_back(h);
         }
-        if (nID != 0) {
+        if (pParentWnd && nID != 0) {
             pParentWnd->m_children[nID] = this;
         }
     }
@@ -1710,7 +1753,7 @@ SDL_Window* CreateSDLDialogWindow(int templateID)
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         100, 100,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_VULKAN
     );
 }
 
@@ -3548,6 +3591,7 @@ BOOL CDialog::Create(int id, CWnd* pParent)
     }
 
     bool createChild = (pParent != nullptr) && !m_forceTopLevel;
+    CWnd* host = pParent;
 
     if (createChild && pParent->m_hWnd) {
         WindowBackend* parentBe = backend_from_hwnd(pParent->m_hWnd);
@@ -3562,6 +3606,23 @@ BOOL CDialog::Create(int id, CWnd* pParent)
                 m_rect = CRect(m_pTemplate->x * g_dluX, m_pTemplate->y * g_dluY, (m_pTemplate->x + m_pTemplate->cx) * g_dluX, (m_pTemplate->y + m_pTemplate->cy) * g_dluY);
             } else {
                 m_rect = CRect(0, 0, 300, 200);
+            }
+        }
+    }
+
+    // RERUN: a parentless dialog must not get its own SDL window once a real
+    // game window exists - under a WM each one lands as a stray window and
+    // eats clicks. Share the first real window backend instead.
+    if (!backend.isChild) {
+        for (auto& kv : g_hwndRegistry) {
+            WindowBackend& be = kv.second;
+            if (be.window && !be.isChild && be.owner && be.owner != this) {
+                backend.window = be.window;
+                backend.renderer = be.renderer;
+                backend.isChild = true;
+                backend.parent = be.owner;
+                host = be.owner;
+                break;
             }
         }
     }
@@ -3619,12 +3680,10 @@ BOOL CDialog::Create(int id, CWnd* pParent)
         m_rect = CRect(x, y, x + w, y + h);
     }
 
-    // Attach to parent
-    if (pParent) {
-        if (pParent->m_hWnd) {
-             g_hwndRegistry[pParent->m_hWnd].children.push_back(key);
-        } else {
-             // Parent HWND is NULL
+    // Attach to parent (or to the host window owner for routed dialogs)
+    if (host) {
+        if (host->m_hWnd) {
+             g_hwndRegistry[host->m_hWnd].children.push_back(key);
         }
     }
     

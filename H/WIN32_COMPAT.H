@@ -1269,6 +1269,12 @@ typedef DRAWITEMSTRUCT* LPDRAWITEMSTRUCT;
 #ifndef WM_MOUSEMOVE
 #define WM_MOUSEMOVE 0x0200
 #endif
+#ifndef MK_LBUTTON
+#define MK_LBUTTON 0x0001
+#endif
+#ifndef MK_RBUTTON
+#define MK_RBUTTON 0x0002
+#endif
 #ifndef WM_PAINT
 #define WM_PAINT 0x000F
 #endif

@@ -96,6 +96,7 @@ questions about this file may be asked at http://www.simhq.com/
 #include "RTOOLBAR.H" //RERUN for CRToolBar
 #include "TITLEBAR.H" //RERUN for TitleBar
 #include "MAINFRM.H"
+#include <climits>
 
 //#ifdef _DEBUG
 //#define new DEBUG_NEW
@@ -343,12 +344,14 @@ RDialog*	RDialog::MakeParentDialog(CRect& dialsize,RDialog* parent,DialBox* tree
 	dial->AddChildren(tree->diallist);
 	dial->MoveWindow(dial->viewsize);		//IDC_BUTTON1
 	m_pView->GetWindowRect(&rect);
+	std::cout << "[DIAL] viewrect=(" << rect.left << "," << rect.top << "," << rect.right << "," << rect.bottom << ") sheet=(" << main->viewsize.left << "," << main->viewsize.top << "," << main->viewsize.right << "," << main->viewsize.bottom << ")" << std::endl;
 	if (main->viewsize.right>rect.right || main->viewsize.bottom>rect.bottom)
 	{					   
 		main->viewsize.left=rect.right-main->viewsize.Width();
 		main->viewsize.top=rect.bottom-main->viewsize.Height();
 		main->viewsize.right=rect.right;
 		main->viewsize.bottom=rect.bottom;
+		std::cout << "[DIAL] clamped sheet -> left=" << main->viewsize.left << " top=" << main->viewsize.top << std::endl;
 	}
 	main->SetMinSize(CRect(0,0,main->viewsize.Width(),main->viewsize.Height()));
 	main->SetMaxSize(CRect(0,0,main->viewsize.Width(),main->viewsize.Height()));
@@ -1228,6 +1231,14 @@ void RDialog::OnMouseMove(UINT nFlags, CPoint p)
 		}
 	}*/
 	int dx=p.x-lastdown.x,dy=p.y-lastdown.y;
+	// RERUN: a lost WM_LBUTTONUP (e.g. click that also dismissed the intro)
+	// must not leave us dragging forever - only drag while the button is held.
+	if (dragstate>0 && dragstate!=DRAG_SHUTDOWN && !(nFlags&MK_LBUTTON))
+	{
+		std::cout << "[DRAG] stale drag cleared (button not held), was " << dragstate << std::endl;
+		ReleaseCapture();
+		dragstate=DRAG_NO;
+	}
 	if  (dragstate && dragstate!=DRAG_DIALOG)
 	{
 		if (dragstate==DRAG_SCROLL)
@@ -1412,6 +1423,7 @@ void RDialog::OnLButtonDown(UINT nFlags, CPoint p)
 //		TRACE0("Set Drag Move 2\n");
 	}
 	dragstate=DragSide(ds);
+	std::cout << "[DRAG] OnLButtonDown this=" << (void*)this << " dragstate=" << dragstate << std::endl;
 
 }
 
@@ -1454,6 +1466,7 @@ void RDialog::OnLButtonUp(UINT nFlags, CPoint point)
 //	CDialog::OnLButtonUp(nFlags, point);
 	ReleaseCapture();
 	dragstate=DRAG_NO;
+	std::cout << "[DRAG] OnLButtonUp this=" << (void*)this << " -> DRAG_NO" << std::endl;
 	CRect client;
 	this->GetClientRect(client);
 	if (point.x>client.Width() && point.y>client.Height())
