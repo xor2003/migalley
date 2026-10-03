@@ -111,7 +111,7 @@ UByte videoBuffer =0;	//OFF==0 ON==1;
 bool mono3d=false;
 
 
-inline void ZeroMem(void* pp,ULong ll)
+void ZeroMem(void* pp,ULong ll)
 {
 #if defined (__MSVC__)
 	_asm{

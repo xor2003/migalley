@@ -8,7 +8,6 @@ endif()
 add_executable(MigAlley
     MigCString.cpp
     MigAlley.cpp
-    MIG.RC
 )
 
 target_precompile_headers(MigAlley PRIVATE stdafx.h)
