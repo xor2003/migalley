@@ -2505,6 +2505,7 @@ void CWnd::WinHelp(DWORD dwData, UINT nCmd)
     std::vector<const char*> args;
     args.push_back("wine");
     args.push_back("winhelp.exe");
+    std::string ctxStr, idStr; // keep alive until execvp below
 
     switch (nCmd)
     {
@@ -2516,11 +2517,13 @@ void CWnd::WinHelp(DWORD dwData, UINT nCmd)
 
             std::ostringstream ctx;
             ctx << "/c";
-            args.push_back(ctx.str().c_str());
+            ctxStr = ctx.str();
+            args.push_back(ctxStr.c_str());
 
             std::ostringstream id;
             id << dwData;
-            args.push_back(id.str().c_str());
+            idStr = id.str();
+            args.push_back(idStr.c_str());
             break;
         }
 
