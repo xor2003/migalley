@@ -170,13 +170,15 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
     ici.enabledLayerCount = static_cast<uint32_t>(layers.size());
     ici.ppEnabledLayerNames = layers.data();
 
-    // --- Handle portability extension ---
+    // --- Handle portability extension (MoltenVK; headers >= 1.3.216) ---
+#ifdef VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME
     for (auto ext : extensions) {
         if (strcmp(ext, VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME) == 0) {
             ici.flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
             break;
         }
     }
+#endif
     
     VkResult res = vkCreateInstance(&ici, nullptr, &vkInstance);
     if (res != VK_SUCCESS) {
