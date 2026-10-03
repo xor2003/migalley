@@ -80,6 +80,9 @@ target_link_libraries(ProjectDefaults INTERFACE
 target_compile_definitions(ProjectDefaults INTERFACE
     NDEBUG
     $<$<CONFIG:Debug>:_DEBUG>
+    # SPIR-V shaders ship precompiled in Hardware/; the Vulkan pipeline looks
+    # in CWD first, then here (installed games can place them beside the exe).
+    MIG_SHADER_DIR="${CMAKE_SOURCE_DIR}/Hardware"
 )
 
 # -------------------------------------------------------------------

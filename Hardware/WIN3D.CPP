@@ -631,13 +631,19 @@ CON	direct_draw::direct_draw()
 			backend->renderer = nullptr;
 		}
 
-		Vulkan_Init(Master_3d.winst);
-		CreateRenderPass();
-		CreateFramebuffers();
-		createDescriptorSetLayoutAndSampler();
-		createPipelineLayout();
-		Vulkan_CreatePipeline();
-		
+		try {
+			if (Vulkan_Init(Master_3d.winst))
+			{
+				CreateRenderPass();
+				CreateFramebuffers();
+				createDescriptorSetLayoutAndSampler();
+				createPipelineLayout();
+				Vulkan_CreatePipeline();
+			}
+		} catch (const std::exception& e) {
+			fprintf(stderr, "[VK] 3D init failed: %s\n", e.what());
+		}
+
 		// Note: Vulkan_Init internally handles surface creation via Vulkan_CreateSDLSurface.
 	}
 

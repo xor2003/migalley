@@ -5409,6 +5409,7 @@ void shape::donvec(UByte *& instr_ptr)
 //------------------------------------------------------------------------------
  void shape::donextvec(UByte *& )								//PD 29Nov95
 {
+	DumpInterpHistory();
 	_Error.EmitSysErr(__FILE__":Not a real instruction (DONEXTVEC)\n");
 }
 
@@ -10834,17 +10835,37 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 //Returns	
 //
 //------------------------------------------------------------------------------
+static UByte*	g_interp_base = NULL;
+static long		g_interp_hist[64][2];
+static int		g_interp_hist_n = 0;
+
+void	shape::DumpInterpHistory()
+{
+	std::cerr << "[SHP] interp history (base=" << (void*)g_interp_base << "):" << std::endl;
+	int start = g_interp_hist_n > 64 ? g_interp_hist_n - 64 : 0;
+	for (int i = start; i < g_interp_hist_n; i++)
+		std::cerr << "  +" << g_interp_hist[i & 63][0]
+				  << " op=" << g_interp_hist[i & 63][1] << std::endl;
+}
+
  void	shape::InterpLoop(UByteP	instr_ptr)
 {
 	UWord	instruction;
+	if (!g_interp_base) g_interp_base = instr_ptr;
 
 	for(;;)
 	{
 		instruction = (UWord )*instr_ptr;
+		g_interp_hist[g_interp_hist_n & 63][0] = (long)(instr_ptr - g_interp_base);
+		g_interp_hist[g_interp_hist_n & 63][1] = instruction;
+		g_interp_hist_n++;
 		instr_ptr ++;
 
 		if (instruction > dosetglassrangeno)
+		{
+			DumpInterpHistory();
 			_Error.EmitSysErr(__FILE__":Bollocks instruction!!");
+		}
 
 		if(instruction==doretno) break;
 

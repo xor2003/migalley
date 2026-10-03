@@ -17,12 +17,57 @@
 #include <stdexcept>
 #include <string>
 #include <iostream>
+#include <iomanip>
 #include <memory>    // for std::unique_ptr and std::make_unique
 
 extern SWord TOPLINE_Y;
 extern SWord TOPLINE_Y2;
 extern SWord TOPLINE_Y3;
 extern SWord TOPLINE_YY;
+
+// Minimal X11/WSI declarations for the Vulkan fallback path. Pulling in real
+// <X11/Xlib.h> (or VK_USE_PLATFORM_XLIB_KHR, which makes vulkan.h include it)
+// is not an option: Xlib defines Bool/Status/None macros that clash with the
+// game's typedefs (DOSDEFS.H enum Bool, etc). The declarations below mirror
+// the public Khronos/Xlib/SDL layouts exactly.
+typedef struct _XDisplay MigDisplay_X;
+typedef unsigned long MigWindow_X;   // XID
+typedef unsigned long MigVisualID_X;
+
+// VkXlibSurfaceCreateInfoKHR (layout identical; sType value is permanently
+// assigned by Khronos).
+#define MIG_VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR ((VkStructureType)1000004000)
+struct MigXlibSurfaceCreateInfoKHR {
+    VkStructureType sType;
+    const void*     pNext;
+    VkFlags         flags;
+    MigDisplay_X*   dpy;
+    MigWindow_X     window;
+};
+typedef VkResult (VKAPI_PTR *PFN_MigCreateXlibSurfaceKHR)(
+    VkInstance, const MigXlibSurfaceCreateInfoKHR*,
+    const VkAllocationCallbacks*, VkSurfaceKHR*);
+#define MIG_VK_KHR_XLIB_SURFACE_EXTENSION_NAME "VK_KHR_xlib_surface"
+
+// Minimal stand-in for SDL_SysWMinfo so we can recover the native X11 handle
+// without including <SDL2/SDL_syswm.h> (which drags in the real Xlib.h).
+// Layout mirrors the public ABI struct: version + subsystem + union. The
+// union is padded generously; SDL only writes the active member, and we only
+// read x11 {Display*, Window}.
+// NB: WIN3D.H leaves #pragma pack(1) active, so force normal alignment here —
+// with packing the fields land one byte early versus SDL's written layout.
+#pragma pack(push, 4)
+struct MigX11WMInfo {
+    SDL_version version;
+    int subsystem;              // SDL_SYSWM_X11 == 2
+    union {
+        struct { MigDisplay_X* display; MigWindow_X window; } x11;
+        char _pad[256];
+    } info;
+};
+#pragma pack(pop)
+extern "C" SDL_bool SDL_GetWindowWMInfo(SDL_Window* window, void* info);
+enum { MIG_SYSWM_X11 = 2 };
 
 
 // Vulkan objects for sampling the software framebuffer (file scope)
@@ -60,6 +105,12 @@ uint32_t direct_draw::FindMemory(uint32_t mask, VkMemoryPropertyFlags flags)
 uint32_t* direct_draw::readSpirvRaw(const char* path, size_t* outBytes)
 {
     FILE* f = std::fopen(path, "rb");
+#ifdef MIG_SHADER_DIR
+    if (!f) {
+        std::string alt = std::string(MIG_SHADER_DIR) + "/" + path;
+        f = std::fopen(alt.c_str(), "rb");
+    }
+#endif
     if (!f) throw std::runtime_error(std::string("open failed: ") + path);
 
     std::fseek(f, 0, SEEK_END);
@@ -106,6 +157,10 @@ VkShaderModule direct_draw::loadShader(VkDevice device, const char* path)
 bool direct_draw::Vulkan_Init(HWND hWnd)
 {
     auto* backend = backend_from_hwnd(hWnd);
+    if (!backend || !backend->window) {
+        std::cerr << "[VK] no SDL window for hWnd=" << (void*)hWnd << std::endl;
+        return false;
+    }
     SDL_Window* theWin = backend->window;
     // --- Enumerate all available instance extensions ---
     uint32_t availExtCount = 0;
@@ -129,18 +184,47 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
         printf("  %s (spec version %u)\n", l.layerName, l.specVersion);
     }
 
-    // --- Query required extensions from SDL ---
-    std::cerr << "[VK] theWin=" << (void*)theWin << " hWnd=" << (void*)hWnd
-              << " backend=" << (void*)backend << std::endl;
-    uint32_t ext_count = 0;
-    if (!SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, nullptr)) {
-        std::cerr << "[VK] count query failed: " << SDL_GetError() << std::endl;
-    }
+    // --- Query required instance extensions ---
+    // SDL_CreateRenderer() strips SDL_WINDOW_VULKAN from a window, so after the
+    // SDL frontend has drawn to it the flag is gone and SDL's Vulkan helpers
+    // refuse to work. In that case build the WSI extension list ourselves.
+    const bool sdlVulkanWindow =
+        (SDL_GetWindowFlags(theWin) & SDL_WINDOW_VULKAN) != 0;
 
-    std::vector<const char*> extensions(ext_count);
-    if (!SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, extensions.data())) {
-        std::cerr << "Failed to get Vulkan instance extensions: " << SDL_GetError() << std::endl;
-        return false;
+    std::vector<const char*> extensions;
+    if (sdlVulkanWindow) {
+        uint32_t ext_count = 0;
+        if (!SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, nullptr) ||
+            ext_count == 0) {
+            std::cerr << "Failed to get Vulkan instance extensions: " << SDL_GetError() << std::endl;
+            return false;
+        }
+        extensions.resize(ext_count);
+        if (!SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, extensions.data())) {
+            std::cerr << "Failed to get Vulkan instance extensions: " << SDL_GetError() << std::endl;
+            return false;
+        }
+    } else {
+        extensions.push_back(VK_KHR_SURFACE_EXTENSION_NAME);
+        const char* video = SDL_GetCurrentVideoDriver();
+        if (video && strcmp(video, "x11") == 0) {
+            extensions.push_back(MIG_VK_KHR_XLIB_SURFACE_EXTENSION_NAME);
+        } else {
+            std::cerr << "[VK] window lost SDL_WINDOW_VULKAN and video driver '"
+                      << (video ? video : "?") << "' has no fallback WSI path" << std::endl;
+            return false;
+        }
+        for (const char* req : extensions) {
+            bool found = false;
+            for (const auto& e : availExts)
+                if (strcmp(e.extensionName, req) == 0) { found = true; break; }
+            if (!found) {
+                std::cerr << "[VK] required instance extension missing: " << req << std::endl;
+                return false;
+            }
+        }
+        std::cerr << "[VK] window lacks SDL_WINDOW_VULKAN; using manual WSI path ("
+                  << video << ")" << std::endl;
     }
 
     // --- Validation layers (only if available) ---
@@ -188,8 +272,42 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
 
     /* Surface from SDL */
     // --- Create surface from SDL window ---
-    if (!SDL_Vulkan_CreateSurface(theWin, vkInstance, &vkSurface)) {
-        throw std::runtime_error("SDL_Vulkan_CreateSurface failed");
+    bool surfaceCreated = false;
+    if (sdlVulkanWindow) {
+        surfaceCreated = SDL_Vulkan_CreateSurface(theWin, vkInstance, &vkSurface);
+    }
+    if (!surfaceCreated) {
+        // The window lost SDL_WINDOW_VULKAN to SDL_CreateRenderer; create the
+        // WSI surface directly from the native handle instead.
+        MigX11WMInfo wmi;
+        memset(&wmi, 0, sizeof(wmi));
+        SDL_VERSION(&wmi.version);
+        SDL_bool wmiOk = SDL_GetWindowWMInfo(theWin, &wmi);
+        unsigned char* raw = (unsigned char*)&wmi;
+        std::cerr << "[VK] WMInfo ok=" << (int)wmiOk << " err=" << SDL_GetError()
+                  << " subsystem=" << wmi.subsystem
+                  << " dpy=" << (void*)wmi.info.x11.display
+                  << " win=0x" << std::hex << wmi.info.x11.window << std::dec
+                  << " raw=";
+        for (int i = 0; i < 32; i++) std::cerr << std::hex << std::setw(2) << std::setfill('0') << (int)raw[i];
+        std::cerr << std::dec << std::endl;
+        if (wmiOk && wmi.subsystem == MIG_SYSWM_X11) {
+            auto pfnCreateXlibSurface = (PFN_MigCreateXlibSurfaceKHR)
+                vkGetInstanceProcAddr(vkInstance, "vkCreateXlibSurfaceKHR");
+            MigXlibSurfaceCreateInfoKHR xci{ MIG_VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR };
+            xci.dpy = wmi.info.x11.display;
+            xci.window = wmi.info.x11.window;
+            if (pfnCreateXlibSurface) {
+                VkResult sres = pfnCreateXlibSurface(vkInstance, &xci, nullptr, &vkSurface);
+                std::cerr << "[VK] vkCreateXlibSurfaceKHR -> " << sres << std::endl;
+                surfaceCreated = (sres == VK_SUCCESS);
+            } else {
+                std::cerr << "[VK] vkCreateXlibSurfaceKHR not available" << std::endl;
+            }
+        }
+        if (!surfaceCreated) {
+            throw std::runtime_error("Failed to create Vulkan surface");
+        }
     }
 
     // STEP 1 FINISHED HERE.
@@ -231,9 +349,13 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
         if (graphicsIndex != -1 && presentIndex != -1) {
             vkPhys = dev;
             vkQueueFamily = graphicsIndex;
-            // If graphics != present, you may need to handle separate queues.
+            vkPresentFamily = presentIndex;
             break;
         }
+    }
+
+    if (vkPhys == VK_NULL_HANDLE) {
+        throw std::runtime_error("No Vulkan device with graphics+present support");
     }
 
     // STEP 2 FINISHED HERE.
@@ -243,11 +365,20 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
 
     // Queue priority (1.0 = highest)
     float prio = 1.0f;
-    VkDeviceQueueCreateInfo qci{};
-    qci.sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
-    qci.queueFamilyIndex = vkQueueFamily;
-    qci.queueCount = 1;
-    qci.pQueuePriorities = &prio;
+    VkDeviceQueueCreateInfo qcis[2]{};
+    uint32_t qciCount = 0;
+    qcis[qciCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+    qcis[qciCount].queueFamilyIndex = vkQueueFamily;
+    qcis[qciCount].queueCount = 1;
+    qcis[qciCount].pQueuePriorities = &prio;
+    qciCount++;
+    if (vkPresentFamily != vkQueueFamily) {
+        qcis[qciCount].sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
+        qcis[qciCount].queueFamilyIndex = vkPresentFamily;
+        qcis[qciCount].queueCount = 1;
+        qcis[qciCount].pQueuePriorities = &prio;
+        qciCount++;
+    }
 
     // Device features (enable what you need)
     VkPhysicalDeviceFeatures deviceFeatures{};
@@ -260,25 +391,25 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
 
     VkDeviceCreateInfo dci{};
     dci.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-    dci.queueCreateInfoCount = 1;
-    dci.pQueueCreateInfos = &qci;
+    dci.queueCreateInfoCount = qciCount;
+    dci.pQueueCreateInfos = qcis;
     dci.pEnabledFeatures = &deviceFeatures;
     dci.enabledExtensionCount = 1;
     dci.ppEnabledExtensionNames = deviceExtensions;
-
-#ifndef NDEBUG
-    // Validation layers (deprecated on device, but harmless)
-    const char* validationLayers[] = { "VK_LAYER_KHRONOS_validation" };
-    dci.enabledLayerCount = 1;
-    dci.ppEnabledLayerNames = validationLayers;
-#else
-    dci.enabledLayerCount = 0;
-#endif
+    // Reuse the availability-filtered layer list; the layer must exist or
+    // vkCreateDevice fails outright.
+    dci.enabledLayerCount = static_cast<uint32_t>(layers.size());
+    dci.ppEnabledLayerNames = layers.data();
 
     if (vkCreateDevice(vkPhys, &dci, nullptr, &vkDevice) != VK_SUCCESS) {
         throw std::runtime_error("Failed to create logical device");
     }
     vkGetDeviceQueue(vkDevice, vkQueueFamily, 0, &vkQueue);
+    if (vkPresentFamily != vkQueueFamily) {
+        vkGetDeviceQueue(vkDevice, vkPresentFamily, 0, &vkPresentQueue);
+    } else {
+        vkPresentQueue = vkQueue;
+    }
 
     // STEP 3 FINISHED HERE.
 
@@ -802,7 +933,7 @@ void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
     pi.waitSemaphoreCount = 1;
     pi.pWaitSemaphores = &semPresent;
 
-    vkQueuePresentKHR(vkQueue, &pi);
+    vkQueuePresentKHR(vkPresentQueue, &pi);
 }
 
 bool direct_draw::CreateRenderPass()

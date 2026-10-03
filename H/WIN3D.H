@@ -66,6 +66,8 @@ class direct_draw
 	VkDevice          vkDevice = VK_NULL_HANDLE;
 	VkQueue           vkQueue = VK_NULL_HANDLE;
 	uint32_t          vkQueueFamily = 0;
+	VkQueue           vkPresentQueue = VK_NULL_HANDLE;
+	uint32_t          vkPresentFamily = 0;
 
 	VkSurfaceKHR      vkSurface = VK_NULL_HANDLE;
 	VkSwapchainKHR    vkSwapchain = VK_NULL_HANDLE;

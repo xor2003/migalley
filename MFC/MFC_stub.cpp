@@ -853,6 +853,12 @@ BOOL DispatchMessage(const MSG* msg)
     if (!msg->hwnd) return FALSE;
 
     WindowBackend* backend = backend_from_hwnd((HWND)msg->hwnd);
+    if (msg->message == WM_LBUTTONDOWN || msg->message == WM_LBUTTONUP)
+        std::cout << "[DISP] " << (msg->message == WM_LBUTTONDOWN ? "DOWN" : "UP")
+                  << " hwnd=" << msg->hwnd << " be=" << (void*)backend
+                  << " owner=" << (backend ? (void*)backend->owner : nullptr)
+                  << " type=" << ((backend && backend->owner) ? typeid(*backend->owner).name() : "?")
+                  << std::endl;
     if (backend && backend->owner)
     {
         return backend->owner->WindowProc(msg->message, msg->wParam, msg->lParam);

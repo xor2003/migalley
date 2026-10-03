@@ -551,6 +551,7 @@ class	shape
 	
 
 	static	void	InterpLoop(UByteP);					//RJS 19Mar97
+	static	void	DumpInterpHistory();
 
 		protected:
 
