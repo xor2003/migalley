@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build (32-bit) + smoke test
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install 32-bit toolchain and dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config g++-multilib \
+            libsdl2-dev:i386 libsdl2-ttf-dev:i386 libsdl2-mixer-dev:i386 \
+            libvulkan-dev:i386 libopenal-dev:i386 nlohmann-json3-dev \
+            xvfb xdotool imagemagick
+
+      # pkg-config only searches the host multiarch dir by default; the
+      # CXX flag also lands in compile_commands.json so lint tools get it
+      - name: Configure
+        run: |
+          PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig \
+          cmake -B build -G Ninja \
+            -DCMAKE_CXX_FLAGS=-I/usr/include/i386-linux-gnu
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      # smoke_xvfb exits 77 without the retail game data -> CTest "skipped"
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: MigAlley-linux32
+          path: build/MigAlley/MigAlley
+
+  sanitizers:
+    name: Build with ASan + UBSan
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install 32-bit toolchain and dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config g++-multilib \
+            libsdl2-dev:i386 libsdl2-ttf-dev:i386 libsdl2-mixer-dev:i386 \
+            libvulkan-dev:i386 libopenal-dev:i386 nlohmann-json3-dev
+
+      - name: Configure (MIG_SANITIZERS=ON)
+        run: |
+          PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig \
+          cmake -B build-san -G Ninja -DMIG_SANITIZERS=ON \
+            -DCMAKE_CXX_FLAGS=-I/usr/include/i386-linux-gnu
+
+      - name: Build
+        run: cmake --build build-san -j"$(nproc)"
+
+  lint:
+    name: Lint changed files
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install dependencies (for compile_commands.json) + linters
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build pkg-config g++-multilib \
+            libsdl2-dev:i386 libsdl2-ttf-dev:i386 libsdl2-mixer-dev:i386 \
+            libvulkan-dev:i386 libopenal-dev:i386 nlohmann-json3-dev \
+            clang-tidy cppcheck clang-tools
+          # versioned binaries if the unversioned alternatives are missing
+          for t in clang-check clang-tidy; do
+            command -v "$t" >/dev/null || \
+              sudo ln -sf "$(command -v "$t"-14)" /usr/local/bin/"$t"
+          done
+
+      - name: Configure (compile database only)
+        run: |
+          PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig \
+          cmake -B build -G Ninja \
+            -DCMAKE_CXX_FLAGS=-I/usr/include/i386-linux-gnu
+
+      - name: Determine changed files
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+          git rev-parse --verify "$BASE" >/dev/null 2>&1 || BASE="HEAD~1"
+          git rev-parse --verify "$BASE" >/dev/null 2>&1 || BASE="HEAD"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          git diff --name-only "$BASE...HEAD" -- \
+            '*.cpp' '*.CPP' '*.cc' '*.cxx' '*.h' '*.H' '*.hpp' \
+            | grep -v '^build' > /tmp/changed.txt || true
+          cat /tmp/changed.txt
+
+      # lint.sh runs clang-check + clang-tidy + cppcheck per file.
+      # Legacy headers produce pre-existing noise, so only *errors* whose
+      # location is inside one of the changed files fail the job.
+      - name: Run linters
+        run: |
+          mapfile -t FILES < /tmp/changed.txt
+          if [ ${#FILES[@]} -eq 0 ]; then echo "no source changes"; exit 0; fi
+          OUT=$(bash scripts/lint.sh "${FILES[@]}" 2>&1) || true
+          echo "$OUT"
+          sed 's|$|:|' /tmp/changed.txt > /tmp/changed_loc.txt
+          NEWERR=$(echo "$OUT" | grep "error:" | grep -Ff /tmp/changed_loc.txt || true)
+          if [ -n "$NEWERR" ]; then
+            echo "::error::lint errors in changed files"
+            echo "$NEWERR"
+            exit 1
+          fi
+          echo "lint: warnings shown above are pre-existing/header noise"
