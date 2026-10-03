@@ -130,12 +130,16 @@ bool direct_draw::Vulkan_Init(HWND hWnd)
     }
 
     // --- Query required extensions from SDL ---
+    std::cerr << "[VK] theWin=" << (void*)theWin << " hWnd=" << (void*)hWnd
+              << " backend=" << (void*)backend << std::endl;
     uint32_t ext_count = 0;
-    SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, nullptr);
+    if (!SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, nullptr)) {
+        std::cerr << "[VK] count query failed: " << SDL_GetError() << std::endl;
+    }
 
     std::vector<const char*> extensions(ext_count);
     if (!SDL_Vulkan_GetInstanceExtensions(theWin, &ext_count, extensions.data())) {
-        std::cerr << "Failed to get Vulkan instance extensions" << std::endl;
+        std::cerr << "Failed to get Vulkan instance extensions: " << SDL_GetError() << std::endl;
         return false;
     }
 

@@ -306,8 +306,8 @@ void	Rtestsh1::Launch3d(bool flag)
 	if (!tmpview)
 	{
 		tmpview=new View3d(tmpinst,InDialAncestor()->m_hWnd,this);
-		if (trg_uid==UID_Null)	tmpview->MakeInteractive(WinMode::WIN,*(CRect*)NULL,false,flag);
-		else					tmpview->MakeInteractive(WinMode::WIN,*(CRect*)NULL,true);
+		if (trg_uid==UID_Null)	tmpview->MakeInteractive(WinMode::WIN,NULL,false,flag);
+		else					tmpview->MakeInteractive(WinMode::WIN,NULL,true);
 	}
 
 //#pragma message("RTestSh1.cpp - paused for profiling")

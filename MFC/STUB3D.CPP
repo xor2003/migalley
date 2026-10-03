@@ -754,7 +754,7 @@ void	View3d::CloseWindow(const ULong id)
 		mfcwin->PostMessage(WM_COMMAND,id,0);
 }
 ///////////////////////////////////////////////////////////////////////
-int	View3d::MakeInteractive(WinMode::Mode	v,const CRect& pos,bool flag,bool flag2)
+int	View3d::MakeInteractive(WinMode::Mode	v,const CRect* pos,bool flag,bool flag2)
 {
 	Log_Stack.Log(LogStack::MESSAGELOOP);
 
@@ -765,14 +765,14 @@ int	View3d::MakeInteractive(WinMode::Mode	v,const CRect& pos,bool flag,bool flag
 	return 1;
 }
 ///////////////////////////////////////////////////////////////////////
-int	View3d::MakePassive(WinMode::Mode	v,const CRect& pos,bool flag,bool flag2)
+int	View3d::MakePassive(WinMode::Mode	v,const CRect* pos,bool flag,bool flag2)
 {
 	Log_Stack.Log(LogStack::MESSAGELOOP);
 
 	ASSERT(mode==WinMode::NONE);
 	Interactive(false);
-	if (&pos)
-		coords=pos;
+	if (pos)
+		coords=*pos;
 	else
 	{
 
@@ -847,14 +847,14 @@ int	View3d::MakePassive(WinMode::Mode	v,const CRect& pos,bool flag,bool flag2)
 	return 1;
 }
 ///////////////////////////////////////////////////////////////////////
-int	View3d::MakeResize(WinMode::Mode	v,const CRect& pos)
+int	View3d::MakeResize(WinMode::Mode	v,const CRect* pos)
 {
 	Log_Stack.Log(LogStack::MESSAGELOOP);
-	if ((&pos && pos!=coords) || v!=mode)
+	if ((pos && *pos!=coords) || v!=mode)
 	{
 		//delete old surface...
-		if (&pos)
-			coords=pos;
+		if (pos)
+			coords=*pos;
 
 		//some legality check before we start screwing things up 10 ways
 		if (v!=mode)
@@ -883,7 +883,7 @@ int	View3d::MakeResize(WinMode::Mode	v,const CRect& pos)
 int	View3d::MakeResize(WinMode::Mode v)
 {
 	CRect* pos=NULL;
-	return MakeResize(v, *pos);
+	return MakeResize(v, pos);
 }
 int	View3d::MakeResize ()
 {

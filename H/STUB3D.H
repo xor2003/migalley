@@ -326,9 +326,12 @@ public:
 	int TimeSinceLastMove();
 	int TimeOfDay()		{return inst->timeofday;}
 	void SetTimeOfDay(int time) {inst->timeofday=time;}			//AMM 12May99
-	int	MakeInteractive	(WinMode::Mode	v=WinMode::FULL,const CRect& pos=*(CRect*)NULL,bool flag=false,bool flag2=false);
-	int	MakePassive		(WinMode::Mode	v=WinMode::FULL,const CRect& pos=*(CRect*)NULL,bool flag=false,bool flag2=false);
-	int	MakeResize (WinMode::Mode v,const CRect& pos);
+	// RERUN: pos used to be `const CRect&=*(CRect*)NULL` - a null reference
+	// whose `if (&pos)` check modern compilers fold away, crashing on the
+	// deref. Pointers preserve the intended "no coords" signal.
+	int	MakeInteractive	(WinMode::Mode	v=WinMode::FULL,const CRect* pos=NULL,bool flag=false,bool flag2=false);
+	int	MakePassive		(WinMode::Mode	v=WinMode::FULL,const CRect* pos=NULL,bool flag=false,bool flag2=false);
+	int	MakeResize (WinMode::Mode v,const CRect* pos);
 	int	MakeResize (WinMode::Mode v);
 	int	MakeResize ();
 	bool Interactive(bool newmode)	
