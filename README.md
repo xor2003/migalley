@@ -119,6 +119,28 @@ audit surface, but pack only controls padding, not member sizes.
 | `ULong(this)` / pointer-in-DWORD casts | HWND/HANDLE/`void*` stored in int fields | ~950 cast sites repo-wide |
 | asm remnants | `GRAFPASM.ASM`/`GRAFJIM.ASM`/`HARDPASM.H`/`MATHASM.H` | ~82 refs, mostly stubbed already |
 
+### Verified pointer→narrow-int sites (unit-test sweep, exact locations)
+
+These truncate on x86-64 *today*; fixing `SLong`/`ULong`→`int` additionally
+breaks `WRAPPER.CPP:675` which does pointer math through `ULong`:
+
+| Site | Stores | Fix |
+|---|---|---|
+| `Hardware/DDRWINIT.CPP:112` | `buffer = (int)new char[size]` | field → `char*`/`intptr_t` |
+| `3D/LSTREAM.CPP:4697` | `start_adr = (ULong)cdestptr` | → `UByteP`/`uintptr_t` |
+| `Graphics/WRAPPER.CPP:675` | `(ULong)pixeldata + (ULong)&c[j]` | → `uintptr_t` arithmetic |
+| `MFC/LOAD.CPP:362` | `acnum = (int)this` | field → `intptr_t` |
+| `MFC/MAINFRM.CPP:877` | `*(int*)lParam = (int)hwnd` | → `intptr_t` pair |
+| `MFC/MIG.cpp:206` | `*(int*)lParam = true` | check callee contract |
+| `MFC/RDialog.cpp` ×8 | `(long)this` callback params | LP64-safe today; `intptr_t` for Win64 |
+| `MFC/STUB3D.CPP:180` | `timeSetEvent(..., (int)&Master_3d)` | → `intptr_t` |
+| `H/STUB3D.H:113,152` | `(int)&frametype` stack hack | → `intptr_t` |
+
+Benign-by-analysis (do NOT "fix" during migration): `animptr::operator-`
+ptr-diff via `(int)` — difference is correct mod 2^32; `ANIMPTR.H:235`
+same pattern; `3DCOM.CPP:10896` `(long)(ptr-ptr)` diffs.
+`REPLAYPREFS` (REPLAY.H:700) is already fixed-width — wire format safe.
+
 ### Migration order
 
 1. `LRESULT`/`LONG`/`SLong`/`ULong` typedef retag (kills ~85% of errors)

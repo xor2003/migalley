@@ -449,7 +449,13 @@ Bool NrmVec (FCRD& srce, FCRD& dest)
 {
 	FP len = VecLen (srce);
 
-	if(len == 1.0) return TRUE;
+	if(len == 1.0)
+	{
+		dest.x = srce.x;
+		dest.y = srce.y;
+		dest.z = srce.z;
+		return TRUE;
+	}
 	if (len == 0)
 	{
 		dest.x = srce.x;

@@ -21,6 +21,7 @@
 #include "SHPINSTR.H"
 #include "ANIMPTR.H"
 #include "FTOI.H"
+#include "MODVEC.H"
 
 // shape:: statics + instruction handlers live in libMy3D but the class needs
 // the whole world include chain. Access control is compile-time only, so the
@@ -33,6 +34,10 @@ extern void*          shape_object_obj3d     __asm__("_ZN5shape12object_obj3dE")
 // are this-less, so the alias signature is a single reference arg.
 extern void           shape_dopoint2x(UByte*& ip)
                                                __asm__("_ZN5shape9dopoint2xERPh");
+extern void           shape_dopoint(UByte*& ip)
+                                               __asm__("_ZN5shape7dopointERPh");
+extern void           shape_donpoints(UByte*& ip)
+                                               __asm__("_ZN5shape9donpointsERPh");
 
 // Debug globals SHAPES.CPP expects from the exe (defined in MigAlley.cpp).
 int   g_shp_last_num = -1;
@@ -88,6 +93,18 @@ static int g_failures = 0;
             ++g_failures;                                                  \
             std::printf("FAIL %s:%d: %s (=%g) != %s (=%g)\n",              \
                         __FILE__, __LINE__, #a, _va, #b, _vb);             \
+        }                                                                  \
+    } while (0)
+
+#define CHECK_NEAR(a, b, eps)                                              \
+    do {                                                                   \
+        ++g_checks;                                                        \
+        double _va = (double)(a), _vb = (double)(b), _e = (eps);          \
+        double _d = _va - _vb;                                             \
+        if (_d < -_e || _d > _e) {                                         \
+            ++g_failures;                                                  \
+            std::printf("FAIL %s:%d: %s (=%g) != %s (=%g) eps=%g\n",       \
+                        __FILE__, __LINE__, #a, _va, #b, _vb, _e);         \
         }                                                                  \
     } while (0)
 
@@ -386,6 +403,246 @@ static void test_select_palette()
 }
 
 //------------------------------------------------------------------------------
+// animptr (ANIMPTR.H, NANIMDEBUG build) - thin void* wrapper the whole
+// animation system indexes through. operator[] is the cast lint-fixed to
+// ((UByteP)ptr)[a]; pin it plus the byte-diff/offset contract.
+//------------------------------------------------------------------------------
+static void test_animptr()
+{
+    UByte buf[8] = {10, 11, 12, 13, 14, 15, 16, 17};
+
+    animptr a;
+    a = buf;                                     // operator=(UByteP)
+    CHECK_EQ(a[0], 10);                          // operator[](int)
+    CHECK_EQ(a[3], 13);
+    CHECK_EQ(a[(UWord)5], 15);                   // operator[](UWord)
+    CHECK_EQ(a[(SWord)6], 16);                   // operator[](SWord)
+    a[2] = 99;                                   // lvalue through []
+    CHECK_EQ(buf[2], 99);
+
+    CHECK(a == (void*)buf);
+    CHECK(a != (void*)(buf + 1));
+
+    animptr b; b = buf;
+    animptr c; c = buf + 4;
+    CHECK_EQ(c - b, 4);                          // operator- = byte distance
+    CHECK_EQ(b.Offset(buf + 6), 6);              // Offset(void*)
+
+    c += 2;
+    CHECK_EQ(c - b, 6);
+    ++b;
+    CHECK_EQ(b - a, 1);                          // ++ advances one byte
+
+    // operator& returns the raw UByteP (overloaded unary &).
+    animptr d; d = buf;
+    UByteP raw = &d;
+    CHECK_EQ((void*)raw, (void*)buf);
+}
+
+//------------------------------------------------------------------------------
+// MODVEC.CPP angle conversions - the Rowan angle unit (2^16 per revolution)
+// every orientation in the sim is stored in. Degs2Rowan/Rads2Rowan truncate
+// to SLong then wrap via &0xffff; the inverse functions divide.
+//------------------------------------------------------------------------------
+static void test_modvec_angles()
+{
+    // NB: 182.04444444 sits just below 65536/360, so (SLong) truncation
+    // lands 1 LSB low on round inputs - 1998 behavior, pinned as-is.
+    CHECK_EQ(Degs2Rowan(0), 0);
+    CHECK_EQ(Degs2Rowan(90), 16383);             // quarter turn minus 1 LSB
+    CHECK_EQ(Degs2Rowan(360), -1);               // 65535 -> 0xFFFF wraps
+    CHECK_EQ(Degs2Rowan(180), 32767);            // 32767, not -32768
+
+    CHECK_NEAR(Rowan2Rads(16384), 1.5707963, 1e-4);   // quarter turn = pi/2
+    CHECK_NEAR(Rowan2Degs(16384), 90.0, 0.01);
+    CHECK_NEAR(Rowan2Rads(0), 0.0, 1e-9);
+
+    // Rads->Rowan truncates (SLong cast) before masking: pi -> 0x7FFF..0x8000.
+    SWord r = Rads2Rowan(3.14159265f);
+    CHECK(r == 32767 || r == -32768 || r == -32767);
+
+    // Roundtrip: degrees -> Rowan -> degrees.
+    CHECK_NEAR(Rowan2Degs((UWord)Degs2Rowan(45)), 45.0, 0.1);
+
+    CHECK_NEAR(Degs2Rads(180), 3.14159265, 1e-5);
+    CHECK_NEAR(Rads2Degs(3.14159265), 180.0, 1e-4);
+}
+
+//------------------------------------------------------------------------------
+// MODVEC.CPP vector ops - portable replacements for the dead x86 asm.
+// Conventions: RotVecXSC rotates y/z (x' = x), RotVecYSC uses
+// x' = x.cos + z.sin / z' = z.cos - x.sin, RotVecZSC uses
+// x' = x.cos - y.sin / y' = y.cos + x.sin.
+//------------------------------------------------------------------------------
+static void test_modvec_vectors()
+{
+    FCRD v34 = {3.0f, 4.0f, 0.0f};
+    CHECK_NEAR(VecLen(v34), 5.0, 1e-6);
+    CHECK_NEAR(VecLen2D(3.0f, 4.0f), 5.0, 1e-6);
+
+    // NrmVec always writes dest (the len==1.0 early-out must still copy:
+    // DotPrd consumes the dest of two NrmVec calls).
+    FCRD unit = {1.0f, 0.0f, 0.0f}, dst = {9.0f, 9.0f, 9.0f};
+    CHECK(NrmVec(unit, dst) != BOOL_FALSE);
+    CHECK_NEAR(dst.x, 1.0, 1e-9);
+    FCRD nv;
+    CHECK(NrmVec(v34, nv) != BOOL_FALSE);
+    CHECK_NEAR(VecLen(nv), 1.0, 1e-6);
+    FCRD zero = {0.0f, 0.0f, 0.0f};
+    CHECK(NrmVec(zero, nv) == BOOL_FALSE);       // zero-length -> FALSE
+
+    // DotPrd normalises BOTH operands first: it is a cosine, not a raw
+    // dot product. (v1,v2,v3) ops all take dest FIRST: CPrd(v1,v2,v3) is
+    // v1 = v2 x v3.
+    FCRD two = {2, 0, 0}, three = {0, 3, 0};
+    CHECK_NEAR(DotPrd(two, three), 0.0, 1e-6);   // orthogonal
+    FCRD four = {4, 0, 0};
+    CHECK_NEAR(DotPrd(two, four), 1.0, 1e-6);    // parallel
+    CHECK_NEAR(DotPrd(two, two), 1.0, 1e-6);
+
+    FCRD ex = {1, 0, 0}, ey = {0, 1, 0}, r;
+    CPrd(r, ex, ey);                             // r = x cross y = z
+    CHECK_NEAR(r.x, 0.0, 1e-9);
+    CHECK_NEAR(r.y, 0.0, 1e-9);
+    CHECK_NEAR(r.z, 1.0, 1e-9);
+    CPrd(r, ey, ex);                             // anti-commutes
+    CHECK_NEAR(r.z, -1.0, 1e-9);
+
+    AddVec(r, ex, ey);
+    CHECK_NEAR(r.x, 1.0, 1e-9); CHECK_NEAR(r.y, 1.0, 1e-9);
+    SubVec(r, ex, ey);
+    CHECK_NEAR(r.x, 1.0, 1e-9); CHECK_NEAR(r.y, -1.0, 1e-9);
+
+    // sin=1, cos=0 -> quarter turn.
+    RotVecZSC(ex, r, 1.0f, 0.0f);                // (1,0,0) -> (0,1,0)
+    CHECK_NEAR(r.x, 0.0, 1e-6); CHECK_NEAR(r.y, 1.0, 1e-6);
+    RotVecXSC(ey, r, 1.0f, 0.0f);                // (0,1,0) -> (0,0,1)
+    CHECK_NEAR(r.y, 0.0, 1e-6); CHECK_NEAR(r.z, 1.0, 1e-6);
+    RotVecYSC(ex, r, 1.0f, 0.0f);                // (1,0,0) -> (0,0,-1)
+    CHECK_NEAR(r.x, 0.0, 1e-6); CHECK_NEAR(r.z, -1.0, 1e-6);
+
+    // 2D rotation: (1,0) by pi/2 -> (0,1).
+    FP rx = 1.0f, ry = 0.0f;
+    RotateVec2D(rx, ry, 1.5707963f);
+    CHECK_NEAR(rx, 0.0, 1e-5); CHECK_NEAR(ry, 1.0, 1e-5);
+
+    // SetOri(0,0,0) is identity; TnsPnt passes the vector through.
+    FORI ori;
+    SetOri(ori, 0.0f, 0.0f, 0.0f);
+    FCRD vin = {7.0f, -2.0f, 3.0f}, vout;
+    TnsPnt(vin, vout, ori);
+    CHECK_NEAR(vout.x, 7.0, 1e-5);
+    CHECK_NEAR(vout.y, -2.0, 1e-5);
+    CHECK_NEAR(vout.z, 3.0, 1e-5);
+}
+
+//------------------------------------------------------------------------------
+// shape::dopoint - integer-coords path: bodyx.i = xcoord then transformNC.
+// Same frame setup as test_dopoint2x.
+//------------------------------------------------------------------------------
+static void test_dopoint()
+{
+    TestObj3D obj = TestObj3D();
+    obj.Body.X.f = 1000.0;
+    obj.Body.Y.f = -50.0;
+    obj.Body.Z.f = 4000.0;
+
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+
+    shape_newco = shape_shpco;
+    shape_fpobject_matrix = &ident;
+    shape_object_obj3d = &obj;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    DOPOINT ins;
+    ins.vertex = 5;
+    ins.xcoord = 100; ins.ycoord = 50; ins.zcoord = 200;
+
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+    UByte* ip = (UByte*)&ins;
+    shape_dopoint(ip);
+
+    CHECK_EQ(ip - (UByte*)&ins, (long)sizeof(DOPOINT));
+    CHECK_FEQ(shape_shpco[5].bodyx.f, 1100.0);
+    CHECK_FEQ(shape_shpco[5].bodyy.f, 0.0);
+    CHECK_FEQ(shape_shpco[5].bodyz.f, 4200.0);
+    CHECK_EQ(shape_shpco[5].specular, -1);
+}
+
+//------------------------------------------------------------------------------
+// shape::donpoints - float-path batch writer: DONPOINTS{count,start} then
+// count COORDS records. Each vertex gets f=matrix*local+Body, clipFlags
+// from double-bit compares, specular=-1; instr_ptr advances past all data.
+//------------------------------------------------------------------------------
+static void test_donpoints()
+{
+    TestObj3D obj = TestObj3D();
+    obj.Body.X.f = 1000.0;
+    obj.Body.Y.f = -50.0;
+    obj.Body.Z.f = 4000.0;
+
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+
+    shape_newco = shape_shpco;
+    shape_fpobject_matrix = &ident;
+    shape_object_obj3d = &obj;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    // Wire layout: DONPOINTS(3B) + 2 x COORDS(6B).
+    UByte stream[sizeof(DONPOINTS) + 2 * sizeof(COORDS)];
+    DONPOINTS* hdr = (DONPOINTS*)stream;
+    hdr->vertex_count = 2;
+    hdr->start_vertex = 3;
+    COORDS* c = (COORDS*)(stream + sizeof(DONPOINTS));
+    c[0].xcoord = 10;  c[0].ycoord = 20;  c[0].zcoord = 30;
+    c[1].xcoord = 40;  c[1].ycoord = 50;  c[1].zcoord = 60;
+
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+    UByte* ip = stream;
+    shape_donpoints(ip);
+
+    CHECK_EQ(ip - stream, (long)sizeof(stream));
+    CHECK_FEQ(shape_shpco[3].bodyx.f, 1010.0);
+    CHECK_FEQ(shape_shpco[3].bodyy.f, -30.0);
+    CHECK_FEQ(shape_shpco[3].bodyz.f, 4030.0);
+    CHECK_FEQ(shape_shpco[4].bodyx.f, 1040.0);
+    CHECK_FEQ(shape_shpco[4].bodyy.f, 0.0);
+    CHECK_FEQ(shape_shpco[4].bodyz.f, 4060.0);
+    CHECK_EQ(shape_shpco[3].specular, -1);
+    CHECK_EQ(shape_shpco[4].specular, -1);
+    CHECK_EQ(shape_shpco[3].clipFlags, CF3D_NULL);   // inside frustum
+}
+
+//------------------------------------------------------------------------------
+// matrix::transform (MATRIX.CPP) - unlike transformNC it runs SetClipFlags,
+// so a vertex past the far plane comes back flagged.
+//------------------------------------------------------------------------------
+static void test_transform()
+{
+    matrix m;
+    m.fpMaximumZ = 1600000.0;
+
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+
+    DoPointStruc dp;
+    dp.bodyx.i = 100; dp.bodyy.i = 50; dp.bodyz.i = 200;
+    m.transform(&ident, dp);
+    CHECK_FEQ(dp.bodyx.f, 100.0);
+    CHECK_FEQ(dp.bodyz.f, 200.0);
+    CHECK_EQ(dp.clipFlags, CF3D_NULL);           // in frustum
+
+    dp.bodyx.i = 0; dp.bodyy.i = 0; dp.bodyz.i = 2000000;
+    m.transform(&ident, dp);
+    CHECK_EQ(dp.clipFlags & CF3D_PASTFARZ, CF3D_PASTFARZ);
+}
+
+//------------------------------------------------------------------------------
 int main()
 {
     test_type_layout();
@@ -397,6 +654,12 @@ int main()
     test_distant_marker_clip();
     test_transform_nc();
     test_dopoint2x();
+    test_dopoint();
+    test_donpoints();
+    test_transform();
+    test_animptr();
+    test_modvec_angles();
+    test_modvec_vectors();
     test_ftoitexture();
     test_select_palette();
 

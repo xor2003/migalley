@@ -6,6 +6,7 @@
 
 add_executable(unit_tests
     unit_tests.cpp
+    test_abi.cpp
     ${CMAKE_SOURCE_DIR}/MigAlley/MigCString.cpp
 )
 
