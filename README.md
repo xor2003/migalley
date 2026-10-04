@@ -80,6 +80,52 @@ The campaign, AI, UI, and mission logic behave as in the original release.
 ### Long Term
 - Tools for mission analysis and debugging
 
+## 64-bit Port Audit (prepared, not started)
+
+`-m64 -fsyntax-only` census: ~2555 errors across 235 TUs, ~90% mechanical.
+The `#pragma pack` regions mark where layout is contractual — they are the
+audit surface, but pack only controls padding, not member sizes.
+
+### Category A — serialized/file-format layout (must stay 4-byte world)
+
+| Site | Contents | Action |
+|---|---|---|
+| `H/DOSDEFS.H:57` | `pack(1)` file-wide, covers `SLong`/`ULong`/`Long = long` typedefs (:117-118) | retag to `int32_t`/`uint32_t` — the single root fix; every shape/savegame struct inherits it |
+| `Graphics/GRAFPRIM.CPP:455` | `colourdata` + `.lbm` palette structs | already fixed-width bytes — verify only |
+| `Bfields/SAVEGAME.CPP` | `memcpy` of `AirStruc`/save records into buffers | audit after retag; savegame compat breaks anyway |
+| `Files/FILEMAN.CPP` | raw `fread` into shape blobs; struct layout overlaid later | covered transitively by DOSDEFS retag |
+
+### Category B — dead-API compat structs (layout can float, pointer members still fragile)
+
+| Site | Risky members | Notes |
+|---|---|---|
+| `H/direct_3d.h` pack(1) | ~297 | D3D retained-mode compat; counterparty is gone (Vulkan now) — sizes may float, but pointer members must not be truncated |
+| `H/WIN3D.H` pack(1) | ~62 | `D3DAppDDDriver` contains real `ULong vidMem` |
+| `H/ddraw_stub.h` pack(1) | ~50 | DirectDraw surface/compat structs |
+| `H/MSSW.H` + `H/AIL.H` | ~285+144 | Miles Sound SDK headers — still compiled via `Hardware/MILES.CPP`/`SFONTS.CPP` |
+| `H/SFMAN.H` pack(2) | ~25 | contains `LPSTR m_Buffer` — pointer inside packed struct |
+
+### Category C — asm interop (already clean)
+
+- `H/3DDEFS.H:393` `Vertex` pack(4) — already `int32_t` throughout (MASM DD comment; asm dead).
+
+### No-pragma hazard class (separate sweep — nothing marks these)
+
+| Site | Issue | Count |
+|---|---|---|
+| `H/WIN32_COMPAT.H:676` `LRESULT = int32_t` | carries pointers (SendMessage etc.) | ~2100 of census errors — change to `intptr_t` eliminates 82% |
+| `H/WIN32_COMPAT.H:163` `LONG = long` | 8 bytes on LP64 | retag `int32_t` |
+| `animptr` union | pointer punned into size/flag word fields | rework encoding |
+| `ULong(this)` / pointer-in-DWORD casts | HWND/HANDLE/`void*` stored in int fields | ~950 cast sites repo-wide |
+| asm remnants | `GRAFPASM.ASM`/`GRAFJIM.ASM`/`HARDPASM.H`/`MATHASM.H` | ~82 refs, mostly stubbed already |
+
+### Migration order
+
+1. `LRESULT`/`LONG`/`SLong`/`ULong` typedef retag (kills ~85% of errors)
+2. `-m64 -fsyntax-only` loop until clean — mechanical cast fixes
+3. UBSan → ASan → TSan (the prize: races only diagnosable on 64-bit)
+4. Savegame/dplay serialization audit (format breaks regardless)
+
 ## License
 
 This project uses the original license provided by Rowan Software when the source code was released.
