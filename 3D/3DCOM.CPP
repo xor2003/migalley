@@ -139,6 +139,18 @@ questions about this file may be asked at http://www.simhq.com/
 #include	"REPLAY.H"
 	#include	"SHAPENAM.H"
 #include	<iostream>
+
+//RERUN: Malformed shape/anim data can leave a zero divisor where the
+//original code would SIGFPE. SHP_DIV0 keeps the benign fallback and
+//reports the field (rate-limited, like the donop warning), so corrupt
+//files surface in the log instead of silently mis-rendering.
+static inline SLong SHP_DIV0(const char* where, SLong fallback)
+{
+	static int shp_div0_count = 0;
+	if (shp_div0_count++ < 20)
+		std::cerr << "[SHP] zero divisor ignored: " << where << std::endl;
+	return fallback;
+}
 #ifdef	__WATCOMC__
 	extern	"C" SLong ASM_GetFadeColour(SLong, SLong );			//PD 10May96
 #else
@@ -2127,7 +2139,7 @@ void shape::dopolygon(UByte *& instr_ptr)
 					if (SHAPE.ClipSphere(dp1,dp2,dp3,dp4,750)==FALSE)//rjs 16Jun99
 					{
 						minx = miny = 0;
-						nofx = width ? imptr->w / width : 0;				//RERUN div-by-zero on bad file data
+						nofx = width ? imptr->w / width : SHP_DIV0("dopolygon.imapwidth",0);				//RERUN div-by-zero on bad file data
 						if (nofx)
 						{
 	 						stepy = randno / nofx;			
@@ -3650,7 +3662,7 @@ void shape::doquikpoly(UByte *& instr_ptr)
 	}															//RJS 27May98
 	else
 	{
-		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+		if (ptr->animscale || SHP_DIV0("doswitch.animscale",0))											//RERUN div-by-zero on bad file data
 			flag /= ptr->animscale;										//RJS 13Mar98
 																	//RJS 13Mar98
 		switch (ptr->condition)										//RJS 13Mar98
@@ -3808,7 +3820,7 @@ void shape::dopoint2x(UByte *& instr_ptr)
 	else														//RJS 15May98
 	{
 		offset = GlobalAdptr[dic_ptr->flag];						//RERUN div-by-zero on bad file data
-		if (dic_ptr->factor)
+		if (dic_ptr->factor || SHP_DIV0("doifcase.factor",0))								//RERUN div-by-zero on bad file data
 			offset /= dic_ptr->factor;								//RJS 15May98
 	}
 																//RJS 15May98
@@ -3957,7 +3969,7 @@ void shape::domorphsphere(UByte *& instr_ptr)
 	SLong		timefrac;
 	int			lumtype;
 	int			transp;
-	int			growth = sphere_ptr->MrphGrowtime ? sphere_ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
+	int			growth = sphere_ptr->MrphGrowtime ? sphere_ptr->MrphGrowtime : SHP_DIV0("domorphsphere.MrphGrowtime",1);//RERUN div-by-zero on bad file data
 	int			delta;
 	UByte		animflag;
 	UByte		colour = sphere_ptr->colour;
@@ -4043,7 +4055,7 @@ void shape::domorphsphereimapd(UByte *& instr_ptr)
 	UWord		timeframe;
 	int			lumtype;
 	int			transp;
-	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
+	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : SHP_DIV0("domorphsphereimapd.MrphGrowtime",1);//RERUN div-by-zero on bad file data
 	int			delta;
 	UWord		frameno = 0;
 	ImageMapNumber	imap;
@@ -4074,7 +4086,7 @@ void shape::domorphsphereimapd(UByte *& instr_ptr)
 	if (ptr->animflag)
 	{
 		frameno = GlobalAdptr[ptr->animflag];
-		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+		if (ptr->animscale || SHP_DIV0("domorphsphereimapd.animscale",0))											//RERUN div-by-zero on bad file data
 			frameno /= ptr->animscale;
 		if (ptr->imap2 && (frameno >= ptr->framelimit))
 		{
@@ -5911,7 +5923,7 @@ static	ULong	biggestcyl = 0;
 	if (isphere_ptr->flagoffset)
 	{
 		frameno = GlobalAdptr[isphere_ptr->flagoffset];
-		if (isphere_ptr->animscale)									//RERUN div-by-zero on bad file data
+		if (isphere_ptr->animscale || SHP_DIV0("doisphere.animscale",0))									//RERUN div-by-zero on bad file data
 			frameno /= isphere_ptr->animscale;
 		if (imap2 && (frameno >= isphere_ptr->framelimit))
 		{
@@ -5921,7 +5933,7 @@ static	ULong	biggestcyl = 0;
 		}
 
 		imptr = Image_Map.GetImageMapPtr(realmap);
-		nofx = width ? imptr->w / width : 0;				//RERUN div-by-zero on bad file data
+		nofx = width ? imptr->w / width : SHP_DIV0("doisphere.imapwidth",0);				//RERUN div-by-zero on bad file data
 														//RJS 05Feb98
 		if (nofx)
 		{
@@ -6078,7 +6090,7 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 		
 		if (ydelta)
 		{
-			if (ptr->animscale)											//RERUN div-by-zero on bad file data
+			if (ptr->animscale || SHP_DIV0("dorealisphere.animscale",0))											//RERUN div-by-zero on bad file data
 				ydelta *= (imap->h / ptr->animscale);
 			body += (imap->w * ydelta);
 		}
@@ -6637,9 +6649,9 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 						{
 							imptr = Image_Map.GetImageMapPtr(theImap2);
 
-							nofx = (ptr->width2) ? imptr->w / ptr->width2 : 0;//RERUN div-by-zero on bad file data
-							stepy = nofx ? FrameNo / nofx : 0;				//RERUN div-by-zero on bad file data
-							stepx = nofx ? FrameNo - (stepy*nofx) : 0;	//RERUN keep stepx in-bounds when nofx==0
+							nofx = (ptr->width2) ? imptr->w / ptr->width2 : SHP_DIV0("dorealisphere.width2",0);//RERUN div-by-zero on bad file data
+							stepy = nofx ? FrameNo / nofx : SHP_DIV0("dorealisphere.nofxw2",0);				//RERUN div-by-zero on bad file data
+							stepx = nofx ? FrameNo - (stepy*nofx) : SHP_DIV0("dorealisphere.stepxw2",0);	//RERUN keep stepx in-bounds when nofx==0
 
 							minx2 = ptr->minix2;
 							miny2 = ptr->miniy2;
@@ -6671,9 +6683,9 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 
 						imptr = Image_Map.GetImageMapPtr(theImap);
 
-						nofx = (ptr->Width) ? imptr->w / ptr->Width : 0;	//RERUN div-by-zero on bad file data
-						stepy = nofx ? FrameNo / nofx : 0;				//RERUN div-by-zero on bad file data
-						stepx = nofx ? FrameNo - (stepy*nofx) : 0;	//RERUN keep stepx in-bounds when nofx==0
+						nofx = (ptr->Width) ? imptr->w / ptr->Width : SHP_DIV0("dorealisphere.Width",0);	//RERUN div-by-zero on bad file data
+						stepy = nofx ? FrameNo / nofx : SHP_DIV0("dorealisphere.nofxW",0);				//RERUN div-by-zero on bad file data
+						stepx = nofx ? FrameNo - (stepy*nofx) : SHP_DIV0("dorealisphere.stepxW",0);	//RERUN keep stepx in-bounds when nofx==0
 
 						minx += stepx*ptr->Width;
 						miny += stepy*ptr->Height;
@@ -7188,7 +7200,7 @@ void shape::SunItemAnim(SunAnimData* adptr)
 	if (ptr->flagoffset)
 	{
 		frameno = GlobalAdptr[ptr->flagoffset];
-		if (ptr->factor)											//RERUN div-by-zero on bad file data
+		if (ptr->factor || SHP_DIV0("SunItemAnim.factor",0))											//RERUN div-by-zero on bad file data
 			frameno /= ptr->factor;
 		if (ptr->image2 && (frameno >= ptr->framelimit))
 		{
@@ -7656,7 +7668,7 @@ void shape::docompass(UByte *& instr_ptr)
 //DeadCode PD 05Oct98 	cz.i = ptr->zpos << shapescale;
 
 	Math_Lib.high_sin_cos(object_obj3d->AngR,sin_ang,cos_ang);
-	l1 = (ptr->radius) ? (ptr->radius * POLYGON.Cos_ArcSin((radius2<<8)/ptr->radius)) >> 15 : 0;//RERUN div-by-zero on bad file data
+	l1 = (ptr->radius) ? (ptr->radius * POLYGON.Cos_ArcSin((radius2<<8)/ptr->radius)) >> 15 : SHP_DIV0("doincln.radius",0);//RERUN div-by-zero on bad file data
 
 	ex = (cos_ang * l1) / ANGLES_FRACT;
 	ey = (sin_ang * l1) / ANGLES_FRACT;
@@ -8025,7 +8037,7 @@ void shape::docompass(UByte *& instr_ptr)
 		}
 
 		GlobalAdptr[animtimer] = framecounter;
-		if (animtimer == ptr->fadeoffset && themax)			//RERUN div-by-zero on bad file data
+		if (animtimer == ptr->fadeoffset && (themax || SHP_DIV0("doanimation.maxfadeframes",0)))			//RERUN div-by-zero on bad file data
 		{
 			GlobalAdptr[ptr->fadedepth] = (framecounter * 254)/themax;
 			GlobalAdptr[ptr->fadedepth]++;
@@ -8927,7 +8939,7 @@ void shape::docompass(UByte *& instr_ptr)
 	if (!ptr->useword)
 	{
 		flag = GlobalAdptr[ptr->flag];							//RERUN div-by-zero on bad file data
-		if (ptr->factor)
+		if (ptr->factor || SHP_DIV0("docaserange.factor",0))								//RERUN div-by-zero on bad file data
 			flag /= ptr->factor;									//RJS 21Apr99
 	}
 	else
@@ -9693,7 +9705,7 @@ void shape::doflipnvec(UByte *& instr_ptr)			//PD 13Nov97
 	UByteP			timedeltap = &GlobalAdptr[ptr->framecntoffset];//RJS 21Apr99
 	UWord			timedelta = *((UWordP)timedeltap);
 
-	SLong			growt = ptr->growtime ? ptr->growtime : 1;	//RERUN div-by-zero on bad file data
+	SLong			growt = ptr->growtime ? ptr->growtime : SHP_DIV0("domorphpoint.growtime",1);	//RERUN div-by-zero on bad file data
 
 	xdelta = (timedelta*(ptr->mxcoord - ptr->xcoord))/growt;
 	ydelta = (timedelta*(ptr->mycoord - ptr->ycoord))/growt;
@@ -9748,7 +9760,7 @@ void shape::domorphnpoints(UByte *& instr_ptr)
 	UWord			timedelta = *((UWordP)timedeltap);
 	ULong			count;
 	UWord			vertex = ptr->startvertex;
-	SLong			growt = ptr->growtime ? ptr->growtime : 1;	//RERUN div-by-zero on bad file data
+	SLong			growt = ptr->growtime ? ptr->growtime : SHP_DIV0("domorphnpoints.growtime",1);	//RERUN div-by-zero on bad file data
 	SLong			timefrac = (timedelta<<13)/growt;
 
 //	if (ptr->haswind)
@@ -9903,7 +9915,7 @@ void shape::dowheeldamage(UByte *& instr_ptr)
 		{
 			if (GlobalAdptr[ptr->underoffset])
 			{
-				ULong	damage = (ptr->animmax) ? (GlobalAdptr[ptr->suspoffset] * ((GlobalAdptr[ptr->underoffset]<<8)/ptr->animmax))>>8 : 0;//RERUN div-by-zero on bad file data
+				ULong	damage = (ptr->animmax) ? (GlobalAdptr[ptr->suspoffset] * ((GlobalAdptr[ptr->underoffset]<<8)/ptr->animmax))>>8 : SHP_DIV0("dowheeldamage.animmax",0);//RERUN div-by-zero on bad file data
 				if (damage > BS_DEAD)
 					damage = BS_DEAD;
 
@@ -10113,10 +10125,10 @@ void shape::dolight(UByte *& instr_ptr)
 
 						imptr = Image_Map.GetImageMapPtr((ImageMapNumber)ptr->imagemap);
 						
-						nofx = (ptr->width) ? imptr->w / ptr->width : 0;	//RERUN div-by-zero on bad file data
+						nofx = (ptr->width) ? imptr->w / ptr->width : SHP_DIV0("dolight.width",0);	//RERUN div-by-zero on bad file data
 
-						stepy = nofx ? 1 / nofx : 0;					//RERUN div-by-zero on bad file data
-						stepx = nofx ? 1 - (stepy*nofx) : 0;			//RERUN keep stepx in-bounds when nofx==0
+						stepy = nofx ? 1 / nofx : SHP_DIV0("dolight.nofx",0);					//RERUN div-by-zero on bad file data
+						stepx = nofx ? 1 - (stepy*nofx) : SHP_DIV0("dolight.stepx",0);			//RERUN keep stepx in-bounds when nofx==0
 
 						minx += stepx*ptr->width;
 						miny += stepy*ptr->height;
@@ -10241,7 +10253,7 @@ void shape::dodigitdial(UByte *& instr_ptr)
 
 	imapno = (ImageMapNumber) ptr->imagemap;
 	ImageMapDescPtr imptr = Image_Map.GetImageMapPtr(imapno);
-	SLong	noxframes = (ptr->width) ? imptr->w / ptr->width : 0;	//RERUN div-by-zero on bad file data
+	SLong	noxframes = (ptr->width) ? imptr->w / ptr->width : SHP_DIV0("dodigitdial.width",0);	//RERUN div-by-zero on bad file data
 	SLong	stepy,stepx;
 
 	dx = newco[ptr->vertex1].bodyx.f - newco[ptr->vertex0].bodyx.f;
@@ -10268,8 +10280,8 @@ void shape::dodigitdial(UByte *& instr_ptr)
 
 	for (i=0; i < nodigits; i++)
 	{
-		stepy = noxframes ? digits[i]/noxframes : 0;			//RERUN div-by-zero on bad file data
-		stepx = noxframes ? digits[i] - (stepy*noxframes) : 0;	//RERUN keep stepx in-bounds when noxframes==0
+		stepy = noxframes ? digits[i]/noxframes : SHP_DIV0("dodigitdial.noxframes",0);			//RERUN div-by-zero on bad file data
+		stepx = noxframes ? digits[i] - (stepy*noxframes) : SHP_DIV0("dodigitdial.stepx",0);	//RERUN keep stepx in-bounds when noxframes==0
 
 		miny = 32 + (stepy * ptr->height);		//shit cheat!
 		minx = stepx * ptr->width;
@@ -10348,7 +10360,7 @@ void shape::donianimverts(UByte *& instr_ptr)
 	}
 	else
 	{
-		if (animscale)											//RERUN div-by-zero on bad file data
+		if (animscale || SHP_DIV0("donianimverts.animscale",0))											//RERUN div-by-zero on bad file data
 			frameno /= animscale;
 		if (ptr->mapscale)
 		{
@@ -10361,8 +10373,8 @@ void shape::donianimverts(UByte *& instr_ptr)
 
 	nofx = ptr->noxframes;
 
-	stepy = nofx ? frameno/nofx : 0;							//RERUN div-by-zero on bad file data
-	stepx = nofx ? frameno - (stepy*nofx) : 0;		//RERUN keep stepx in-bounds when nofx==0
+	stepy = nofx ? frameno/nofx : SHP_DIV0("donianimverts.nofx",0);							//RERUN div-by-zero on bad file data
+	stepx = nofx ? frameno - (stepy*nofx) : SHP_DIV0("donianimverts.stepx",0);		//RERUN keep stepx in-bounds when nofx==0
 
 	miny = stepy * ptr->framewy;
 	minx = stepx * ptr->framewx;
@@ -10405,7 +10417,7 @@ void shape::dosetluminosity(UByte *& instr_ptr)
 	if (ptr->animoff)
 	{
 		depth = GlobalAdptr[ptr->animoff];
-		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+		if (ptr->animscale || SHP_DIV0("dosetluminosity.animscale",0))											//RERUN div-by-zero on bad file data
 			depth /= ptr->animscale;
 	}
 	else
@@ -10539,7 +10551,7 @@ void shape::domorphnsphrs(UByte *& instr_ptr)
 	SLong		timefrac;
 	int			lumtype;
 	int			transp;
-	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
+	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : SHP_DIV0("domorphnsphrs.MrphGrowtime",1);//RERUN div-by-zero on bad file data
 	int			delta;
 	UByte		animflag;
 	UByte		colour = ptr->colour;
@@ -10629,7 +10641,7 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 	SLong		timefrac;
 	int			lumtype;
 	int			transp;
-	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
+	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : SHP_DIV0("domorphnsphrsimapd.MrphGrowtime",1);//RERUN div-by-zero on bad file data
 	int			delta;
 	UWord		imap;											//RJS 19Nov98
 	int			randcol;
@@ -10677,7 +10689,7 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 	if (ptr->animflag)
 	{
 		frameno = GlobalAdptr[ptr->animflag];
-		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+		if (ptr->animscale || SHP_DIV0("domorphnsphrsimapd.animscale",0))											//RERUN div-by-zero on bad file data
 			frameno /= ptr->animscale;
 		if (ptr->SwitchImagemap && (frameno >= ptr->framelimit))
 		{
@@ -10689,10 +10701,10 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 
 		imptr = Image_Map.GetImageMapPtr((ImageMapNumber )imap);
 
-		nofx = width ? imptr->w / width : 0;					//RERUN div-by-zero on bad file data
+		nofx = width ? imptr->w / width : SHP_DIV0("domorphnsphrsimapd.imapwidth",0);					//RERUN div-by-zero on bad file data
 														
-		stepy = nofx ? frameno / nofx : 0;					//RERUN div-by-zero on bad file data
-		stepx = nofx ? frameno - (stepy*nofx) : 0;		//RERUN keep stepx in-bounds when nofx==0
+		stepy = nofx ? frameno / nofx : SHP_DIV0("domorphnsphrsimapd.nofx",0);					//RERUN div-by-zero on bad file data
+		stepx = nofx ? frameno - (stepy*nofx) : SHP_DIV0("domorphnsphrsimapd.stepx",0);		//RERUN keep stepx in-bounds when nofx==0
 														
 		minix += stepx * width;							
 		miniy += stepy * height;
@@ -14801,7 +14813,7 @@ SLong	shape::DrawSmokeTrail(	SWord		index,
 //DeadCode DAW 27Sep99 					else
 //DeadCode DAW 27Sep99 						apoint->radius = startradius;
 					if (lifegone >= 0)							//RJS 27Sep99
-						radius = startradius + ((startradius*lifegone)/grow2time);
+						radius = startradius + (grow2time ? (startradius*lifegone)/grow2time : SHP_DIV0("DrawSmokeTrail.growth",0));								//RERUN div-by-zero on bad file data
 					else
 					{
 						// For some reason lifeleft > total LifeTime,
@@ -14848,7 +14860,7 @@ SLong	shape::DrawSmokeTrail(	SWord		index,
 //DeadCode DAW 21Jun99 								INT3;
 //DeadCode DAW 21Jun99 #endif
 
-						degcnt = distz / degrade;
+						degcnt = degrade ? distz / degrade : SHP_DIV0("DrawSmokeTrail.DegradeDist",0);								//RERUN div-by-zero on bad file data
 					}												
 					else											
 						degcnt--;
@@ -15186,7 +15198,7 @@ void	shape::UpdateVapourCoords(itemptr	itm,animptr&	aptr)
 									dist = Math_Lib.distance3d(dx,dy,dz);
 									if (dist >= mindist)
 									{
-										distscale = dist / mindist;
+										distscale = mindist ? dist / mindist : SHP_DIV0("UpdateVapour.mindist",1);								//RERUN div-by-zero on bad file data
 
 										traillist[index].lastwx = wx;
 										traillist[index].lastwy = wy;
@@ -15580,7 +15592,7 @@ void	shape::UpdateSmokeDriftCoords(itemptr	itm,animptr&	aptr)
 //DeadCode RJS 13May99 										{
 											randval = Math_Lib.rnd();
 											vhori = Math_Lib.rnd(smkptr->VelHori);
-											reallife = (lifetime * (smkptr->VelHori - vhori))/smkptr->VelHori;
+											reallife = smkptr->VelHori ? (lifetime * (smkptr->VelHori - vhori))/smkptr->VelHori : SHP_DIV0("UpdateSmokeDrift.VelHori",0);								//RERUN div-by-zero on bad file data
 											if (vhori > poovelh)
 												Trans_Obj.LaunchSmokePuff2((mobileitem*)itm,&pos,BSMKE,0,vhori,poovel+Math_Lib.rnd(poovel),Math_Lib.rnd(),reallife,65535,*world);
 											else
@@ -16222,7 +16234,7 @@ void	shape::drawsphere(	int	vertex,
 	RealRadius = dopointr.screenx.f - dopoint0.screenx.f;
 
 	if (animflag)
-		thecol = (Colour) (colour + (animscale ? GlobalAdptr[animflag]/animscale : GlobalAdptr[animflag]));//RERUN div-by-zero on bad file data
+		thecol = (Colour) (colour + (GlobalAdptr[animflag]/(animscale ? animscale : SHP_DIV0("drawsphere.animscale",1))));//RERUN div-by-zero on bad file data
 
 //DEAD	POLYGON.SetPixelWidth(1);
 
@@ -16233,7 +16245,7 @@ void	shape::drawsphere(	int	vertex,
 			if (lumdepth)
 			{
 				if (animflag2)
-					lumdepth -= (animscale ? GlobalAdptr[animflag2]/animscale : GlobalAdptr[animflag2]);//RERUN div-by-zero on bad file data
+					lumdepth -= (GlobalAdptr[animflag2]/(animscale ? animscale : SHP_DIV0("drawsphere.animscale",1)));//RERUN div-by-zero on bad file data
 
 				if (lumdepth > 0)
 				{
@@ -16245,7 +16257,7 @@ void	shape::drawsphere(	int	vertex,
 			else
 			{
 				if (animflag2)
-					transdepth -= (animscale ? (GlobalAdptr[animflag2]*25)/animscale : GlobalAdptr[animflag2]*25);//RERUN div-by-zero on bad file data
+					transdepth -= ((GlobalAdptr[animflag2]*25)/(animscale ? animscale : SHP_DIV0("drawsphere.animscale",1)));//RERUN div-by-zero on bad file data
 
 				POLYGON.createsphere(thecol,transdepth);
 				POLYGON.createsphvert(dopoint0,RealRadius);
@@ -16265,7 +16277,7 @@ void	shape::drawsphere(	int	vertex,
 		if (BandWidth)
 		{
 			if (animflag2)
-				lumdepth -= (GlobalAdptr[animflag2]/animscale);
+				lumdepth -= (GlobalAdptr[animflag2]/(animscale ? animscale : SHP_DIV0("drawsphere.animscale",1)));								//RERUN div-by-zero on bad file data
 
 			if (lumdepth > 0)
 			{
@@ -16335,7 +16347,7 @@ void	shape::RealImapSphere(	int	vertex,
 
 	if (animflag)
 	{
-		UWord	frameno = GlobalAdptr[animflag] / animscale;
+		UWord	frameno = GlobalAdptr[animflag] / (animscale ? animscale : SHP_DIV0("RealImapSphere.animscale",1));								//RERUN div-by-zero on bad file data
 		SWord	sizey = maxy - miny;
 
 		miny += (frameno * sizey);
@@ -17082,11 +17094,11 @@ void	shape::ParticleBoxPlain(	UWord	vertex0,
 			Disty = (Disty<0)?-Disty:Disty;
 			Distz = (Distz<0)?-Distz:Distz;
 
-			Radius = (	((MaxRadius*(RelX3 - Distx))/RelX3)
-				  	+ ((MaxRadius*(RelY3 - Disty))/RelY3)
-				  	+ ((MaxRadius*(RelZ3 - Distz))/RelZ3)	)/3;
+			Radius = (	(RelX3 ? (MaxRadius*(RelX3 - Distx))/RelX3 : SHP_DIV0("ParticleBoxPlain.RelX3",0))								//RERUN div-by-zero on bad file data
+				  	+ (RelY3 ? (MaxRadius*(RelY3 - Disty))/RelY3 : SHP_DIV0("ParticleBoxPlain.RelY3",0))								//RERUN div-by-zero on bad file data
+				  	+ (RelZ3 ? (MaxRadius*(RelZ3 - Distz))/RelZ3 : SHP_DIV0("ParticleBoxPlain.RelZ3",0))	)/3;								//RERUN div-by-zero on bad file data
 
-			thecol = (Colour) (col - (((MaxRadius - Radius)*cvar)/MaxRadius));
+			thecol = (Colour) (col - (MaxRadius ? ((MaxRadius - Radius)*cvar)/MaxRadius : SHP_DIV0("ParticleBoxPlain.MaxRadius",0)));								//RERUN div-by-zero on bad file data
 
 			dopoint0.bodyx.f = Spazx;
 			dopoint0.bodyy.f = Spazy;
@@ -17147,11 +17159,11 @@ void	shape::ParticleBoxPlain(	UWord	vertex0,
 			Disty = (Disty<0)?-Disty:Disty;
 			Distz = (Distz<0)?-Distz:Distz;
 
-			Radius = (	((MaxRadius*(RelX3 - Distx))/RelX3)
-				  	+ ((MaxRadius*(RelY3 - Disty))/RelY3)
-				  	+ ((MaxRadius*(RelZ3 - Distz))/RelZ3)	)/3;
+			Radius = (	(RelX3 ? (MaxRadius*(RelX3 - Distx))/RelX3 : SHP_DIV0("ParticleBoxPlain.RelX3",0))								//RERUN div-by-zero on bad file data
+				  	+ (RelY3 ? (MaxRadius*(RelY3 - Disty))/RelY3 : SHP_DIV0("ParticleBoxPlain.RelY3",0))								//RERUN div-by-zero on bad file data
+				  	+ (RelZ3 ? (MaxRadius*(RelZ3 - Distz))/RelZ3 : SHP_DIV0("ParticleBoxPlain.RelZ3",0))	)/3;								//RERUN div-by-zero on bad file data
 
-			thecol = (Colour) (col - (((MaxRadius - Radius)*cvar)/MaxRadius));
+			thecol = (Colour) (col - (MaxRadius ? ((MaxRadius - Radius)*cvar)/MaxRadius : SHP_DIV0("ParticleBoxPlain.MaxRadius",0)));								//RERUN div-by-zero on bad file data
 
 			dopoint0.bodyx.f = Spazx;
 			dopoint0.bodyy.f = Spazy;
@@ -18290,10 +18302,10 @@ void shape::imapcylinder(	UWord   vertex1,
 
 	if (frameno)										//RJS 05Feb98
 	{													//RJS 05Feb98
-		nofx = width ? imptr->w / width : 0;			//RERUN div-by-zero on bad file data
+		nofx = width ? imptr->w / width : SHP_DIV0("imapcylinder.imapwidth",0);			//RERUN div-by-zero on bad file data
 														//RJS 05Feb98
-		stepy = nofx ? frameno / nofx : 0;				//RERUN div-by-zero on bad file data
-		stepx = nofx ? frameno - (stepy*nofx) : 0;		//RERUN keep stepx in-bounds when nofx==0
+		stepy = nofx ? frameno / nofx : SHP_DIV0("imapcylinder.nofx",0);				//RERUN div-by-zero on bad file data
+		stepx = nofx ? frameno - (stepy*nofx) : SHP_DIV0("imapcylinder.stepx",0);		//RERUN keep stepx in-bounds when nofx==0
 														//RJS 05Feb98
 		minx += stepx * width;							//RJS 05Feb98
 		miny += stepy * height;							//RJS 05Feb98
@@ -18938,7 +18950,7 @@ Bool	shape::SampleDustPnt(	UByteP		smkinfo,
 		if (!LifeTime)											
 			LifeTime = smkptr->LifeTime;						
 
-		LifeTime = (LifeTime * -tailbit)/hyp;
+		LifeTime = hyp ? (LifeTime * -tailbit)/hyp : SHP_DIV0("SampleDustPnt.hyp",0);								//RERUN div-by-zero on bad file data
 		if (!LifeTime)
 		{
 			LifeTime = 10;
@@ -19062,7 +19074,7 @@ void	shape::RipStores(AirStrucPtr	ac)
 			if(ac->fly.pModel->Inst.NormalAcc < MaxGs)
 			{
 				SLong gs = ((MaxGs - ac->fly.pModel->Inst.NormalAcc) * 65535.0) / (MaxGs - MinGs) + 1.0;
-				gs = (100 * 65535) / gs;
+				gs = gs ? (100 * 65535) / gs : SHP_DIV0("RipStores.gs",0);								//RERUN div-by-zero on bad file data
 				UWord chance = Math_Lib.rnd();
 				if (chance < gs)
 					dodump = true;
@@ -19131,10 +19143,10 @@ Bool	shape::AnimMap(	animptr&	adptr,
 		ImageMapDescPtr imptr = Image_Map.GetImageMapPtr((ImageMapNumber )imap);
 
 		frameno = adptr[animflag];
-		if (animscale)												//RERUN div-by-zero on bad file data
+		if (animscale || SHP_DIV0("AnimMap.animscale",0))												//RERUN div-by-zero on bad file data
 			frameno /= animscale;
 
-		nofx = width ? imptr->w / width : 0;						//RERUN div-by-zero on bad file data
+		nofx = width ? imptr->w / width : SHP_DIV0("AnimMap.imapwidth",0);						//RERUN div-by-zero on bad file data
 		if (nofx)
 		{
 	 		stepy = frameno / nofx;					
@@ -21032,7 +21044,7 @@ void	shape::DrawDirtTrail(	SWord		index,
  			if (lifeleft)
  			{
 				lifegone = apoint->LifeTime - lifeleft;
-				radius = startradius + ((startradius*lifegone)/grow2time);
+				radius = startradius + (grow2time ? (startradius*lifegone)/grow2time : SHP_DIV0("DrawDirtTrail.growth",0));								//RERUN div-by-zero on bad file data
 
 				apoint->radius = radius;
  				if (!degcnt || !nextpoint)
@@ -21066,7 +21078,7 @@ void	shape::DrawDirtTrail(	SWord		index,
 					else
 						failedcnt++;
 
-					degcnt = distz / degrade;
+					degcnt = degrade ? distz / degrade : SHP_DIV0("DrawDirtTrail.DegradeDist",0);								//RERUN div-by-zero on bad file data
 				}												
 				else											
 					degcnt--;									
@@ -21813,7 +21825,7 @@ void	shape::UpdateReplayVapourCoords(UByteP	rsdptr, itemptr	itm,animptr&	aptr)
 									dist = Math_Lib.distance3d(dx,dy,dz);
 									if (dist >= mindist)
 									{
-										distscale = dist / mindist;
+										distscale = mindist ? dist / mindist : SHP_DIV0("UpdateReplayVapour.mindist",1);								//RERUN div-by-zero on bad file data
 
 										traillist[index].lastwx = wx;
 										traillist[index].lastwy = wy;
