@@ -3650,7 +3650,8 @@ void shape::doquikpoly(UByte *& instr_ptr)
 	}															//RJS 27May98
 	else
 	{
-		flag /= ptr->animscale;										//RJS 13Mar98
+		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+			flag /= ptr->animscale;										//RJS 13Mar98
 																	//RJS 13Mar98
 		switch (ptr->condition)										//RJS 13Mar98
 		{															//RJS 13Mar98
@@ -3805,7 +3806,11 @@ void shape::dopoint2x(UByte *& instr_ptr)
 			offset += dic_ptr->shiftup;							//RJS 15May98
 	}															//RJS 15May98
 	else														//RJS 15May98
-		offset = GlobalAdptr[dic_ptr->flag] / dic_ptr->factor;		//RJS 15May98
+	{
+		offset = GlobalAdptr[dic_ptr->flag];						//RERUN div-by-zero on bad file data
+		if (dic_ptr->factor)
+			offset /= dic_ptr->factor;								//RJS 15May98
+	}
 																//RJS 15May98
 	if (offset > realcnt)										//RJS 04Nov98
 		offset = realcnt;										//RJS 04Nov98
@@ -3952,7 +3957,7 @@ void shape::domorphsphere(UByte *& instr_ptr)
 	SLong		timefrac;
 	int			lumtype;
 	int			transp;
-	int			growth = sphere_ptr->MrphGrowtime;
+	int			growth = sphere_ptr->MrphGrowtime ? sphere_ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
 	int			delta;
 	UByte		animflag;
 	UByte		colour = sphere_ptr->colour;
@@ -4038,7 +4043,7 @@ void shape::domorphsphereimapd(UByte *& instr_ptr)
 	UWord		timeframe;
 	int			lumtype;
 	int			transp;
-	int			growth = ptr->MrphGrowtime;
+	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
 	int			delta;
 	UWord		frameno = 0;
 	ImageMapNumber	imap;
@@ -4068,7 +4073,9 @@ void shape::domorphsphereimapd(UByte *& instr_ptr)
 
 	if (ptr->animflag)
 	{
-		frameno = GlobalAdptr[ptr->animflag] / ptr->animscale;
+		frameno = GlobalAdptr[ptr->animflag];
+		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+			frameno /= ptr->animscale;
 		if (ptr->imap2 && (frameno >= ptr->framelimit))
 		{
 			frameno -= ptr->framelimit;
@@ -5903,7 +5910,9 @@ static	ULong	biggestcyl = 0;
 
 	if (isphere_ptr->flagoffset)
 	{
-		frameno = GlobalAdptr[isphere_ptr->flagoffset] / isphere_ptr->animscale;
+		frameno = GlobalAdptr[isphere_ptr->flagoffset];
+		if (isphere_ptr->animscale)									//RERUN div-by-zero on bad file data
+			frameno /= isphere_ptr->animscale;
 		if (imap2 && (frameno >= isphere_ptr->framelimit))
 		{
 			frameno -= isphere_ptr->framelimit;
@@ -6055,7 +6064,9 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 	DOCREATERPOLY_PTR	ptr = (DOCREATERPOLY_PTR)instr_ptr;				//RJS 13Aug98
 	SWord				relimage = ptr->imagemap;						//RJS 13Aug98
 	SWord				offset = GlobalAdptr[ptr->animoff];
-	SWord				scaleoffset = offset / ptr->animscale;
+	SWord				scaleoffset = offset;								//RERUN div-by-zero on bad file data
+	if (ptr->animscale)
+		scaleoffset /= ptr->animscale;
 
 	relimage += scaleoffset;											//RJS 13Aug98
 
@@ -6067,7 +6078,8 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 		
 		if (ydelta)
 		{
-			ydelta *= (imap->h / ptr->animscale);
+			if (ptr->animscale)											//RERUN div-by-zero on bad file data
+				ydelta *= (imap->h / ptr->animscale);
 			body += (imap->w * ydelta);
 		}
 
@@ -7175,7 +7187,9 @@ void shape::SunItemAnim(SunAnimData* adptr)
 
 	if (ptr->flagoffset)
 	{
-		frameno = GlobalAdptr[ptr->flagoffset] / ptr->factor;
+		frameno = GlobalAdptr[ptr->flagoffset];
+		if (ptr->factor)											//RERUN div-by-zero on bad file data
+			frameno /= ptr->factor;
 		if (ptr->image2 && (frameno >= ptr->framelimit))
 		{
 			frameno -= ptr->framelimit;
@@ -8911,7 +8925,11 @@ void shape::docompass(UByte *& instr_ptr)
 	SWord			possiblejump;								//RJS 03Sep97
 	
 	if (!ptr->useword)
-		flag = GlobalAdptr[ptr->flag] / ptr->factor;			//RJS 21Apr99
+	{
+		flag = GlobalAdptr[ptr->flag];							//RERUN div-by-zero on bad file data
+		if (ptr->factor)
+			flag /= ptr->factor;									//RJS 21Apr99
+	}
 	else
 		flag = *((SWordP) &GlobalAdptr[ptr->flag]);				//RJS 21Apr99
 
@@ -9675,9 +9693,11 @@ void shape::doflipnvec(UByte *& instr_ptr)			//PD 13Nov97
 	UByteP			timedeltap = &GlobalAdptr[ptr->framecntoffset];//RJS 21Apr99
 	UWord			timedelta = *((UWordP)timedeltap);
 
-	xdelta = (timedelta*(ptr->mxcoord - ptr->xcoord))/ptr->growtime;
-	ydelta = (timedelta*(ptr->mycoord - ptr->ycoord))/ptr->growtime;
-	zdelta = (timedelta*(ptr->mzcoord - ptr->zcoord))/ptr->growtime;
+	SLong			growt = ptr->growtime ? ptr->growtime : 1;	//RERUN div-by-zero on bad file data
+
+	xdelta = (timedelta*(ptr->mxcoord - ptr->xcoord))/growt;
+	ydelta = (timedelta*(ptr->mycoord - ptr->ycoord))/growt;
+	zdelta = (timedelta*(ptr->mzcoord - ptr->zcoord))/growt;
 
 	ptr2.vertex = ptr->vertex;
 	ptr2.xcoord = ptr->xcoord + xdelta;
@@ -9728,7 +9748,8 @@ void shape::domorphnpoints(UByte *& instr_ptr)
 	UWord			timedelta = *((UWordP)timedeltap);
 	ULong			count;
 	UWord			vertex = ptr->startvertex;
-	SLong			timefrac = (timedelta<<13)/ptr->growtime;
+	SLong			growt = ptr->growtime ? ptr->growtime : 1;	//RERUN div-by-zero on bad file data
+	SLong			timefrac = (timedelta<<13)/growt;
 
 //	if (ptr->haswind)
 //	{
@@ -10381,7 +10402,11 @@ void shape::dosetluminosity(UByte *& instr_ptr)
 	UByte				depth;
 
 	if (ptr->animoff)
-		depth = GlobalAdptr[ptr->animoff] / ptr->animscale;
+	{
+		depth = GlobalAdptr[ptr->animoff];
+		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+			depth /= ptr->animscale;
+	}
 	else
 		depth = ptr->brightness;
 
@@ -10513,7 +10538,7 @@ void shape::domorphnsphrs(UByte *& instr_ptr)
 	SLong		timefrac;
 	int			lumtype;
 	int			transp;
-	int			growth = ptr->MrphGrowtime;
+	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
 	int			delta;
 	UByte		animflag;
 	UByte		colour = ptr->colour;
@@ -10603,7 +10628,7 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 	SLong		timefrac;
 	int			lumtype;
 	int			transp;
-	int			growth = ptr->MrphGrowtime;
+	int			growth = ptr->MrphGrowtime ? ptr->MrphGrowtime : 1;//RERUN div-by-zero on bad file data
 	int			delta;
 	UWord		imap;											//RJS 19Nov98
 	int			randcol;
@@ -10650,7 +10675,9 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 
 	if (ptr->animflag)
 	{
-		frameno = GlobalAdptr[ptr->animflag] / ptr->animscale;
+		frameno = GlobalAdptr[ptr->animflag];
+		if (ptr->animscale)											//RERUN div-by-zero on bad file data
+			frameno /= ptr->animscale;
 		if (ptr->SwitchImagemap && (frameno >= ptr->framelimit))
 		{
 			frameno -= ptr->framelimit;
@@ -19102,9 +19129,11 @@ Bool	shape::AnimMap(	animptr&	adptr,
 		SWord			nofx,stepy,stepx;
 		ImageMapDescPtr imptr = Image_Map.GetImageMapPtr((ImageMapNumber )imap);
 
-		frameno = adptr[animflag]/animscale;
+		frameno = adptr[animflag];
+		if (animscale)												//RERUN div-by-zero on bad file data
+			frameno /= animscale;
 
-		nofx = imptr->w / width;						
+		nofx = width ? imptr->w / width : 0;						//RERUN div-by-zero on bad file data
 		if (nofx)
 		{
 	 		stepy = frameno / nofx;					

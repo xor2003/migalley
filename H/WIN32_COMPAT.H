@@ -1006,12 +1006,15 @@ inline bool ReleaseSemaphore(HANDLE hSemaphore, LONG lReleaseCount, LONG* lpPrev
     LinuxSemaphore* s = (LinuxSemaphore*)hSemaphore;
     if (!s) return false;
 
+    int val;
+    if (sem_getvalue(&s->sem, &val) != 0) return false;
+
+    // Win32: fails without releasing if the count would exceed lMaximumCount
+    // (POSIX sems have no max - enforce the CreateSemaphore value ourselves)
+    if (val + lReleaseCount > s->maxCount) return false;
+
     // Optionally track previous count
-    if (lpPreviousCount) {
-        int val;
-        sem_getvalue(&s->sem, &val);
-        *lpPreviousCount = val;
-    }
+    if (lpPreviousCount) *lpPreviousCount = val;
 
     // Increment by lReleaseCount
     for (int i = 0; i < lReleaseCount; i++) {

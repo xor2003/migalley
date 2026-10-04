@@ -54,6 +54,8 @@ extern void           shape_dontpoints(UByte*& ip)
                                              __asm__("_ZN5shape10dontpointsERPh");
 extern void           shape_domorphnpoints(UByte*& ip)
                                              __asm__("_ZN5shape14domorphnpointsERPh");
+extern void           shape_domorphpoint(UByte*& ip)
+                                             __asm__("_ZN5shape12domorphpointERPh");
 
 extern void           shape_doifcase(UByte*& ip)
                                              __asm__("_ZN5shape8doifcaseERPh");
@@ -1106,6 +1108,317 @@ static void test_matrix_generate_multiply()
 }
 
 //------------------------------------------------------------------------------
+// shape::domorphpoint - single-vertex morph, then delegates to dopoint.
+// Delta formula differs from domorphnpoints: (timedelta*(m-x))/growtime,
+// no <<13 fraction. growtime=0 is file data -> growt=1 (div-zero guard),
+// which morphs instantly to the target.
+//------------------------------------------------------------------------------
+static void test_domorphpoint()
+{
+    TestObj3D obj = TestObj3D();
+    obj.Body.X.f = 1000.0;
+    obj.Body.Y.f = -50.0;
+    obj.Body.Z.f = 4000.0;
+
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+
+    shape_newco = shape_shpco;
+    shape_fpobject_matrix = &ident;
+    shape_object_obj3d = &obj;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;
+
+    UByte stream[sizeof(DOMORPHPOINT)] = {0};
+    DOMORPHPOINT* p = (DOMORPHPOINT*)stream;
+    p->framecntoffset = 4;
+    p->vertex = 6;
+    p->haswind = 0;
+    p->xcoord = 100; p->ycoord = 0; p->zcoord = 0;
+    p->mxcoord = 300; p->mycoord = 0; p->mzcoord = 0;
+    p->growtime = 8192;
+
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    // 50%: delta = (4096*200)/8192 = 100 -> vert = 200
+    *(UWord*)(anim + 4) = 4096;
+    UByte* ip = stream;
+    shape_domorphpoint(ip);
+    CHECK_FEQ(shape_shpco[6].bodyx.f, 1200.0);      // 1000 + 200
+    CHECK_EQ(ip - stream, (long)sizeof(DOMORPHPOINT));
+
+    // growtime=0 (malformed file): growt=1, delta = timedelta*200.
+    // timedelta=1 -> vert lands exactly on the morph target.
+    p->growtime = 0;
+    *(UWord*)(anim + 4) = 1;
+    ip = stream;
+    shape_domorphpoint(ip);
+    CHECK_FEQ(shape_shpco[6].bodyx.f, 1300.0);      // 1000 + 300
+}
+
+//------------------------------------------------------------------------------
+// Div-zero guards - every divisor below is raw shape-file data (animscale,
+// factor, growtime, MrphGrowtime). The guards leave the raw dividend in
+// place when the divisor is 0 rather than SIGFPE-ing on malformed data.
+// These tests would have crashed before the RERUN guards went in.
+//------------------------------------------------------------------------------
+static void test_divzero_guards()
+{
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;
+
+    // doswitch animscale=0: flag stays the raw byte (10 > 4 -> continue).
+    {
+        DOSWITCH ins;
+        std::memset(&ins, 0, sizeof(ins));
+        ins.nobits = 0;
+        ins.animscale = 0;
+        ins.animoff = 1;
+        ins.condition = 0;                          // GREATER_THAN
+        ins.value = 4;
+        anim[1] = 10;
+        UByte* base = (UByte*)&ins;
+        UByte* ip = base;
+        shape_doswitch(ip);
+        CHECK_EQ(ip - base, (long)sizeof(DOSWITCH));
+    }
+
+    // docaserange factor=0: flag = raw byte 10 -> last range <= 10.
+    {
+        UByte stream[32] = {0};
+        DOCASERANGE* p = (DOCASERANGE*)stream;
+        p->flag = 1;
+        p->nofields = 2;
+        p->useword = 0;
+        p->factor = 0;
+        p->failjump = 50;
+        SWord* pairs = (SWord*)(stream + sizeof(DOCASERANGE));
+        pairs[0] = 3;  pairs[1] = 20;
+        pairs[2] = 7;  pairs[3] = 30;
+        anim[1] = 10;
+        UByte* ip = stream;
+        shape_docaserange(ip);
+        CHECK_EQ(ip - stream, 30);                  // flag=10 -> range7
+    }
+
+    // doifcase factor=0: offset = raw byte 10 -> clamped to count-1=2.
+    {
+        UByte stream[sizeof(DOIFCASE) + 3 * 2] = {0};
+        DOIFCASE* p = (DOIFCASE*)stream;
+        p->flag = 1;
+        p->count = 3;
+        p->bidirectional = 0;
+        p->factor = 0;
+        UWord* tbl = (UWord*)(stream + sizeof(DOIFCASE));
+        tbl[0] = 100; tbl[1] = 200; tbl[2] = 300;
+        anim[1] = 10;
+        UByte* ip = stream;
+        shape_doifcase(ip);
+        CHECK_EQ(ip - stream,
+                 (long)(sizeof(DOIFCASE) + 2 * sizeof(UWord)) + 300);
+    }
+
+    // domorphnpoints growtime=0: growt=1 -> timefrac=timedelta<<13,
+    // so one tick completes the morph (vert lands on target).
+    {
+        TestObj3D obj = TestObj3D();
+        obj.Body.X.f = 0.0; obj.Body.Y.f = 0.0; obj.Body.Z.f = 0.0;
+        static FPMATRIX ident2;
+        zero_fpmatrix(ident2);
+        ident2.L11 = ident2.L22 = ident2.L33 = 1.0;
+        shape_newco = shape_shpco;
+        shape_fpobject_matrix = &ident2;
+        shape_object_obj3d = &obj;
+        _matrix.fpMaximumZ = 1600000.0;
+
+        UByte stream[sizeof(DOMORPHNPOINTS) + sizeof(MORPHNNEXT)] = {0};
+        DOMORPHNPOINTS* mp = (DOMORPHNPOINTS*)stream;
+        mp->framecntoffset = 4;
+        mp->startvertex = 6;
+        mp->growtime = 0;
+        mp->nopoints = 1;
+        MORPHNNEXT* mn = (MORPHNNEXT*)(stream + sizeof(DOMORPHNPOINTS));
+        mn->xcoord = 100; mn->ycoord = 0; mn->zcoord = 0;
+        mn->mxcoord = 300; mn->mycoord = 0; mn->mzcoord = 0;
+
+        for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+        *(UWord*)(anim + 4) = 1;
+        UByte* ip = stream;
+        shape_domorphnpoints(ip);
+        CHECK_FEQ(shape_shpco[6].bodyx.f, 300.0);   // instant morph
+    }
+}
+
+//------------------------------------------------------------------------------
+// Boundary semantics - instruction-stream and clip-flag edges.
+//------------------------------------------------------------------------------
+static void test_edge_boundaries()
+{
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;
+
+    // dogoto offset=0: lands on itself (documented hang on bad data).
+    {
+        UByte stream[4] = {0};
+        *(SWord*)stream = 0;
+        UByte* ip = stream;
+        shape_dogoto(ip);
+        CHECK_EQ(ip - stream, 0);
+    }
+
+    // doswitch bit tests at bit 0 and bit 7 (field extremes).
+    {
+        DOSWITCH ins;
+        std::memset(&ins, 0, sizeof(ins));
+        ins.nobits = 1;
+        ins.animoff = 1;
+        UByte* base = (UByte*)&ins;
+        anim[1] = 0x81;
+        ins.bitoffset = 0; ins.value = 1;
+        UByte* ip = base;
+        shape_doswitch(ip);
+        CHECK_EQ(ip - base, (long)sizeof(DOSWITCH));   // bit0 = 1
+        ins.bitoffset = 7;
+        ip = base;
+        shape_doswitch(ip);
+        CHECK_EQ(ip - base, (long)sizeof(DOSWITCH));   // bit7 = 1
+        ins.bitoffset = 6;
+        ip = base;
+        shape_doswitch(ip);
+        CHECK_EQ(ip - base, (long)sizeof(DOSWITCH) - 1); // bit6 = 0 -> rewind
+    }
+
+    // docaserange nofields=0: loop skipped -> failjump verbatim.
+    {
+        UByte stream[32] = {0};
+        DOCASERANGE* p = (DOCASERANGE*)stream;
+        p->flag = 1;
+        p->nofields = 0;
+        p->factor = 1;
+        p->failjump = 42;
+        anim[1] = 10;
+        UByte* ip = stream;
+        shape_docaserange(ip);
+        CHECK_EQ(ip - stream, 42);
+    }
+
+    // doifcase count=1: realcnt=0 clamps every offset to entry 0.
+    {
+        UByte stream[sizeof(DOIFCASE) + 2] = {0};
+        DOIFCASE* p = (DOIFCASE*)stream;
+        p->flag = 1;
+        p->count = 1;
+        p->factor = 1;
+        *(UWord*)(stream + sizeof(DOIFCASE)) = 77;
+        anim[1] = 250;
+        UByte* ip = stream;
+        shape_doifcase(ip);
+        CHECK_EQ(ip - stream, (long)sizeof(DOIFCASE) + 77);
+    }
+
+    // domorphnpoints extrapolation: timedelta=2*growtime -> vert passes
+    // the target (x + 2*(mx-x)) - the unclamped overshoot contract.
+    {
+        TestObj3D obj = TestObj3D();
+        obj.Body.X.f = 0.0; obj.Body.Y.f = 0.0; obj.Body.Z.f = 0.0;
+        static FPMATRIX ident2;
+        zero_fpmatrix(ident2);
+        ident2.L11 = ident2.L22 = ident2.L33 = 1.0;
+        shape_newco = shape_shpco;
+        shape_fpobject_matrix = &ident2;
+        shape_object_obj3d = &obj;
+        _matrix.fpMaximumZ = 1600000.0;
+
+        UByte stream[sizeof(DOMORPHNPOINTS) + sizeof(MORPHNNEXT)] = {0};
+        DOMORPHNPOINTS* mp = (DOMORPHNPOINTS*)stream;
+        mp->framecntoffset = 4;
+        mp->startvertex = 6;
+        mp->growtime = 8192;
+        mp->nopoints = 1;
+        MORPHNNEXT* mn = (MORPHNNEXT*)(stream + sizeof(DOMORPHNPOINTS));
+        mn->xcoord = 100; mn->ycoord = 0; mn->zcoord = 0;
+        mn->mxcoord = 300; mn->mycoord = 0; mn->mzcoord = 0;
+
+        for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+        *(UWord*)(anim + 4) = 16384;                // 2*growtime
+        UByte* ip = stream;
+        shape_domorphnpoints(ip);
+        CHECK_FEQ(shape_shpco[6].bodyx.f, 500.0);   // 100 + 2*200
+    }
+
+    // dontpoints count=0: header advance only, no verts touched.
+    {
+        UByte stream[sizeof(DONTPOINTS)] = {0};
+        DONTPOINTS* p = (DONTPOINTS*)stream;
+        p->count = 0;
+        UByte* ip = stream;
+        shape_dontpoints(ip);
+        CHECK_EQ(ip - stream, (long)sizeof(DONTPOINTS));
+    }
+
+    // fptrans clip boundaries: far-z flag trips on z > farz (strict).
+    {
+        matrix m;
+        m.fpMaximumZ = 1600000.0;
+        static FPMATRIX ident;
+        zero_fpmatrix(ident);
+        ident.L11 = ident.L22 = ident.L33 = 1.0;
+        IFShare x, y, z;
+
+        x.f = 0.0; y.f = 0.0; z.f = 1600000.0;      // z == farz
+        UWord cf = m.fptrans(&ident, x, y, z);
+        CHECK_EQ(cf, CF3D_NULL);                    // not past far yet
+
+        x.f = 0.0; y.f = 0.0; z.f = 1600001.0;      // z = farz+1
+        cf = m.fptrans(&ident, x, y, z);
+        CHECK_EQ(cf, CF3D_PASTFARZ);
+
+        // x == z is NOT off-right (test is strict >).
+        x.f = 200.0; y.f = 0.0; z.f = 200.0;
+        cf = m.fptrans(&ident, x, y, z);
+        CHECK_EQ(cf & CF3D_OFFRIGHT, 0);
+
+        // x = z+1 trips OFFRIGHT; mirrored for OFFLEFT.
+        x.f = 201.0; y.f = 0.0; z.f = 200.0;
+        cf = m.fptrans(&ident, x, y, z);
+        CHECK_EQ(cf & CF3D_OFFRIGHT, CF3D_OFFRIGHT);
+        x.f = -201.0;
+        cf = m.fptrans(&ident, x, y, z);
+        CHECK_EQ(cf & CF3D_OFFLEFT, CF3D_OFFLEFT);
+    }
+}
+
+//------------------------------------------------------------------------------
+// MODVEC edge cases - NrmVec zero vector returns FALSE and copies source;
+// DotPrd (a cosine) hits -1 on antiparallel vectors.
+//------------------------------------------------------------------------------
+static void test_modvec_edges()
+{
+    FCRD zero_v = {0.0, 0.0, 0.0};
+    FCRD dest = {-9.0, -9.0, -9.0};
+    CHECK_EQ(NrmVec(zero_v, dest), FALSE);
+    CHECK_FEQ(dest.x, 0.0);                          // dest = srce copy
+    CHECK_FEQ(dest.y, 0.0);
+    CHECK_FEQ(dest.z, 0.0);
+
+    FCRD ex  = {2.0, 0.0, 0.0};
+    FCRD nex = {-3.0, 0.0, 0.0};
+    FCRD ey  = {0.0, 4.0, 0.0};
+    CHECK_FEQ(DotPrd(ex, nex), -1.0);                // antiparallel
+    CHECK_FEQ(DotPrd(ex, ey), 0.0);                  // orthogonal
+
+    // CPrd of parallel vectors is the zero vector.
+    FCRD r = {1.0, 1.0, 1.0};
+    CPrd(r, ex, nex);
+    CHECK_FEQ(r.x, 0.0);
+    CHECK_FEQ(r.y, 0.0);
+    CHECK_FEQ(r.z, 0.0);
+}
+
+//------------------------------------------------------------------------------
 int main()
 {
     test_type_layout();
@@ -1134,6 +1447,10 @@ int main()
     test_domorphnpoints();
     test_matrix_generate2_fptrans();
     test_matrix_generate_multiply();
+    test_domorphpoint();
+    test_divzero_guards();
+    test_edge_boundaries();
+    test_modvec_edges();
     test_ftoitexture();
     test_select_palette();
 
