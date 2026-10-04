@@ -4,11 +4,11 @@ project(MigAlley LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Needed so clang-check/clang-tidy/cppcheck can consume per-file flags
+# Needed so clang-check/cppcheck can consume per-file flags
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(MIG_SANITIZERS "Build with AddressSanitizer + UBSan (GCC, 32-bit)" OFF)
-option(MIG_LINT "Run clang-tidy + cppcheck during the build" OFF)
+option(MIG_LINT "Run cppcheck during the build" OFF)
 
 # -------------------------------------------------------------------
 # Dependencies via pkg-config (ensures 32-bit libs are found)
@@ -42,14 +42,7 @@ if(NOT MSVC)
     endif()
 
     if(MIG_LINT)
-        find_program(CLANG_TIDY_EXE NAMES clang-tidy)
         find_program(CPPCHECK_EXE NAMES cppcheck)
-        if(CLANG_TIDY_EXE)
-            set(CMAKE_CXX_CLANG_TIDY ${CLANG_TIDY_EXE}
-                -header-filter='^${CMAKE_SOURCE_DIR}/(H|MFC|MigAlley)/')
-        else()
-            message(WARNING "MIG_LINT=ON but clang-tidy not found")
-        endif()
         if(CPPCHECK_EXE)
             set(CMAKE_CXX_CPPCHECK ${CPPCHECK_EXE}
                 --enable=warning,performance,portability

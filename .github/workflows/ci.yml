@@ -88,9 +88,9 @@ jobs:
             cmake ninja-build pkg-config g++-multilib \
             libsdl2-dev:i386 libsdl2-ttf-dev:i386 libsdl2-mixer-dev:i386 \
             libvulkan-dev:i386 libopenal-dev:i386 nlohmann-json3-dev \
-            clang-tidy cppcheck clang-tools
+            cppcheck clang-tools
           # versioned binaries if the unversioned alternatives are missing
-          for t in clang-check clang-tidy; do
+          for t in clang-check; do
             command -v "$t" >/dev/null || \
               sudo ln -sf "$(command -v "$t"-14)" /usr/local/bin/"$t"
           done
@@ -121,10 +121,10 @@ jobs:
           # in changed.txt so errors located in them still gate
           grep -Ei '\.(cpp|cc|cxx)$' /tmp/changed.txt > /tmp/lint_files.txt || true
 
-      # lint.sh runs clang-check + cppcheck per file (clang-tidy stays
-      # manual-only via -t so the tree remains easy to diff against the
-      # original sources). Legacy headers produce pre-existing noise, so
-      # only *errors* whose location is inside a changed file fail the job.
+      # lint.sh runs clang-check + cppcheck per file (no clang-tidy at
+      # all: tidy rewrites would make the tree harder to diff against
+      # the original sources). Legacy headers produce pre-existing
+      # noise, so only *errors* located in a changed file fail the job.
       - name: Run linters
         run: |
           mapfile -t FILES < /tmp/lint_files.txt
