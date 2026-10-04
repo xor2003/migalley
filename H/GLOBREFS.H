@@ -20,7 +20,7 @@ enum	{	E_first_Global=(int)E_static_END,
 
 #define	endglobal						\
 	E_global_END};						\
-static	ULong	names[E_global_END]={0};
+static	ULong	names[E_global_END+1]={0};
 
 #endif
 

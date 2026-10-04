@@ -10844,7 +10844,7 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 
 //DeadCode DAW 07May99 		IsSubShape = oldsubstat;
  
-		delete subco;												//RJS 02Dec97
+		delete [] subco;												//RJS 02Dec97
 	}
 	light_matrix=bupMatrix;						//PD 8May98
 }
@@ -19607,7 +19607,7 @@ void	shape::FixUpColLog()
 
 		ItemPtr	hitterscorer=Persons2::PlayerSeenAC;
 
-		if (ColLog[index].send)									//AMM 31Aug98
+		if (ColLog[index].send && ColLog[index].theShooter)									//AMM 31Aug98
 		{
 
 // pass in the hitter here as well.....RJS 11Mar99

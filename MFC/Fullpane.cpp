@@ -2419,7 +2419,7 @@ Bool RFullPanelDial::QuickMissionBlue()
 	int initind=0;
 	for (int wave=0;wave<8;wave++)
 		for (int grp=0;grp<3;grp++)
-			if (CSQuick1::quickdef.line[0][wave][grp].flights||CSQuick1::quickdef.line[0][wave][grp].DutyFlags())
+			if (initind<8 && (CSQuick1::quickdef.line[0][wave][grp].flights||CSQuick1::quickdef.line[0][wave][grp].DutyFlags()))
 			{
 				ilun[initind][0]=wave;
 				ilun[initind][1]=grp;
@@ -2464,7 +2464,7 @@ Bool RFullPanelDial::QuickMissionRed()
 	int initindch=0;
 	for (int wave=0;wave<8;wave++)
 		for (int grp=0;grp<3;grp++)
-			if (CSQuick1::quickdef.line[1][wave][grp].flights||CSQuick1::quickdef.line[1][wave][grp].DutyFlags())
+			if (initindch<8 && (CSQuick1::quickdef.line[1][wave][grp].flights||CSQuick1::quickdef.line[1][wave][grp].DutyFlags()))
 			{
 				ilch[initindch][0]=wave;
 				ilch[initindch][1]=grp;
@@ -2528,7 +2528,7 @@ Bool RFullPanelDial::QuickViewInit()
 	int wave;
 	for (wave=0;wave<8;wave++)
 		for (int grp=0;grp<3;grp++)
-			if (CSQuick1::quickdef.line[0][wave][grp].flights)
+			if (initind<8 && CSQuick1::quickdef.line[0][wave][grp].flights)
 			{
 				ilun[initind][0]=wave;
 				ilun[initind][1]=grp;
@@ -2540,7 +2540,7 @@ Bool RFullPanelDial::QuickViewInit()
 	int initindch=0;
 	for (wave=0;wave<8;wave++)
 		for (int grp=0;grp<3;grp++)
-			if (CSQuick1::quickdef.line[1][wave][grp].flights)
+			if (initindch<8 && CSQuick1::quickdef.line[1][wave][grp].flights)
 			{
 				ilch[initindch][0]=wave;
 				ilch[initindch][1]=grp;
