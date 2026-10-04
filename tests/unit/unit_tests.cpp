@@ -2460,13 +2460,14 @@ static void test_donianimverts()
     CHECK_EQ(shape_shpco[1].ix, 0 + 3);
     CHECK_EQ(shape_shpco[1].iy, 16 + 5);
 
-    // noxframes=0: guarded -> stepx=frameno, stepy=0.
+    // noxframes=0: guarded divides -> stepy=0 AND stepx=0 (frame stays
+    // in-bounds instead of escaping via stepx=frameno).
     nv->noxframes = 0;
     nv->factor = 1;
     anim[2] = 2;
     ip = stream;
     shape_donianimverts(ip);
-    CHECK_EQ(shape_shpco[1].ix, 2 * 32 + 3);
+    CHECK_EQ(shape_shpco[1].ix, 0 + 3);
     CHECK_EQ(shape_shpco[1].iy, 0 + 5);
 }
 

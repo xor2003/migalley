@@ -5921,7 +5921,7 @@ static	ULong	biggestcyl = 0;
 		}
 
 		imptr = Image_Map.GetImageMapPtr(realmap);
-		nofx = imptr->w / width;						//RJS 05Feb98
+		nofx = width ? imptr->w / width : 0;				//RERUN div-by-zero on bad file data
 														//RJS 05Feb98
 		if (nofx)
 		{
@@ -6639,7 +6639,7 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 
 							nofx = (ptr->width2) ? imptr->w / ptr->width2 : 0;//RERUN div-by-zero on bad file data
 							stepy = nofx ? FrameNo / nofx : 0;				//RERUN div-by-zero on bad file data
-							stepx = FrameNo - (stepy*nofx);
+							stepx = nofx ? FrameNo - (stepy*nofx) : 0;	//RERUN keep stepx in-bounds when nofx==0
 
 							minx2 = ptr->minix2;
 							miny2 = ptr->miniy2;
@@ -6673,7 +6673,7 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 
 						nofx = (ptr->Width) ? imptr->w / ptr->Width : 0;	//RERUN div-by-zero on bad file data
 						stepy = nofx ? FrameNo / nofx : 0;				//RERUN div-by-zero on bad file data
-						stepx = FrameNo - (stepy*nofx);
+						stepx = nofx ? FrameNo - (stepy*nofx) : 0;	//RERUN keep stepx in-bounds when nofx==0
 
 						minx += stepx*ptr->Width;
 						miny += stepy*ptr->Height;
@@ -10116,7 +10116,7 @@ void shape::dolight(UByte *& instr_ptr)
 						nofx = (ptr->width) ? imptr->w / ptr->width : 0;	//RERUN div-by-zero on bad file data
 
 						stepy = nofx ? 1 / nofx : 0;					//RERUN div-by-zero on bad file data
-						stepx = 1 - (stepy*nofx);
+						stepx = nofx ? 1 - (stepy*nofx) : 0;			//RERUN keep stepx in-bounds when nofx==0
 
 						minx += stepx*ptr->width;
 						miny += stepy*ptr->height;
@@ -10269,7 +10269,7 @@ void shape::dodigitdial(UByte *& instr_ptr)
 	for (i=0; i < nodigits; i++)
 	{
 		stepy = noxframes ? digits[i]/noxframes : 0;			//RERUN div-by-zero on bad file data
-		stepx = digits[i] - (stepy*noxframes);
+		stepx = noxframes ? digits[i] - (stepy*noxframes) : 0;	//RERUN keep stepx in-bounds when noxframes==0
 
 		miny = 32 + (stepy * ptr->height);		//shit cheat!
 		minx = stepx * ptr->width;
@@ -10362,7 +10362,7 @@ void shape::donianimverts(UByte *& instr_ptr)
 	nofx = ptr->noxframes;
 
 	stepy = nofx ? frameno/nofx : 0;							//RERUN div-by-zero on bad file data
-	stepx = frameno - (stepy*nofx);
+	stepx = nofx ? frameno - (stepy*nofx) : 0;		//RERUN keep stepx in-bounds when nofx==0
 
 	miny = stepy * ptr->framewy;
 	minx = stepx * ptr->framewx;
@@ -10692,7 +10692,7 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 		nofx = width ? imptr->w / width : 0;					//RERUN div-by-zero on bad file data
 														
 		stepy = nofx ? frameno / nofx : 0;					//RERUN div-by-zero on bad file data
-		stepx = frameno - (stepy*nofx);					
+		stepx = nofx ? frameno - (stepy*nofx) : 0;		//RERUN keep stepx in-bounds when nofx==0
 														
 		minix += stepx * width;							
 		miniy += stepy * height;
@@ -18290,10 +18290,10 @@ void shape::imapcylinder(	UWord   vertex1,
 
 	if (frameno)										//RJS 05Feb98
 	{													//RJS 05Feb98
-		nofx = imptr->w / width;				//RJS 05Feb98
+		nofx = width ? imptr->w / width : 0;			//RERUN div-by-zero on bad file data
 														//RJS 05Feb98
-		stepy = frameno / nofx;							//RJS 05Feb98
-		stepx = frameno - (stepy*nofx);					//RJS 05Feb98
+		stepy = nofx ? frameno / nofx : 0;				//RERUN div-by-zero on bad file data
+		stepx = nofx ? frameno - (stepy*nofx) : 0;		//RERUN keep stepx in-bounds when nofx==0
 														//RJS 05Feb98
 		minx += stepx * width;							//RJS 05Feb98
 		miny += stepy * height;							//RJS 05Feb98
