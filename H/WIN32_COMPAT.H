@@ -903,32 +903,71 @@ inline int WaitForSingleObject(HANDLE hEvent, int timeout) {
 
     PosixEventObject* ev = (PosixEventObject*)hEvent;
 
+    if (hb->type == HandleType::Mutex) {
+        if (timeout == INFINITE) {
+            int ret = pthread_mutex_lock(&ev->mutex);
+            return (ret == 0) ? WAIT_OBJECT_0 : WAIT_FAILED;  // Map success/failure
+        } else {
+            struct timespec ts;
+            if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
+                return WAIT_FAILED;
+
+            /* add the millisecond interval */
+            const long long NSEC_PER_MSEC = 1000000LL;
+            const long long NSEC_PER_SEC  = 1000000000LL;
+
+            long long nsec = (long long)timeout * NSEC_PER_MSEC;
+            ts.tv_sec  += nsec / NSEC_PER_SEC;
+            ts.tv_nsec += nsec % NSEC_PER_SEC;
+
+            /* carry over if nanoseconds overflow */
+            if (ts.tv_nsec >= NSEC_PER_SEC) {
+                ts.tv_nsec -= NSEC_PER_SEC;
+                ++ts.tv_sec;
+            }
+
+            int rc = pthread_mutex_timedlock(&ev->mutex, &ts);
+            if (rc == 0)          return WAIT_OBJECT_0;
+            if (rc == ETIMEDOUT)  return WAIT_TIMEOUT;
+            return WAIT_FAILED;   // any other error (e.g. EINVAL, EDEADLK, …)
+        }
+    }
+
+    // Event: wait on `signaled` under the mutex; auto-reset consumes the
+    // signal unless manualReset was requested at CreateEvent.
     if (timeout == INFINITE) {
-        int ret = pthread_mutex_lock(&ev->mutex);
-        return (ret == 0) ? WAIT_OBJECT_0 : WAIT_FAILED;  // Map success/failure
+        pthread_mutex_lock(&ev->mutex);
+        while (!ev->signaled)
+            pthread_cond_wait(&ev->cond, &ev->mutex);
+        if (!ev->manualReset) ev->signaled = false;
+        pthread_mutex_unlock(&ev->mutex);
+        return WAIT_OBJECT_0;
     } else {
         struct timespec ts;
         if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
             return WAIT_FAILED;
 
-        /* add the millisecond interval */
         const long long NSEC_PER_MSEC = 1000000LL;
         const long long NSEC_PER_SEC  = 1000000000LL;
 
         long long nsec = (long long)timeout * NSEC_PER_MSEC;
         ts.tv_sec  += nsec / NSEC_PER_SEC;
         ts.tv_nsec += nsec % NSEC_PER_SEC;
-
-        /* carry over if nanoseconds overflow */
         if (ts.tv_nsec >= NSEC_PER_SEC) {
             ts.tv_nsec -= NSEC_PER_SEC;
             ++ts.tv_sec;
         }
 
-        int rc = pthread_mutex_timedlock(&ev->mutex, &ts);
-        if (rc == 0)          return WAIT_OBJECT_0;
-        if (rc == ETIMEDOUT)  return WAIT_TIMEOUT;
-        return WAIT_FAILED;   // any other error (e.g. EINVAL, EDEADLK, …)
+        pthread_mutex_lock(&ev->mutex);
+        int rc = 0;
+        while (!ev->signaled && rc != ETIMEDOUT)
+            rc = pthread_cond_timedwait(&ev->cond, &ev->mutex, &ts);
+        bool got = ev->signaled;
+        if (got && !ev->manualReset) ev->signaled = false;
+        pthread_mutex_unlock(&ev->mutex);
+        if (got)             return WAIT_OBJECT_0;
+        if (rc == ETIMEDOUT) return WAIT_TIMEOUT;
+        return WAIT_FAILED;
     }
 }
 

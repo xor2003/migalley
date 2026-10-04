@@ -38,6 +38,49 @@ extern void           shape_dopoint(UByte*& ip)
                                                __asm__("_ZN5shape7dopointERPh");
 extern void           shape_donpoints(UByte*& ip)
                                                __asm__("_ZN5shape9donpointsERPh");
+extern void           shape_dogoto(UByte*& ip) __asm__("_ZN5shape6dogotoERPh");
+extern void           shape_dogosub(UByte*& ip) __asm__("_ZN5shape7dogosubERPh");
+extern void           shape_doret(UByte*& ip)   __asm__("_ZN5shape5doretERPh");
+extern void           shape_doifeq(UByte*& ip)  __asm__("_ZN5shape6doifeqERPh");
+extern void           shape_doifne(UByte*& ip)  __asm__("_ZN5shape6doifneERPh");
+extern void           shape_doswitch(UByte*& ip) __asm__("_ZN5shape8doswitchERPh");
+extern void           shape_docaserange(UByte*& ip)
+                                             __asm__("_ZN5shape11docaserangeERPh");
+extern void           shape_doplumepnt(UByte*& ip)
+                                             __asm__("_ZN5shape10doplumepntERPh");
+extern void           shape_donincpnts(UByte*& ip)
+                                             __asm__("_ZN5shape10donincpntsERPh");
+extern void           shape_dontpoints(UByte*& ip)
+                                             __asm__("_ZN5shape10dontpointsERPh");
+extern void           shape_domorphnpoints(UByte*& ip)
+                                             __asm__("_ZN5shape14domorphnpointsERPh");
+
+extern void           shape_doifcase(UByte*& ip)
+                                             __asm__("_ZN5shape8doifcaseERPh");
+extern void           shape_dosetcolour256(UByte*& ip)
+                                             __asm__("_ZN5shape14dosetcolour256ERPh");
+
+// Interpreter state the handlers read/write through.
+extern animptr        shape_GlobalAdptr  __asm__("_ZN5shape11GlobalAdptrE");
+extern void         (**shape_InterpTable)(UByte*&)
+                                               __asm__("_ZN5shape11InterpTableE");
+extern void*          shape_current_screen
+                                             __asm__("_ZN5shape14current_screenE");
+extern int            shape_colour     __asm__("_ZN5shape6colourE");
+extern short          shape_range      __asm__("_ZN5shape5rangeE");
+extern int            shape_image      __asm__("_ZN5shape5imageE");
+extern SLong          shape_object_dist __asm__("_ZN5shape11object_distE");
+extern SLong          shape_fade_start  __asm__("_ZN5shape10fade_startE");
+
+// Rasterizer colour state from GRAFPRIM.CPP (extern "C", unmangled).
+extern "C" {
+struct TestColourData {
+    uint32_t imageptr, alphaptr, imagexmask, imageymask,
+             aliastblptr, lumtblptr;
+    uint8_t  col, imageyshift, pad2, pad3;
+};
+extern TestColourData colour_data;
+}
 
 // Debug globals SHAPES.CPP expects from the exe (defined in MigAlley.cpp).
 int   g_shp_last_num = -1;
@@ -59,54 +102,18 @@ extern void   graphic_SetPaletteEntry(void* self, UWord c, UWord v)
                                           __asm__("_ZN7Graphic15SetPaletteEntryEtt");
 
 //------------------------------------------------------------------------------
-// Tiny harness
+// Tiny harness (shared with test_compat.cpp)
 //------------------------------------------------------------------------------
-static int g_checks = 0;
-static int g_failures = 0;
+#include "harness.h"
+int g_checks = 0;
+int g_failures = 0;
 
-#define CHECK(cond)                                                        \
-    do {                                                                   \
-        ++g_checks;                                                        \
-        if (!(cond)) {                                                     \
-            ++g_failures;                                                  \
-            std::printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);    \
-        }                                                                  \
-    } while (0)
-
-#define CHECK_EQ(a, b)                                                     \
-    do {                                                                   \
-        ++g_checks;                                                        \
-        long long _va = (long long)(a), _vb = (long long)(b);             \
-        if (_va != _vb) {                                                  \
-            ++g_failures;                                                  \
-            std::printf("FAIL %s:%d: %s (=%lld) != %s (=%lld)\n",          \
-                        __FILE__, __LINE__, #a, _va, #b, _vb);             \
-        }                                                                  \
-    } while (0)
-
-#define CHECK_FEQ(a, b)                                                    \
-    do {                                                                   \
-        ++g_checks;                                                        \
-        double _va = (double)(a), _vb = (double)(b);                      \
-        double _d = _va - _vb;                                             \
-        if (_d < -1e-6 || _d > 1e-6) {                                     \
-            ++g_failures;                                                  \
-            std::printf("FAIL %s:%d: %s (=%g) != %s (=%g)\n",              \
-                        __FILE__, __LINE__, #a, _va, #b, _vb);             \
-        }                                                                  \
-    } while (0)
-
-#define CHECK_NEAR(a, b, eps)                                              \
-    do {                                                                   \
-        ++g_checks;                                                        \
-        double _va = (double)(a), _vb = (double)(b), _e = (eps);          \
-        double _d = _va - _vb;                                             \
-        if (_d < -_e || _d > _e) {                                         \
-            ++g_failures;                                                  \
-            std::printf("FAIL %s:%d: %s (=%g) != %s (=%g) eps=%g\n",       \
-                        __FILE__, __LINE__, #a, _va, #b, _vb, _e);         \
-        }                                                                  \
-    } while (0)
+// Compat-layer tests live in test_compat.cpp (WIN32_COMPAT.H collides with
+// the game headers included here).
+void test_win32_events();
+void test_win32_semaphore();
+void test_win32_mutex();
+void test_win32_timing();
 
 //------------------------------------------------------------------------------
 // Type + union layout invariants the instruction stream and fixed-point
@@ -643,6 +650,462 @@ static void test_transform()
 }
 
 //------------------------------------------------------------------------------
+// Shape-stream flow control - pure instr_ptr manipulation. A wrong jump
+// desyncs the stream and produces every artifact class downstream, so the
+// jump math is pinned directly.
+//------------------------------------------------------------------------------
+static void test_flow_control()
+{
+    // dogoto: instr_ptr += *(SWord*)instr_ptr (signed 16-bit offset)
+    {
+        UByte stream[8] = {0};
+        *(SWord*)stream = 5;
+        UByte* ip = stream;
+        shape_dogoto(ip);
+        CHECK_EQ(ip - stream, 5);
+        *(SWord*)(stream + 6) = -3;                 // backward jump
+        ip = stream + 6;
+        shape_dogoto(ip);
+        CHECK_EQ(ip - stream, 3);
+    }
+    // doret: marker only - InterpLoop terminates on the opcode itself;
+    // the handler must leave instr_ptr untouched.
+    {
+        UByte stream[4] = {0};
+        UByte* ip = stream;
+        shape_doret(ip);
+        CHECK_EQ((void*)ip, (void*)stream);
+    }
+    // doifeq/doifne: advance-only ops (their operand words are consumed
+    // by the compiler's stream layout, not evaluated at runtime).
+    {
+        UByte stream[8] = {0};
+        UByte* ip = stream;
+        shape_doifeq(ip);
+        CHECK_EQ(ip - stream, (long)sizeof(DOIFEQ));
+        ip = stream;
+        shape_doifne(ip);
+        CHECK_EQ(ip - stream, (long)sizeof(DOIFNE));
+    }
+}
+
+//------------------------------------------------------------------------------
+// shape::doswitch - reads GlobalAdptr[animoff]; on condition fail it
+// rewinds one byte so the next loop read lands inside the instruction
+// (the 1998 conditional-skip idiom). Both modes pinned: single-bit test
+// (nobits) and scaled compare (condition + animscale).
+//------------------------------------------------------------------------------
+static void test_doswitch()
+{
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;                    // animptr::operator=(UByteP)
+
+    DOSWITCH ins;
+    std::memset(&ins, 0, sizeof(ins));
+    ins.animscale = 2;
+    ins.animoff = 1;
+    UByte* base = (UByte*)&ins;
+
+    // nobits mode: flag = (byte >> bitoffset) & 1
+    anim[1] = 0x02;
+    ins.nobits = 1; ins.bitoffset = 1;
+    ins.value = 1;
+    UByte* ip = base;
+    shape_doswitch(ip);
+    CHECK_EQ(ip - base, (long)sizeof(DOSWITCH)); // flag==value -> continue
+    ins.value = 0;
+    ip = base;
+    shape_doswitch(ip);
+    CHECK_EQ(ip - base, (long)sizeof(DOSWITCH) - 1); // mismatch -> rewind
+
+    // scaled mode: flag = byte / animscale; GREATER_THAN skips when
+    // flag <= value, LESS_THAN skips when flag >= value.
+    ins.nobits = 0;
+    anim[1] = 10;                                // flag = 10/2 = 5
+    ins.condition = 0;                           // GREATER_THAN
+    ins.value = 4;
+    ip = base;
+    shape_doswitch(ip);
+    CHECK_EQ(ip - base, (long)sizeof(DOSWITCH)); // 5 > 4 -> continue
+    ins.value = 5;
+    ip = base;
+    shape_doswitch(ip);
+    CHECK_EQ(ip - base, (long)sizeof(DOSWITCH) - 1); // 5 <= 5 -> rewind
+    ins.condition = 1;                           // LESS_THAN
+    ins.value = 6;
+    ip = base;
+    shape_doswitch(ip);
+    CHECK_EQ(ip - base, (long)sizeof(DOSWITCH)); // 5 < 6 -> continue
+    ins.value = 5;
+    ip = base;
+    shape_doswitch(ip);
+    CHECK_EQ(ip - base, (long)sizeof(DOSWITCH) - 1); // 5 >= 5 -> rewind
+}
+
+//------------------------------------------------------------------------------
+// shape::docaserange - walks (range,jump) SWord pairs and takes the jump
+// of the LAST range <= flag (or failjump). Byte flag scaled by factor;
+// useword reads a SWord from the anim block instead.
+//------------------------------------------------------------------------------
+static void test_docaserange()
+{
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;
+
+    UByte stream[32] = {0};
+    DOCASERANGE* p = (DOCASERANGE*)stream;
+    p->flag = 1;
+    p->nofields = 2;
+    p->useword = 0;
+    p->factor = 2;
+    p->failjump = 50;
+    SWord* pairs = (SWord*)(stream + sizeof(DOCASERANGE));
+    pairs[0] = 3;  pairs[1] = 20;               // flag>=3 -> +20
+    pairs[2] = 7;  pairs[3] = 30;               // flag>=7 -> +30
+
+    anim[1] = 10;                                // flag = 10/2 = 5 -> range3
+    UByte* ip = stream;
+    shape_docaserange(ip);
+    CHECK_EQ(ip - stream, 20);
+
+    anim[1] = 16;                                // flag = 8 -> range7
+    ip = stream;
+    shape_docaserange(ip);
+    CHECK_EQ(ip - stream, 30);
+
+    anim[1] = 2;                                 // flag = 1 < 3 -> failjump
+    ip = stream;
+    shape_docaserange(ip);
+    CHECK_EQ(ip - stream, 50);
+
+    // useword: SWord read at anim[flag].
+    *(SWord*)(anim + 1) = 9;
+    p->useword = 1;
+    p->factor = 2;                               // unused on the word path
+    ip = stream;
+    shape_docaserange(ip);
+    CHECK_EQ(ip - stream, 30);                   // flag = 9 -> range7
+}
+
+//------------------------------------------------------------------------------
+// shape::dogosub + InterpLoop - dogosub jumps by a signed offset, runs the
+// subroutine through InterpLoop until doretno, then resumes after its own
+// 2-byte operand. InterpTable is a shape:: static: point it at a local
+// table with a marker handler so the dispatch is verifiable.
+//------------------------------------------------------------------------------
+// InterpLoop consumes the opcode byte (instr_ptr++) before dispatching, so
+// the operand pointer handed to a handler already sits past the opcode -
+// a no-operand handler must NOT advance it.
+static int g_marker;
+static void marker_op(UByte*&) { ++g_marker; }
+
+static void test_dogosub_interploop()
+{
+    static void (*tab[dosetglassrangeno + 1])(UByte*&) = {};
+    void (**saved)(UByte*&) = shape_InterpTable; // ~shape() deletes this
+    shape_InterpTable = tab;                     // - restore it after the test
+    const int MARKOP = dosetglassrangeno;        // last valid opcode index
+    tab[MARKOP] = &marker_op;
+
+    g_marker = 0;
+    // [SWord offset=8][pad][sub at +8: MARKOP, doretno]
+    UByte stream[16] = {0};
+    *(SWord*)stream = 8;
+    stream[8] = (UByte)MARKOP;
+    stream[9] = (UByte)doretno;
+
+    UByte* ip = stream;
+    shape_dogosub(ip);
+    shape_InterpTable = saved;
+    CHECK_EQ(g_marker, 1);                       // sub dispatched our handler
+    CHECK_EQ(ip - stream, 2);                    // resumed after the offset
+}
+
+//------------------------------------------------------------------------------
+// shape::doifcase - jump-table select: offset = anim[flag]/factor (or
+// signed-bidirectional with shiftup), clamped to count-1, picks the UWord
+// table entry at header+offset*2, then jumps forward by that entry's value.
+//------------------------------------------------------------------------------
+static void test_doifcase()
+{
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;
+
+    UByte stream[sizeof(DOIFCASE) + 3 * 2] = {0};
+    DOIFCASE* p = (DOIFCASE*)stream;
+    p->flag = 1;
+    p->count = 3;                                   // realcnt = count-1 = 2
+    p->bidirectional = 0;
+    p->factor = 4;
+    UWord* tbl = (UWord*)(stream + sizeof(DOIFCASE));
+    tbl[0] = 100; tbl[1] = 200; tbl[2] = 300;
+    const long entry2 = (long)(sizeof(DOIFCASE) + 2 * sizeof(UWord)) + 300;
+
+    anim[1] = 10;                                   // offset = 10/4 = 2
+    UByte* ip = stream;
+    shape_doifcase(ip);
+    CHECK_EQ(ip - stream, entry2);
+
+    anim[1] = 200;                                  // offset 50 -> clamped to 2
+    ip = stream;
+    shape_doifcase(ip);
+    CHECK_EQ(ip - stream, entry2);
+
+    anim[1] = 3;                                    // offset 0 -> entry 0
+    ip = stream;
+    shape_doifcase(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFCASE) + 100);
+
+    // bidirectional: SByte anim value; nonzero offset += shiftup, clamped.
+    p->bidirectional = 1;
+    p->shiftup = 4;
+    *(SByte*)(anim + 1) = -4;                       // -4/4 = -1; +4 -> 3 -> 2
+    ip = stream;
+    shape_doifcase(ip);
+    CHECK_EQ(ip - stream, entry2);
+}
+
+//------------------------------------------------------------------------------
+// shape::dosetcolour256 - updates shape::colour/range/image statics, then
+// fires current_screen->SetColour. MigWindow::SetColour forwards to
+// Graphic::SetColour (member writes + ASM_SetColour into colour_data -
+// the imageptr member is stored, never dereferenced), so a zeroed dummy
+// window is a valid screen. imap=0x0FF keeps the GetImageMapPtr branch
+// out (it needs a real Image_Map table).
+//------------------------------------------------------------------------------
+static void test_dosetcolour256()
+{
+    static UByte fake_screen[16384];                // >> sizeof(MigWindow)
+    shape_current_screen = fake_screen;
+    shape_object_dist = 0;
+    shape_fade_start = 0;
+
+    UByte stream[sizeof(DOSETCOLOUR256)] = {0};
+    DOSETCOLOUR256* p = (DOSETCOLOUR256*)stream;
+    p->basecolour = 0x0100;                         // >>1 -> base 0x80
+    p->spread = 5;
+    p->imap = 0x0FF;
+
+    UByte* ip = stream;
+    shape_dosetcolour256(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETCOLOUR256));
+    CHECK_EQ(shape_colour, 0x80);                   // basecolour >> 1
+    CHECK_EQ(shape_range, 5);
+    CHECK_EQ(shape_image, 0x0FF);
+    // SetColour(base, range) -> ASM_SetColour(0x80,4,4,NULL):
+    // col written, x/y masks = ((1<<2)-1)<<16, yshift = 16-2 = 14.
+    CHECK_EQ(colour_data.col, 0x80);
+    CHECK_EQ(colour_data.imagexmask, 0x00030000u);
+    CHECK_EQ(colour_data.imageymask, 0x00030000u);
+    CHECK_EQ(colour_data.imageyshift, 14);
+    CHECK_EQ(colour_data.imageptr, 0u);
+
+    // spread is a UByte: 0xFF can never mean range -1, so the
+    // 'if (range == -1)' single-colour path is dead on this instruction.
+    p->spread = 0xFF;
+    ip = stream;
+    shape_dosetcolour256(ip);
+    CHECK_EQ(shape_range, 0xFF);                    // NOT -1 - two-arg call
+    CHECK_EQ(colour_data.col, 0x80);
+}
+
+//------------------------------------------------------------------------------
+// Skip-only writers: doplumepnt (fully dead - every line commented) and
+// donincpnts (skips count*(DOINIT+DOINC) + header). They still advance the
+// stream, so desync = corruption downstream; pin the advance formula.
+//------------------------------------------------------------------------------
+static void test_skip_writers()
+{
+    UByte stream[64] = {0};
+    UByte* ip = stream;
+    shape_doplumepnt(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOPLUMEPNT));
+
+    DONINCPNTS* n = (DONINCPNTS*)stream;
+    n->count = 3;
+    ip = stream;
+    shape_donincpnts(ip);
+    CHECK_EQ(ip - stream,
+        (long)(3 * (sizeof(DOINIT) + sizeof(DOINC)) + sizeof(DONINCPNTS)));
+}
+
+//------------------------------------------------------------------------------
+// shape::dontpoints - rotating-prop writer: builds a rotation matrix from
+// an RPM-derived Rowan angle (anim word, byte*257, or fixedrpm), applies it
+// about (base_x,base_y,base_z), then the normal object transform. With
+// notrpm the angle is used directly; hpr_data selects the axis.
+//------------------------------------------------------------------------------
+static void test_dontpoints()
+{
+    TestObj3D obj = TestObj3D();
+    obj.Body.X.f = 1000.0;
+    obj.Body.Y.f = -50.0;
+    obj.Body.Z.f = 4000.0;
+
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+
+    shape_newco = shape_shpco;
+    shape_fpobject_matrix = &ident;
+    shape_object_obj3d = &obj;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    UByte anim[8] = {0};
+    *(UWord*)(anim + 2) = 0x4000;                // ANGLES_90Deg in Rowan
+    shape_GlobalAdptr = anim;
+
+    UByte stream[sizeof(DONTPOINTS) + sizeof(NEXTT)] = {0};
+    DONTPOINTS* p = (DONTPOINTS*)stream;
+    p->count = 1;
+    p->start_vertex = 4;
+    p->notrpm = 1;                               // angle = rpm verbatim
+    p->isWord = 1;                               // UWord at anim[flag]
+    p->flag = 2;
+    p->hpr_data = 2;                             // pitch axis
+    NEXTT* nt = (NEXTT*)(stream + sizeof(DONTPOINTS));
+    nt->xcoord = 0; nt->ycoord = 100; nt->zcoord = 0;
+
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+    UByte* ip = stream;
+    shape_dontpoints(ip);
+
+    CHECK_EQ(ip - stream,
+             (long)(sizeof(DONTPOINTS) + sizeof(NEXTT)));
+    // 90 deg pitch: (0,100,0) -> (0,0,-100); +Body -> (1000,-50,3900)
+    CHECK_FEQ(shape_shpco[4].bodyx.f, 1000.0);
+    CHECK_FEQ(shape_shpco[4].bodyy.f, -50.0);
+    CHECK_FEQ(shape_shpco[4].bodyz.f, 3900.0);
+    CHECK_EQ(shape_shpco[4].specular, -1);
+}
+
+//------------------------------------------------------------------------------
+// shape::domorphnpoints - morph interpolation: verts lerp toward their
+// morph targets by timefrac = (timedelta<<13)/growtime, a 13-bit fraction
+// read from the anim block. This is the exact arithmetic the "exploded
+// vertex" artifact hunt suspected; pin it at 0%, 50% and 100% morph.
+//------------------------------------------------------------------------------
+static void test_domorphnpoints()
+{
+    TestObj3D obj = TestObj3D();
+    obj.Body.X.f = 1000.0;
+    obj.Body.Y.f = -50.0;
+    obj.Body.Z.f = 4000.0;
+
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+
+    shape_newco = shape_shpco;
+    shape_fpobject_matrix = &ident;
+    shape_object_obj3d = &obj;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    UByte anim[8] = {0};
+    shape_GlobalAdptr = anim;
+
+    UByte stream[sizeof(DOMORPHNPOINTS) + sizeof(MORPHNNEXT)] = {0};
+    DOMORPHNPOINTS* p = (DOMORPHNPOINTS*)stream;
+    p->framecntoffset = 4;                        // timedelta at anim+4
+    p->startvertex = 6;
+    p->growtime = 8192;
+    p->nopoints = 1;
+    MORPHNNEXT* mn = (MORPHNNEXT*)(stream + sizeof(DOMORPHNPOINTS));
+    mn->xcoord = 100; mn->ycoord = 0; mn->zcoord = 0;
+    mn->mxcoord = 300; mn->mycoord = 0; mn->mzcoord = 0;
+
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    // 0%: delta=(0*(300-100))>>13 = 0 -> vert = x = 100
+    *(UWord*)(anim + 4) = 0;
+    UByte* ip = stream;
+    shape_domorphnpoints(ip);
+    CHECK_FEQ(shape_shpco[6].bodyx.f, 1100.0);
+
+    // 50%: timefrac = (4096<<13)/8192 = 4096; delta = (4096*200)>>13 = 100
+    *(UWord*)(anim + 4) = 4096;
+    ip = stream;
+    shape_domorphnpoints(ip);
+    CHECK_FEQ(shape_shpco[6].bodyx.f, 1200.0);
+
+    // 100%: timefrac = 8192; delta = 200 -> vert = mx = 300
+    *(UWord*)(anim + 4) = 8192;
+    ip = stream;
+    shape_domorphnpoints(ip);
+    CHECK_FEQ(shape_shpco[6].bodyx.f, 1300.0);
+    CHECK_EQ(ip - stream,
+             (long)(sizeof(DOMORPHNPOINTS) + sizeof(MORPHNNEXT)));
+}
+
+//------------------------------------------------------------------------------
+// matrix::generate2 / fptrans - the 3-angle rotation builder and the
+// fp transform that returns clip flags. Convention check at pitch=90deg:
+// (x,y,z) -> (x,z,-y).
+//------------------------------------------------------------------------------
+static void test_matrix_generate2_fptrans()
+{
+    matrix m;
+    m.fpMaximumZ = 1600000.0;
+
+    static FPMATRIX rot;
+    zero_fpmatrix(rot);
+    m.generate2(ANGLES_0Deg, ANGLES_90Deg, ANGLES_0Deg, &rot);
+    CHECK_FEQ(rot.L11, 1.0);
+    CHECK_FEQ(rot.L23, 1.0);
+    CHECK_FEQ(rot.L32, -1.0);
+    CHECK_FEQ(rot.L22, 0.0);
+
+    IFShare x, y, z;
+    x.f = 0.0; y.f = 100.0; z.f = 0.0;
+    UWord cf = m.fptrans(&rot, x, y, z);
+    CHECK_FEQ(x.f, 0.0);
+    CHECK_FEQ(y.f, 0.0);
+    CHECK_FEQ(z.f, -100.0);
+    // Flags are an OR-union, not exclusive: behind-near-z also trips
+    // OFFRIGHT/OFFTOP because _clipLR/_clipTB compare x/y against the
+    // (negative) z. 25 = 0x01|0x08|0x10 - the real 1998 bitmask.
+    CHECK_EQ(cf, CF3D_BEHINDNEARZ | CF3D_OFFRIGHT | CF3D_OFFTOP);
+
+    // Identity passes through and clips nothing inside the frustum.
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+    x.f = 10.0; y.f = 5.0; z.f = 200.0;
+    cf = m.fptrans(&ident, x, y, z);
+    CHECK_FEQ(x.f, 10.0);
+    CHECK_EQ(cf, CF3D_NULL);
+}
+
+//------------------------------------------------------------------------------
+// matrix::Generate2 + multiply - Generate2 is the public scaled builder
+// (all nine elements x `scale` - the per-object size contract; aspectRatio
+// scaling in matrix::Generate sits behind private members + SetViewParams).
+// multiply(t,sip) computes t <- sip*t, so rot^2 doubles the angle.
+//------------------------------------------------------------------------------
+static void test_matrix_generate_multiply()
+{
+    matrix m;
+
+    static FPMATRIX rot, scaled;
+    m.Generate2(ANGLES_0Deg, ANGLES_90Deg, ANGLES_0Deg, 1.0, &rot);
+    m.Generate2(ANGLES_0Deg, ANGLES_90Deg, ANGLES_0Deg, 2.0, &scaled);
+    CHECK_FEQ(rot.L11, 1.0);                        // (x,y,z)->(x,z,-y)
+    CHECK_FEQ(rot.L23, 1.0);
+    CHECK_FEQ(rot.L32, -1.0);
+    CHECK_FEQ(scaled.L11, 2.0);
+    CHECK_FEQ(scaled.L23, 2.0);
+    CHECK_FEQ(scaled.L32, -2.0);
+
+    static FPMATRIX sq;
+    sq = rot;
+    m.multiply(&sq, &rot);                          // sq = rot*sq = rot^2
+    CHECK_FEQ(sq.L11, 1.0);                         // pitch 180: (x,-y,-z)
+    CHECK_FEQ(sq.L22, -1.0);
+    CHECK_FEQ(sq.L33, -1.0);
+    CHECK_FEQ(sq.L23, 0.0);
+}
+
+//------------------------------------------------------------------------------
 int main()
 {
     test_type_layout();
@@ -660,8 +1123,24 @@ int main()
     test_animptr();
     test_modvec_angles();
     test_modvec_vectors();
+    test_flow_control();
+    test_doswitch();
+    test_docaserange();
+    test_dogosub_interploop();
+    test_doifcase();
+    test_dosetcolour256();
+    test_skip_writers();
+    test_dontpoints();
+    test_domorphnpoints();
+    test_matrix_generate2_fptrans();
+    test_matrix_generate_multiply();
     test_ftoitexture();
     test_select_palette();
+
+    test_win32_events();
+    test_win32_semaphore();
+    test_win32_mutex();
+    test_win32_timing();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;
