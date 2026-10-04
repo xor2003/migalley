@@ -1249,8 +1249,13 @@ int	View3d::WaitEndDraw(MigDrawState d,int timeoutmilisec)
 			E=new CEvent();
 	drawing=d;	
 	if (E)
-		if (!E->Lock(timeoutmilisec))
-			return false;
+	{
+		//RERUN: drawloop has no thread in this port - it is pumped once per
+		//main-loop turn, so blocking here deadlocks. Drive it ourselves until
+		//it signals E (drawloop SetEvents unconditionally each pass).
+		while (!E->Lock(0))
+			drawloop(this);
+	}
 	CEvent* t=E;
 	E=NULL;
 	delete t;
