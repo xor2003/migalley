@@ -82,6 +82,65 @@ extern short          shape_range      __asm__("_ZN5shape5rangeE");
 extern int            shape_image      __asm__("_ZN5shape5imageE");
 extern SLong          shape_object_dist __asm__("_ZN5shape11object_distE");
 extern SLong          shape_fade_start  __asm__("_ZN5shape10fade_startE");
+extern void           shape_donop(UByte*& ip)    __asm__("_ZN5shape5donopERPh");
+extern void           shape_donormal(UByte*& ip) __asm__("_ZN5shape8donormalERPh");
+extern void           shape_dosetlc(UByte*& ip)  __asm__("_ZN5shape7dosetlcERPh");
+extern void           shape_do4cmpnt(UByte*& ip) __asm__("_ZN5shape8do4cmpntERPh");
+extern void           shape_do4cmpt2x(UByte*& ip) __asm__("_ZN5shape9do4cmpt2xERPh");
+extern void           shape_dooffsetpnt(UByte*& ip)
+                                             __asm__("_ZN5shape11dooffsetpntERPh");
+extern void           shape_dosetmapoff(UByte*& ip)
+                                             __asm__("_ZN5shape11dosetmapoffERPh");
+extern void           shape_doifhard3d(UByte*& ip)
+                                             __asm__("_ZN5shape10doifhard3dERPh");
+extern void           shape_don4cmpnts(UByte*& ip)
+                                             __asm__("_ZN5shape10don4cmpntsERPh");
+extern void           shape_dosmokedon(UByte*& ip)
+                                             __asm__("_ZN5shape10dosmokedonERPh");
+extern void           shape_dosmokedoff(UByte*& ip)
+                                             __asm__("_ZN5shape11dosmokedoffERPh");
+extern void           shape_dotransparentoff(UByte*& ip)
+                                             __asm__("_ZN5shape16dotransparentoffERPh");
+extern void           shape_doresetanim(UByte*& ip)
+                                             __asm__("_ZN5shape11doresetanimERPh");
+extern void           shape_doscalesize(UByte*& ip)
+                                             __asm__("_ZN5shape11doscalesizeERPh");
+extern void           shape_dobitsoff(UByte*& ip)
+                                             __asm__("_ZN5shape9dobitsoffERPh");
+extern void           shape_doniverts(UByte*& ip)
+                                             __asm__("_ZN5shape9donivertsERPh");
+extern void           shape_dosetluminosity(UByte*& ip)
+                                             __asm__("_ZN5shape15dosetluminosityERPh");
+extern void           shape_dolshadeon(UByte*& ip)
+                                             __asm__("_ZN5shape10dolshadeonERPh");
+extern void           shape_dostretchpoint(UByte*& ip)
+                                             __asm__("_ZN5shape14dostretchpointERPh");
+extern void           shape_dostretchmap(UByte*& ip)
+                                             __asm__("_ZN5shape12dostretchmapERPh");
+extern void           shape_donpoint2x(UByte*& ip)
+                                             __asm__("_ZN5shape10donpoint2xERPh");
+extern void           shape_dondeltapoints(UByte*& ip)
+                                             __asm__("_ZN5shape14dondeltapointsERPh");
+extern void*          shape_View_Point __asm__("_ZN5shape10View_PointE");
+extern bool           shape_doingHW3D  __asm__("_ZN5shape9doingHW3DE");
+
+// MODVEC.CPP - FP/FCRD/FORI signatures come from MODVEC.H.
+extern void mv_NullVec(FCRD& v) __asm__("_Z7NullVecR5_fcrd");
+extern void mv_CopyVec(FCRD& s, FCRD& d) __asm__("_Z7CopyVecR5_fcrdS0_");
+extern void mv_AddVec(FCRD& d, FCRD& a, FCRD& b) __asm__("_Z6AddVecR5_fcrdS0_S0_");
+extern void mv_SubVec(FCRD& d, FCRD& a, FCRD& b) __asm__("_Z6SubVecR5_fcrdS0_S0_");
+extern FP   mv_VecLen(FCRD& v) __asm__("_Z6VecLenR5_fcrd");
+extern Bool mv_NrmVec2D(FP& x, FP& y) __asm__("_Z8NrmVec2DRfS_");
+extern void mv_RotateVec2D(FP& x, FP& y, FP a) __asm__("_Z11RotateVec2DRfS_f");
+extern void mv_RotVecXSC(FCRD& s, FCRD& d, FP sn, FP cs)
+                                             __asm__("_Z9RotVecXSCR5_fcrdS0_ff");
+extern void mv_RotVecYSC(FCRD& s, FCRD& d, FP sn, FP cs)
+                                             __asm__("_Z9RotVecYSCR5_fcrdS0_ff");
+extern void mv_RotVecZSC(FCRD& s, FCRD& d, FP sn, FP cs)
+                                             __asm__("_Z9RotVecZSCR5_fcrdS0_ff");
+extern void mv_TnsPnt(FCRD& s, FCRD& d, FORI& o) __asm__("_Z6TnsPntR5_fcrdS0_R5_fori");
+extern void mv_SetOri(FORI& o, FP x, FP y, FP z) __asm__("_Z6SetOriR5_forifff");
+extern FP   mv_CalcAngle(FP x, FP y) __asm__("_Z9CalcAngleff");
 
 // Rasterizer colour state from GRAFPRIM.CPP (extern "C", unmangled).
 extern "C" {
@@ -1626,6 +1685,472 @@ static void test_flip_writers()
 }
 
 //------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
+// Advance-only handlers: pin the exact instruction-pointer movement. A wrong
+// skip length desyncs the interpreter for everything downstream.
+//------------------------------------------------------------------------------
+static void test_stream_advance()
+{
+    UByte stream[64] = {0};
+
+    // DONOP is an empty struct: the opcode still carries a 1-byte operand.
+    UByte* ip = stream;
+    shape_donop(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONOP));
+
+    ip = stream;
+    shape_donormal(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONORMAL));
+
+    ip = stream;
+    shape_dosetlc(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETLC));
+
+    ip = stream;
+    shape_do4cmpnt(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DO4CMPNT));
+
+    ip = stream;
+    shape_do4cmpt2x(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DO4CMPT2X));
+
+    ip = stream;
+    shape_dooffsetpnt(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOOFFSETPNT));
+
+    // dosetmapoff is a dead no-op: it does NOT advance at all.
+    ip = stream;
+    shape_dosetmapoff(ip);
+    CHECK_EQ(ip - stream, 0);
+
+    // doifhard3d's doingHW3D test is commented out - it always jumps +offset.
+    DOIFHARD3D* hd = (DOIFHARD3D*)stream;
+    hd->offset = 20;
+    ip = stream;
+    shape_doifhard3d(ip);
+    CHECK_EQ(ip - stream, 20);
+
+    // don4cmpnts skips its own header plus vertex_count COORDS records.
+    DON4CMPNTS* n4 = (DON4CMPNTS*)stream;
+    n4->vertex_count = 3;
+    ip = stream;
+    shape_don4cmpnts(ip);
+    CHECK_EQ(ip - stream, (long)(sizeof(DON4CMPNTS) + 3 * sizeof(COORDS)));
+
+    n4->vertex_count = 0;
+    ip = stream;
+    shape_don4cmpnts(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DON4CMPNTS));
+}
+
+//------------------------------------------------------------------------------
+// Animation-data handlers: GlobalAdptr is UByte-wide, so scaled results
+// truncate to a byte (the real 1998 behavior).
+//------------------------------------------------------------------------------
+static void test_anim_data_ops()
+{
+    static UByte anim[64];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+
+    // doresetanim: 16-bit controlframe==0 writes resetval into animoffframe.
+    UByte stream[16] = {0};
+    DORESETANIM* ra = (DORESETANIM*)stream;
+    ra->animofftimer = 4;
+    ra->animoffframe = 8;
+    ra->resetval = 0xAB;
+
+    anim[4] = anim[5] = 0;                       // controlframe == 0
+    anim[8] = 0x11;
+    UByte* ip = stream;
+    shape_doresetanim(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DORESETANIM));
+    CHECK_EQ(anim[8], 0xAB);
+
+    anim[5] = 1;                                 // controlframe == 0x0100
+    anim[8] = 0x11;
+    ip = stream;
+    shape_doresetanim(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DORESETANIM));
+    CHECK_EQ(anim[8], 0x11);                     // untouched
+
+    // doscalesize: dest = src*255/animscale truncated to a byte.
+    DOSCALESIZE* ss = (DOSCALESIZE*)stream;
+    ss->animoffsrc = 2;
+    ss->animoffdest = 3;
+    ss->animscale = 5;
+    anim[2] = 10;
+    anim[3] = 0;
+    ip = stream;
+    shape_doscalesize(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSCALESIZE));
+    CHECK_EQ(anim[3], (UByte)((10 * 255 / 5) & 0xFF));   // 510 -> 254
+
+    ss->animscale = 0;                           // guarded: raw *255 kept
+    anim[3] = 0;
+    ip = stream;
+    shape_doscalesize(ip);
+    CHECK_EQ(anim[3], (UByte)((10 * 255) & 0xFF));       // 2550 -> 246
+
+    // dobitsoff: damage bands + the transient deadoff=-1 quirk. Instruction
+    // always consumes sizeof(DOBITSOFF), then adds a band offset.
+    TestObj3D obj = TestObj3D();
+    shape_object_obj3d = &obj;
+    UByte stream2[32] = {0};
+    DOBITSOFF* db = (DOBITSOFF*)stream2;
+    db->animoff = 6;
+    db->dam1offset = 100;
+    db->dam2offset = 200;
+    db->deadoffset = 50;
+
+    anim[6] = 40;                                // below BS_DAMLV1 (85)
+    ip = stream2;
+    shape_dobitsoff(ip);
+    CHECK_EQ(ip - stream2, (long)sizeof(DOBITSOFF));
+
+    anim[6] = 90;                                // 85..169 -> dam1
+    ip = stream2;
+    shape_dobitsoff(ip);
+    CHECK_EQ(ip - stream2, (long)sizeof(DOBITSOFF) + 100);
+
+    anim[6] = 200;                               // 170..254 -> dam2
+    ip = stream2;
+    shape_dobitsoff(ip);
+    CHECK_EQ(ip - stream2, (long)sizeof(DOBITSOFF) + 200);
+
+    anim[6] = 255;                               // BS_DEAD -> deadoffset
+    ip = stream2;
+    shape_dobitsoff(ip);
+    CHECK_EQ(ip - stream2, (long)sizeof(DOBITSOFF) + 50);
+
+    // transient + deadoffset==0 rewinds 1 byte so the next opcode is re-read.
+    obj.IsTransient = 1;
+    db->deadoffset = 0;
+    ip = stream2;
+    shape_dobitsoff(ip);
+    CHECK_EQ(ip - stream2, (long)sizeof(DOBITSOFF) - 1);
+    obj.IsTransient = 0;
+
+    // doniverts writes ix/iy from count NEXTMAP records and advances vertex.
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+    UByte stream3[32] = {0};
+    DONIVERTS* iv = (DONIVERTS*)stream3;
+    iv->vertex = 2;
+    iv->count = 2;
+    NEXTMAP* nm = (NEXTMAP*)(stream3 + sizeof(DONIVERTS));
+    nm[0].ix = 640;  nm[0].iy = 480;
+    nm[1].ix = 11;   nm[1].iy = 22;
+
+    ip = stream3;
+    shape_doniverts(ip);
+    CHECK_EQ(ip - stream3,
+             (long)(sizeof(DONIVERTS) + 2 * sizeof(NEXTMAP)));
+    CHECK_EQ(shape_shpco[2].ix, 640);
+    CHECK_EQ(shape_shpco[2].iy, 480);
+    CHECK_EQ(shape_shpco[3].ix, 11);
+    CHECK_EQ(shape_shpco[3].iy, 22);
+
+    iv->count = 0;                               // no records consumed
+    ip = stream3;
+    shape_doniverts(ip);
+    CHECK_EQ(ip - stream3, (long)sizeof(DONIVERTS));
+}
+
+//------------------------------------------------------------------------------
+// Display-state setters that survive on a zeroed dummy MigWindow+MigDisplay
+// (SetLuminosity/SetTransparency are no-op stubs; DoSetGlobalAlpha returns
+// early when DD.lpDirect3D == NULL).
+//------------------------------------------------------------------------------
+static void test_state_setters()
+{
+    static UByte fake_screen[16384];
+    static UByte fake_display[16384];
+    static UByte fake_viewpoint[4096];
+    std::memset(fake_display, 0, sizeof(fake_display));
+    std::memset(fake_viewpoint, 0, sizeof(fake_viewpoint));
+    for (size_t i = 0; i < sizeof(fake_screen) / sizeof(void*); ++i)
+        ((void**)fake_screen)[i] = fake_display;
+    shape_current_screen = fake_screen;
+
+    UByte stream[16] = {0};
+
+    // dosetluminosity: animoff==0 uses brightness, clamped to LUM_MAX (8).
+    DOSETLUMINOSITY* sl = (DOSETLUMINOSITY*)stream;
+    sl->animoff = 0;
+    sl->brightness = 3;
+    UByte* ip = stream;
+    shape_dosetluminosity(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETLUMINOSITY));
+
+    sl->brightness = 200;                        // > LUM_MAX clamps to 8
+    ip = stream;
+    shape_dosetluminosity(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETLUMINOSITY));
+
+    // anim path: depth = GlobalAdptr[animoff] / animscale (guarded).
+    static UByte anim[8];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+    anim[5] = 64;
+    sl->animoff = 5;
+    sl->animscale = 4;                           // 64/4 = 16 -> clamp 8
+    ip = stream;
+    shape_dosetluminosity(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETLUMINOSITY));
+
+    sl->animscale = 0;                           // zero scale: raw 64 kept
+    ip = stream;
+    shape_dosetluminosity(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETLUMINOSITY));
+
+    // dolshadeon: detail bit clear -> else path, isLightShaded=FALSE. The
+    // struct carries only a surfacetype byte; ip advances sizeof(DOLSHADEON).
+    shape_doingHW3D = false;
+    shape_View_Point = fake_viewpoint;
+    ip = stream;
+    shape_dolshadeon(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOLSHADEON));
+
+    // Opcode-only state setters: no operand, instr_ptr does not move.
+    ip = stream;
+    shape_dosmokedon(ip);
+    CHECK_EQ(ip - stream, 0);
+    ip = stream;
+    shape_dosmokedoff(ip);
+    CHECK_EQ(ip - stream, 0);
+
+    // dotransparentoff restores oldAlphaSwitch; zeroed SHAPE -> 0 != -1, so
+    // the DoSetGlobalAlpha path fires through the dummy Master() chain.
+    ip = stream;
+    shape_dotransparentoff(ip);
+    CHECK_EQ(ip - stream, 0);
+}
+
+//------------------------------------------------------------------------------
+// Stretch writers: the 1998 code applies killfrac to Y but killdiff to X/Z -
+// an asymmetric quirk pinned here deliberately.
+//------------------------------------------------------------------------------
+static void test_stretch_writers()
+{
+    static UByte anim[16];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    TestObj3D obj = TestObj3D();
+    shape_object_obj3d = &obj;
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+    shape_fpobject_matrix = &ident;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    // dostretchpoint calls body2screen: mat_win must survive
+    // DoingHardware3D() so the POLYGON.viewdata path is taken.
+    static UByte fake_win[16384];
+    static UByte fake_disp[16384];
+    std::memset(fake_disp, 0, sizeof(fake_disp));
+    for (size_t i = 0; i < sizeof(fake_win) / sizeof(void*); ++i)
+        ((void**)fake_win)[i] = fake_disp;
+    _matrix.SetWin((MigWindow*)fake_win);
+
+    UByte stream[16] = {0};
+    DOSTRETCHPOINT* sp = (DOSTRETCHPOINT*)stream;
+    sp->killflag = 1;
+    sp->minpoint = 0;
+    sp->maxpoint = 1;
+    sp->outpoint = 2;
+
+    // nokills=0: out is a straight copy of min.
+    anim[1] = 0;
+    shape_shpco[0].bodyx.f = 7.0;  shape_shpco[0].bodyy.f = 8.0;
+    shape_shpco[0].bodyz.f = 9.0;
+    UByte* ip = stream;
+    shape_dostretchpoint(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSTRETCHPOINT));
+    CHECK_FEQ(shape_shpco[2].bodyx.f, 7.0);
+    CHECK_FEQ(shape_shpco[2].bodyz.f, 9.0);
+
+    // nokills=32 -> killfrac=2, killdiff=0: x/z get (max-min)/16*1, y gets
+    // (max-min)/16*3. The Y-vs-X/Z asymmetry is the original formula.
+    anim[1] = 32;
+    shape_shpco[0].bodyx.f = 0.0;  shape_shpco[0].bodyy.f = 0.0;
+    shape_shpco[0].bodyz.f = 0.0;
+    shape_shpco[1].bodyx.f = 160.0; shape_shpco[1].bodyy.f = 320.0;
+    shape_shpco[1].bodyz.f = 480.0;
+    ip = stream;
+    shape_dostretchpoint(ip);
+    CHECK_FEQ(shape_shpco[2].bodyx.f, 10.0);     // 160/16 * (0+1)
+    CHECK_FEQ(shape_shpco[2].bodyy.f, 60.0);     // 320/16 * (2+1)
+    CHECK_FEQ(shape_shpco[2].bodyz.f, 30.0);     // 480/16 * (0+1)
+
+    // dostretchmap: same formula on ix/iy (SWord fields, float diff added).
+    DOSTRETCHMAP* sm = (DOSTRETCHMAP*)stream;
+    sm->killflag = 1;
+    sm->minpoint = 0;
+    sm->maxpoint = 1;
+    sm->outpoint = 2;
+    anim[1] = 32;
+    shape_shpco[0].ix = 5;   shape_shpco[0].iy = 7;
+    shape_shpco[1].ix = 165; shape_shpco[1].iy = 327;
+    ip = stream;
+    shape_dostretchmap(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSTRETCHMAP));
+    CHECK_EQ(shape_shpco[2].ix, 15);             // 5 + 160/16*(0+1)
+    CHECK_EQ(shape_shpco[2].iy, 67);             // 7 + 320/16*(2+1)
+
+    anim[1] = 0;                                 // nokills=0: pure copy
+    shape_shpco[0].ix = 40;  shape_shpco[0].iy = 41;
+    ip = stream;
+    shape_dostretchmap(ip);
+    CHECK_EQ(shape_shpco[2].ix, 40);
+    CHECK_EQ(shape_shpco[2].iy, 41);
+}
+
+//------------------------------------------------------------------------------
+// Mirrored and delta vertex writers.
+//------------------------------------------------------------------------------
+static void test_delta_mirror_writers()
+{
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 32; ++i) shape_shpco[i] = DoPointStruc();
+    TestObj3D obj = TestObj3D();
+    shape_object_obj3d = &obj;
+    static FPMATRIX ident;
+    zero_fpmatrix(ident);
+    ident.L11 = ident.L22 = ident.L33 = 1.0;
+    shape_fpobject_matrix = &ident;
+    _matrix.fpMaximumZ = 1600000.0;
+
+    // dondeltapoints calls body2screen: see test_stretch_writers.
+    static UByte fake_win[16384];
+    static UByte fake_disp[16384];
+    std::memset(fake_disp, 0, sizeof(fake_disp));
+    for (size_t i = 0; i < sizeof(fake_win) / sizeof(void*); ++i)
+        ((void**)fake_win)[i] = fake_disp;
+    _matrix.SetWin((MigWindow*)fake_win);
+
+    // donpoint2x: each NNEXT2X writes vertex1 and a mirrored partner at
+    // vertex1+vertex with negated x; both end intensity/specular -1.
+    UByte stream[64] = {0};
+    DONPOINT2X* n2 = (DONPOINT2X*)stream;
+    n2->start_vertex = 5;
+    n2->count = 2;
+    NNEXT2X* recs = (NNEXT2X*)(stream + sizeof(DONPOINT2X));
+    recs[0].vertex = 10;  recs[0].xcoord = 30; recs[0].ycoord = 40;
+    recs[0].zcoord = 50;
+    recs[1].vertex = 10;  recs[1].xcoord = 60; recs[1].ycoord = 70;
+    recs[1].zcoord = 80;
+
+    UByte* ip = stream;
+    shape_donpoint2x(ip);
+    CHECK_EQ(ip - stream,
+             (long)(sizeof(DONPOINT2X) + 2 * sizeof(NNEXT2X)));
+    CHECK_FEQ(shape_shpco[5].bodyx.f, 30.0);
+    CHECK_FEQ(shape_shpco[15].bodyx.f, -30.0);   // mirrored partner
+    CHECK_FEQ(shape_shpco[15].bodyy.f, 40.0);
+    CHECK_FEQ(shape_shpco[6].bodyx.f, 60.0);
+    CHECK_FEQ(shape_shpco[16].bodyx.f, -60.0);
+    CHECK_EQ(shape_shpco[5].intensity, -1);
+    CHECK_EQ(shape_shpco[15].specular, -1);
+
+    // dondeltapoints: bases live at instr_ptr+offset, deltas follow the
+    // header; bodyx/z add deltas, bodyy SUBTRACTS (>>8 fixed point).
+    UByte stream2[64] = {0};
+    DONDELTAPOINTS* dp = (DONDELTAPOINTS*)stream2;
+    dp->count = 2;
+    dp->vertex = 3;
+    dp->mask = DMASK_X_Y_Z;
+    dp->scale = 256;                             // delta*256>>8 == delta
+    dp->offset = sizeof(DONDELTAPOINTS) + 2 * sizeof(NDNEXT3);
+
+    NDNEXT3* deltas = (NDNEXT3*)(stream2 + sizeof(DONDELTAPOINTS));
+    deltas[0].delta[0] = 10;  deltas[0].delta[1] = -20; deltas[0].delta[2] = 30;
+    deltas[1].delta[0] = 1;   deltas[1].delta[1] = 2;   deltas[1].delta[2] = 3;
+
+    NNEXT* bases = (NNEXT*)(stream2 + dp->offset);
+    bases[0].xcoord = 100;  bases[0].ycoord = 200;  bases[0].zcoord = 300;
+    bases[1].xcoord = 400;  bases[1].ycoord = 500;  bases[1].zcoord = 600;
+
+    ip = stream2;
+    shape_dondeltapoints(ip);
+    CHECK_EQ(ip - stream2,
+             (long)(sizeof(DONDELTAPOINTS) + 2 * sizeof(NDNEXT3)));
+    CHECK_FEQ(shape_shpco[3].bodyx.f, 110.0);    // 100 + 10
+    CHECK_FEQ(shape_shpco[3].bodyy.f, 220.0);    // 200 - (-20)
+    CHECK_FEQ(shape_shpco[3].bodyz.f, 330.0);    // 300 + 30
+    CHECK_FEQ(shape_shpco[4].bodyx.f, 401.0);
+    CHECK_FEQ(shape_shpco[4].bodyy.f, 498.0);    // 500 - 2
+    CHECK_FEQ(shape_shpco[4].bodyz.f, 603.0);
+    CHECK_EQ(shape_shpco[3].intensity, -1);
+    CHECK_EQ(shape_shpco[4].specFlip, -1);
+}
+
+//------------------------------------------------------------------------------
+// MODVEC primitives: dest-FIRST argument order, Rowan rotation conventions,
+// and zero-vector edge behavior.
+//------------------------------------------------------------------------------
+static void test_modvec_full()
+{
+    FCRD a, b, c;
+    a.x = 1; a.y = 2; a.z = 3;
+    b.x = 4; b.y = 5; b.z = 6;
+
+    mv_NullVec(c);
+    CHECK_FEQ(c.x, 0.0); CHECK_FEQ(c.y, 0.0); CHECK_FEQ(c.z, 0.0);
+
+    mv_CopyVec(a, c);
+    CHECK_FEQ(c.x, 1.0); CHECK_FEQ(c.y, 2.0); CHECK_FEQ(c.z, 3.0);
+
+    mv_AddVec(c, a, b);                          // c = a + b
+    CHECK_FEQ(c.x, 5.0); CHECK_FEQ(c.y, 7.0); CHECK_FEQ(c.z, 9.0);
+
+    mv_SubVec(c, b, a);                          // c = b - a
+    CHECK_FEQ(c.x, 3.0); CHECK_FEQ(c.y, 3.0); CHECK_FEQ(c.z, 3.0);
+
+    a.x = 3; a.y = 4; a.z = 12;
+    CHECK_FEQ(mv_VecLen(a), 13.0);               // 3-4-12 = 13
+
+    FP x = 3, y = 4;
+    CHECK(mv_NrmVec2D(x, y) == TRUE);
+    CHECK_FEQ(x, 0.6); CHECK_FEQ(y, 0.8);
+    x = 0; y = 0;
+    CHECK(mv_NrmVec2D(x, y) == FALSE);           // leaves args unchanged
+    CHECK_FEQ(x, 0.0); CHECK_FEQ(y, 0.0);
+
+    // RotateVec2D 90 deg: (x,y) -> (-y,x).
+    x = 1; y = 0;
+    mv_RotateVec2D(x, y, F1PIE2);
+    CHECK_FEQ(x, 0.0); CHECK_FEQ(y, 1.0);
+
+    // RotVec*SC with sin=1,cos=0 = 90 deg about each axis.
+    a.x = 1; a.y = 2; a.z = 3;
+    mv_RotVecXSC(a, c, 1.0, 0.0);                // y'=-z, z'=y
+    CHECK_FEQ(c.x, 1.0); CHECK_FEQ(c.y, -3.0); CHECK_FEQ(c.z, 2.0);
+    mv_RotVecYSC(a, c, 1.0, 0.0);                // x'=z, z'=-x
+    CHECK_FEQ(c.x, 3.0); CHECK_FEQ(c.y, 2.0); CHECK_FEQ(c.z, -1.0);
+    mv_RotVecZSC(a, c, 1.0, 0.0);                // x'=-y, y'=x
+    CHECK_FEQ(c.x, -2.0); CHECK_FEQ(c.y, 1.0); CHECK_FEQ(c.z, 3.0);
+
+    // SetOri(0,0,0) yields the identity orientation; TnsPnt through it
+    // copies the vector.
+    FORI ori;
+    mv_SetOri(ori, 0.0, 0.0, 0.0);
+    CHECK_FEQ(ori.x.x, 1.0); CHECK_FEQ(ori.y.y, 1.0);
+    CHECK_FEQ(ori.z.z, 1.0); CHECK_FEQ(ori.x.y, 0.0);
+    mv_TnsPnt(a, c, ori);
+    CHECK_FEQ(c.x, 1.0); CHECK_FEQ(c.y, 2.0); CHECK_FEQ(c.z, 3.0);
+
+    // CalcAngle = atan2 wrapped to [0, 2pi).
+    CHECK_FEQ(mv_CalcAngle(1, 0), 0.0);
+    CHECK_FEQ(mv_CalcAngle(0, 1), (FP)1.5707963);
+    CHECK_FEQ(mv_CalcAngle(-1, 0), (FP)3.1415927);
+    CHECK_FEQ(mv_CalcAngle(0, -1), (FP)4.7123890);
+    CHECK_FEQ(mv_CalcAngle(1, 1), (FP)0.7853982);
+}
+
 int main()
 {
     test_type_layout();
@@ -1663,6 +2188,12 @@ int main()
     test_flip_writers();
     test_ftoitexture();
     test_select_palette();
+    test_stream_advance();
+    test_anim_data_ops();
+    test_state_setters();
+    test_stretch_writers();
+    test_delta_mirror_writers();
+    test_modvec_full();
 
     test_win32_events();
     test_win32_semaphore();
