@@ -123,6 +123,22 @@ extern void           shape_dondeltapoints(UByte*& ip)
                                              __asm__("_ZN5shape14dondeltapointsERPh");
 extern void*          shape_View_Point __asm__("_ZN5shape10View_PointE");
 extern bool           shape_doingHW3D  __asm__("_ZN5shape9doingHW3DE");
+extern void           shape_dotimerphase(UByte*& ip)
+                                             __asm__("_ZN5shape12dotimerphaseERPh");
+extern void           shape_dofadeenvelope(UByte*& ip)
+                                             __asm__("_ZN5shape14dofadeenvelopeERPh");
+extern void           shape_donianimverts(UByte*& ip)
+                                             __asm__("_ZN5shape13donianimvertsERPh");
+extern void           shape_donsubs(UByte*& ip)
+                                             __asm__("_ZN5shape7donsubsERPh");
+extern void           shape_doifpiloted(UByte*& ip)
+                                             __asm__("_ZN5shape11doifpilotedERPh");
+extern void           shape_dodrawstation(UByte*& ip)
+                                             __asm__("_ZN5shape13dodrawstationERPh");
+extern void           shape_dowhiteout(UByte*& ip)
+                                             __asm__("_ZN5shape10dowhiteoutERPh");
+extern void*          BoxCol_Col_Shooter __asm__("_ZN6BoxCol11Col_ShooterE");
+extern UByte          Manual_Pilot_bytes[] __asm__("Manual_Pilot");
 
 // MODVEC.CPP - FP/FCRD/FORI signatures come from MODVEC.H.
 extern void mv_NullVec(FCRD& v) __asm__("_Z7NullVecR5_fcrd");
@@ -2151,6 +2167,301 @@ static void test_modvec_full()
     CHECK_FEQ(mv_CalcAngle(1, 1), (FP)0.7853982);
 }
 
+//------------------------------------------------------------------------------
+// Time/phase handlers. ViewPoint::TimeOfDay() is a 3-hop chain in the port:
+//   this+0x52 -> inst, inst+0x50 -> next, next+0x1d -> timeofday
+// (inst sits at an unaligned offset, so a uniform pointer-fill can't fake
+// it - the chain is built at the exact offsets). Setting timeofday makes
+// the returned time controllable instead of just zero.
+//------------------------------------------------------------------------------
+static UByte fake_viewpoint[4096];
+static UByte fake_instmid[4096];
+static UByte fake_inst[4096];
+static void init_fake_viewpoint(int tod)
+{
+    std::memset(fake_viewpoint, 0, sizeof(fake_viewpoint));
+    std::memset(fake_instmid, 0, sizeof(fake_instmid));
+    std::memset(fake_inst, 0, sizeof(fake_inst));
+    *(void**)(fake_viewpoint + 0x52) = fake_instmid;
+    *(void**)(fake_instmid + 0x50) = fake_inst;
+    *(int*)(fake_inst + 0x1d) = tod;
+    shape_View_Point = fake_viewpoint;
+}
+
+static void test_dotimerphase()
+{
+    init_fake_viewpoint(0);                      // TimeOfDay() == 0
+
+    static UByte anim[16];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+
+    // [DOTIMERPHASE][TPHASESTEP x2]: btime=0 -> tdelta=0.
+    UByte stream[32] = {0};
+    DOTIMERPHASE* tp = (DOTIMERPHASE*)stream;
+    tp->birthtimeoffset = 0;
+    tp->deltatimeoffset = 4;
+    tp->nophases = 2;
+    TPHASESTEP* ph = (TPHASESTEP*)(stream + sizeof(DOTIMERPHASE));
+    ph[0].timedelta = 100;   ph[0].objjump = 20;
+    ph[1].timedelta = 300;   ph[1].objjump = 30;
+
+    // tdelta=0 lands in phase 0: dtime=0, ip += objjump.
+    UByte* ip = stream;
+    shape_dotimerphase(ip);
+    CHECK_EQ(ip - stream, 20);                   // phase-0 jump from instr start
+    CHECK_EQ(*(UWord*)(anim + 4), 0);            // dtime = tdelta - lowtime
+
+    // btime so large that tdelta exceeds every phase delta -> no phase
+    // matches -> ip ends after all phase records.
+    *(ULong*)(anim + 0) = 0xFFFFF000;            // tdelta = 0x1000 > 300
+    ip = stream;
+    shape_dotimerphase(ip);
+    CHECK_EQ(ip - stream,
+             (long)(sizeof(DOTIMERPHASE) + 2 * sizeof(TPHASESTEP)));
+
+    // timedelta==65535 is the "open" phase: tdelta is forced to 65534 so
+    // the open phase always matches.
+    *(ULong*)(anim + 0) = 0;                     // tdelta=0 again? no: force
+    ph[0].timedelta = 50;
+    ph[1].timedelta = 65535; ph[1].objjump = 44;
+    *(ULong*)(anim + 0) = 0xFFFFFFFF;            // tdelta = 0 - 0xFFFFFFFF = 1
+    ip = stream;
+    shape_dotimerphase(ip);
+    // tdelta=1: lowtime=0,phase0 delta 50 -> match phase0, jump 20.
+    CHECK_EQ(ip - stream, 20);
+
+    // tdelta beyond phase0 but under the open phase -> phase1 jump.
+    *(ULong*)(anim + 0) = 0xFFFFFF00;            // tdelta = 0 - 0xFFFFFF00 = 256
+    ph[0].timedelta = 100;                       // 256 >= 100
+    ip = stream;
+    shape_dotimerphase(ip);
+    // 256 >= lowtime=100 && 256 < 65535 after forcing? No: timedelta==65535
+    // forces tdelta=65534, which is >= lowtime=100 and < 65535 -> phase1.
+    CHECK_EQ(ip - stream, 44);
+    CHECK_EQ(*(UWord*)(anim + 4), 65534 - 100);  // dtime = tdelta - lowtime
+}
+
+static void test_dofadeenvelope()
+{
+    init_fake_viewpoint(0);                      // TimeOfDay() == 0
+
+    static UByte anim[32];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+
+    // [DOFADEENVELOPE]: btime = TimeOfDay - SLong@birthtimeoffset.
+    UByte stream[16] = {0};
+    DOFADEENVELOPE* fe = (DOFADEENVELOPE*)stream;
+    fe->birthtimeoffset = 0;
+    fe->animfadeoffset = 8;
+    fe->attacktime = 100;
+    fe->decaytime = 50;
+    fe->sustaintime = 200;
+    fe->releasetime = 60;
+    fe->attackval = 200;
+    fe->decayval = 100;
+    fe->sustainval = 80;
+    fe->releaseval = 0;
+
+    // btime=0 <= attacktime? no: 0 > 100 false -> else branch ->
+    // totval = ((decayval-attackval)*0)/100 + attackval = 200.
+    *(SLong*)(anim + 0) = 0;
+    UByte* ip = stream;
+    shape_dofadeenvelope(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOFADEENVELOPE));
+    CHECK_EQ(anim[8], 200);                      // attackval at btime 0
+
+    // attacktime=0 + btime=0 -> else with attacktime guard false:
+    // totval stays attackval.
+    fe->attacktime = 0;
+    anim[8] = 0;
+    ip = stream;
+    shape_dofadeenvelope(ip);
+    CHECK_EQ(anim[8], 200);
+
+    // mid-attack: btime=50, attacktime=100 -> totval =
+    // (decayval-attackval)*50/100 + attackval = -50+200 = 150.
+    fe->attacktime = 100;
+    *(SLong*)(anim + 0) = -50;                   // TimeOfDay(0) - (-50) = 50
+    anim[8] = 0;
+    ip = stream;
+    shape_dofadeenvelope(ip);
+    CHECK_EQ(anim[8], 150);
+
+    // full release: btime > a+d+s+r -> totval = releaseval = 0.
+    *(SLong*)(anim + 0) = -1000;
+    anim[8] = 0;
+    ip = stream;
+    shape_dofadeenvelope(ip);
+    CHECK_EQ(anim[8], 0);
+}
+
+//------------------------------------------------------------------------------
+// donianimverts: frame-grid positioning (stepx/stepy * framew/framewx) then
+// NEXTMAP offsets - doniverts plus an animation-driven window origin.
+//------------------------------------------------------------------------------
+static void test_donianimverts()
+{
+    static UByte anim[16];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    // DONIANIMVERTS{vertex,count,animoff:9/noxframes:6/isthresh:1,
+    //               factor,framewx,framewy,mapscale}
+    UByte stream[32] = {0};
+    DONIANIMVERTS* nv = (DONIANIMVERTS*)stream;
+    nv->vertex = 1;
+    nv->count = 1;
+    nv->animoff = 2;
+    nv->noxframes = 4;                           // 4 frames across
+    nv->isthresh = 0;
+    nv->factor = 2;
+    nv->framewx = 32;
+    nv->framewy = 16;
+    nv->mapscale = 0;
+    NEXTMAP* nm = (NEXTMAP*)(stream + sizeof(DONIANIMVERTS));
+    nm->ix = 3;
+    nm->iy = 5;
+
+    // frameno = anim[2]/factor = 10/2 = 5 -> stepy = 5/4 = 1, stepx = 1.
+    anim[2] = 10;
+    UByte* ip = stream;
+    shape_donianimverts(ip);
+    CHECK_EQ(ip - stream,
+             (long)(sizeof(DONIANIMVERTS) + sizeof(NEXTMAP)));
+    CHECK_EQ(shape_shpco[1].ix, 32 * 1 + 3);     // minx=stepx*framewx
+    CHECK_EQ(shape_shpco[1].iy, 16 * 1 + 5);     // miny=stepy*framewy
+
+    // isthresh: frameno > factor -> 1 else 0 (no division at all).
+    nv->isthresh = 1;
+    nv->factor = 7;
+    anim[2] = 20;                                // 20 > 7 -> frameno 1
+    ip = stream;
+    shape_donianimverts(ip);
+    CHECK_EQ(shape_shpco[1].ix, 32 + 3);         // stepx=1,stepy=0
+    CHECK_EQ(shape_shpco[1].iy, 0 + 5);
+
+    anim[2] = 5;                                 // 5 <= 7 -> frameno 0
+    ip = stream;
+    shape_donianimverts(ip);
+    CHECK_EQ(shape_shpco[1].ix, 3);
+    CHECK_EQ(shape_shpco[1].iy, 5);
+
+    // factor=0 + isthresh=0: guarded divide keeps raw frameno.
+    nv->isthresh = 0;
+    nv->factor = 0;
+    anim[2] = 4;                                 // stepy=1,stepx=0
+    ip = stream;
+    shape_donianimverts(ip);
+    CHECK_EQ(shape_shpco[1].ix, 0 + 3);
+    CHECK_EQ(shape_shpco[1].iy, 16 + 5);
+
+    // noxframes=0: guarded -> stepx=frameno, stepy=0.
+    nv->noxframes = 0;
+    nv->factor = 1;
+    anim[2] = 2;
+    ip = stream;
+    shape_donianimverts(ip);
+    CHECK_EQ(shape_shpco[1].ix, 2 * 32 + 3);
+    CHECK_EQ(shape_shpco[1].iy, 0 + 5);
+}
+
+//------------------------------------------------------------------------------
+// donsubs: offset-table sub-shape calls through the real InterpLoop.
+//------------------------------------------------------------------------------
+static void test_donsubs()
+{
+    static void (*tab[dosetglassrangeno + 1])(UByte*&) = {};
+    void (**saved)(UByte*&) = shape_InterpTable; // ~shape() deletes this
+    shape_InterpTable = tab;                     // - restore it after the test
+    const int MARKOP = dosetglassrangeno;
+    tab[MARKOP] = &marker_op;
+
+    g_marker = 0;
+    // [DONSUBS{count=2}][off1][off2][pad pad][sub1][sub2]
+    // off@P jumps P+off; each sub is [MARKOP][doretno].
+    UByte stream[16] = {0};
+    *(UWord*)(stream + 0) = 2;                   // DONSUBS.count
+    *(UWord*)(stream + 2) = 6;                   // off1: 2+6 = 8
+    *(UWord*)(stream + 4) = 6;                   // off2: 4+6 = 10
+    stream[8]  = (UByte)MARKOP;
+    stream[9]  = (UByte)doretno;
+    stream[10] = (UByte)MARKOP;
+    stream[11] = (UByte)doretno;
+
+    UByte* ip = stream;
+    shape_donsubs(ip);
+    shape_InterpTable = saved;
+    CHECK_EQ(g_marker, 2);                       // both subs dispatched
+    CHECK_EQ(ip - stream, 6);                    // resumed after off2+2
+}
+
+//------------------------------------------------------------------------------
+// doifpiloted: BoxCol::Col_Shooter vs Manual_Pilot.ControlledAC2
+// (ManualPilot layout: ViewPoint*, WorldStuff*, CONTROLMODE, ControlledAC2
+// -> pointer at offset 12).
+//------------------------------------------------------------------------------
+static void test_doifpiloted()
+{
+    UByte stream[16] = {0};
+    DOIFPILOTED* pp = (DOIFPILOTED*)stream;
+    pp->offset = 40;
+
+    void* ac = (void*)0x1234;
+    *(void**)(Manual_Pilot_bytes + 12) = ac;     // ControlledAC2
+
+    BoxCol_Col_Shooter = ac;                     // match -> +sizeof
+    UByte* ip = stream;
+    shape_doifpiloted(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFPILOTED));
+
+    BoxCol_Col_Shooter = (void*)0x5678;          // mismatch -> +offset
+    ip = stream;
+    shape_doifpiloted(ip);
+    CHECK_EQ(ip - stream, 40);
+}
+
+//------------------------------------------------------------------------------
+// dodrawstation (empty station -> advance only) and dowhiteout (in/out of
+// the fade box; DoWhiteFade itself is a shape member we can't observe
+// portably, so the pin is ip movement + no crash).
+//------------------------------------------------------------------------------
+static void test_drawstation_whiteout()
+{
+    static UByte anim[256];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;                    // all stationshape fields 0
+
+    UByte stream[16] = {0};
+    DODRAWSTATION* ds = (DODRAWSTATION*)stream;
+    ds->stationno = 0;
+    UByte* ip = stream;
+    shape_dodrawstation(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DODRAWSTATION));
+
+    TestObj3D obj = TestObj3D();
+    shape_object_obj3d = &obj;
+    DOWHITEOUT* wo = (DOWHITEOUT*)stream;
+    wo->fadedist = 100;
+
+    obj.Body.X.f = 1000000;                      // way outside -> no fade
+    obj.Body.Y.f = 0;
+    obj.Body.Z.f = 0;
+    ip = stream;
+    shape_dowhiteout(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOWHITEOUT));
+
+    obj.Body.X.f = 10;                           // inside box -> fade path
+    obj.Body.Y.f = 20;
+    obj.Body.Z.f = 30;
+    ip = stream;
+    shape_dowhiteout(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOWHITEOUT));
+}
+
 int main()
 {
     test_type_layout();
@@ -2194,6 +2505,12 @@ int main()
     test_stretch_writers();
     test_delta_mirror_writers();
     test_modvec_full();
+    test_dotimerphase();
+    test_dofadeenvelope();
+    test_donianimverts();
+    test_donsubs();
+    test_doifpiloted();
+    test_drawstation_whiteout();
 
     test_win32_events();
     test_win32_semaphore();
