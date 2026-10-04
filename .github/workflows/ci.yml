@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      lint_files:
+        description: 'Lint only these files (space-separated; "all" = whole tree; empty = changed)'
+        required: false
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -104,17 +109,29 @@ jobs:
       - name: Determine changed files
         id: changed
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="${{ github.event.pull_request.base.sha }}"
+          if [ "${{ inputs.lint_files }}" = "all" ]; then
+            # full-tree audit: every source file counts as "changed" so
+            # any located error fails the run
+            git ls-files '*.cpp' '*.CPP' '*.cc' '*.cxx' '*.h' '*.H' '*.hpp' \
+              | grep -v '^build' > /tmp/changed.txt
+            echo "base=manual:all" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ inputs.lint_files }}" ]; then
+            # manual dispatch with explicit paths: lint them verbatim
+            tr ' ' '\n' <<< "${{ inputs.lint_files }}" > /tmp/changed.txt
+            echo "base=manual:${{ inputs.lint_files }}" >> "$GITHUB_OUTPUT"
           else
-            BASE="${{ github.event.before }}"
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              BASE="${{ github.event.pull_request.base.sha }}"
+            else
+              BASE="${{ github.event.before }}"
+            fi
+            git rev-parse --verify "$BASE" >/dev/null 2>&1 || BASE="HEAD~1"
+            git rev-parse --verify "$BASE" >/dev/null 2>&1 || BASE="HEAD"
+            echo "base=$BASE" >> "$GITHUB_OUTPUT"
+            git diff --name-only "$BASE...HEAD" -- \
+              '*.cpp' '*.CPP' '*.cc' '*.cxx' '*.h' '*.H' '*.hpp' \
+              | grep -v '^build' > /tmp/changed.txt || true
           fi
-          git rev-parse --verify "$BASE" >/dev/null 2>&1 || BASE="HEAD~1"
-          git rev-parse --verify "$BASE" >/dev/null 2>&1 || BASE="HEAD"
-          echo "base=$BASE" >> "$GITHUB_OUTPUT"
-          git diff --name-only "$BASE...HEAD" -- \
-            '*.cpp' '*.CPP' '*.cc' '*.cxx' '*.h' '*.H' '*.hpp' \
-            | grep -v '^build' > /tmp/changed.txt || true
           cat /tmp/changed.txt
           # headers can't be linted standalone (no MFC type context);
           # they are checked transitively via changed .cpp TUs, and stay
