@@ -895,6 +895,8 @@ void btree::drw_shadow(BaseObj3DPtr this_obj3d)
 //DEAD	POLYGON.SetPixelWidth(1);
 
 	SHAPE.subMatrixP = &omat;
+	static int shdbg=0;
+	if ((++shdbg&0x3FF)==1) printf("[SHD] process_shape #%d shape=%d\n",shdbg,robj3d->Shape);
 	SHAPE.process_shape(current_screen,View_Point,robj3d,&omat);
 }
 
