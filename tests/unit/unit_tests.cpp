@@ -2286,7 +2286,7 @@ static void test_modvec_full()
 
 //------------------------------------------------------------------------------
 // Time/phase handlers. ViewPoint::TimeOfDay() is a 3-hop chain in the port:
-//   this+0x52 -> inst, inst+0x50 -> next, next+0x1d -> timeofday
+//   this+0x3c -> view3dwin, view3dwin+0x50 -> inst, inst+0x1d -> timeofday
 // (inst sits at an unaligned offset, so a uniform pointer-fill can't fake
 // it - the chain is built at the exact offsets). Setting timeofday makes
 // the returned time controllable instead of just zero.
@@ -2299,7 +2299,7 @@ static void init_fake_viewpoint(int tod)
     std::memset(fake_viewpoint, 0, sizeof(fake_viewpoint));
     std::memset(fake_instmid, 0, sizeof(fake_instmid));
     std::memset(fake_inst, 0, sizeof(fake_inst));
-    *(void**)(fake_viewpoint + 0x52) = fake_instmid;
+    *(void**)(fake_viewpoint + 0x3c) = fake_instmid;
     *(void**)(fake_instmid + 0x50) = fake_inst;
     *(int*)(fake_inst + 0x1d) = tod;
     shape_View_Point = fake_viewpoint;
@@ -2582,7 +2582,7 @@ static void test_drawstation_whiteout()
 
 //------------------------------------------------------------------------------
 // Lighting/vector handlers: donvec and dondupvec gate everything on
-// View_Point->isLightShaded (Bool at ViewPoint+0x222, per dolshadeon's store).
+// View_Point->isLightShaded (Bool at ViewPoint+0x1e4, per dolshadeon's store).
 // Shaded path normalises each NEXTVEC record, dots it with TransLightVector,
 // maps to intensity, and optionally runs calcSpecular against TransViewVector.
 //------------------------------------------------------------------------------
@@ -2613,7 +2613,7 @@ static void test_donvec()
 
     // light-shaded: light = +X. Facing normal -> lit (intensity 1);
     // back-facing -> clamps at 256.
-    *(int*)(fake_viewpoint + 0x222) = 1;   // isLightShaded = TRUE
+    *(int*)(fake_viewpoint + 0x1e4) = 1;   // isLightShaded = TRUE
     shape_TransLightVector.ni.f = 1.0;
     shape_TransLightVector.nj.f = 0.0;
     shape_TransLightVector.nk.f = 0.0;
@@ -2667,7 +2667,7 @@ static void test_donvec()
     CHECK_EQ(ip - stream, (long)sizeof(DONVEC));
     CHECK_EQ(shape_shpco[2].intensity, 0x7777);
 
-    *(int*)(fake_viewpoint + 0x222) = 0;
+    *(int*)(fake_viewpoint + 0x1e4) = 0;
     shape_specularEnabled = FALSE;
 }
 
@@ -2693,7 +2693,7 @@ static void test_dondupvec()
     CHECK_EQ(ip - stream, (long)sizeof(DONDUPVEC));
     CHECK_EQ(shape_shpco[2].intensity, 0x7777);
 
-    *(int*)(fake_viewpoint + 0x222) = 1;   // isLightShaded = TRUE
+    *(int*)(fake_viewpoint + 0x1e4) = 1;   // isLightShaded = TRUE
     shape_TransLightVector.ni.f = 1.0;
     shape_TransLightVector.nj.f = 0.0;
     shape_TransLightVector.nk.f = 0.0;
@@ -2737,7 +2737,7 @@ static void test_dondupvec()
     CHECK_EQ(ip - stream, (long)sizeof(DONDUPVEC));
     CHECK_EQ(shape_shpco[2].intensity, 0x7777);
 
-    *(int*)(fake_viewpoint + 0x222) = 0;
+    *(int*)(fake_viewpoint + 0x1e4) = 0;
     shape_specularEnabled = FALSE;
 }
 
@@ -2793,7 +2793,7 @@ static void test_dovector()
     CHECK_EQ(ip - stream, (long)sizeof(DOVECTOR));
     CHECK_EQ(shape_shpco[3].intensity, 0x7777);
 
-    *(int*)(fake_viewpoint + 0x222) = 1;   // isLightShaded = TRUE
+    *(int*)(fake_viewpoint + 0x1e4) = 1;   // isLightShaded = TRUE
     shape_TransLightVector.ni.f = 1.0;
     shape_TransLightVector.nj.f = 0.0;
     shape_TransLightVector.nk.f = 0.0;
@@ -2820,7 +2820,7 @@ static void test_dovector()
     shape_dovector(ip);
     CHECK_EQ(shape_shpco[3].intensity, 256);
 
-    *(int*)(fake_viewpoint + 0x222) = 0;
+    *(int*)(fake_viewpoint + 0x1e4) = 0;
     shape_specularEnabled = FALSE;
 }
 
@@ -3285,13 +3285,14 @@ static void test_doanimation()
 // 32768) and 8.8-fixed tan_table. high_sin_cos interpolates within each
 // 64-angle step; sin_cos truncates.
 //
-// Quirks pinned, not "fixed":
-//  - arcsin/arccos are exact-match linear scans returning the table INDEX
-//    (units of 1/1024 turn). Non-table inputs return uninitialized stack
-//    garbage - only exact matches are pinned.
-//  - hightan's QII/QIII branch assigns tan0 twice and never sets tan1
-//    ("DAW 27Sep00 from bob" copy-paste): upper-half angles produce
-//    garbage. First-quadrant values only are pinned.
+// Fixed defects (were pinned as quirks before the bug-fix pass):
+//  - arcsin/arccos were exact-match linear scans returning the table
+//    INDEX and uninitialized garbage on misses; both now delegate to
+//    high_arc_sin/high_arc_cos (real math, same input scale).
+//  - hightan's QII/QIV branch assigned tan0 twice and never set tan1
+//    ("DAW 27Sep00 from bob" copy-paste), indexed tan_table[-1] at the
+//    180deg boundary, and fed the quadrant bit into the interpolation
+//    fraction. All three are fixed; upper-half angles now interpolate.
 //------------------------------------------------------------------------------
 static void test_mathlib_trig()
 {
@@ -3327,11 +3328,19 @@ static void test_mathlib_trig()
     CHECK_EQ(Math_Lib.tan(ANGLES_135Deg), -252);
     CHECK_EQ(Math_Lib.tan((Angles)0x1000), 105);   // 22.5deg
 
-    // hightan is 16.16 fixed: hightan(45deg)=65536. Upper-half quadrants
-    // hit the uninitialized-tan1 bug - not pinned (see header).
+    // hightan is 16.16 fixed: hightan(45deg)=65536. Upper-half angles
+    // mirror through -tan_table[255-i] (off-by-one vs the ideal 256-i
+    // mirror is the original BoB convention, kept).
     CHECK_EQ(Math_Lib.hightan(ANGLES_0Deg), 0);
     CHECK_EQ(Math_Lib.hightan(ANGLES_45Deg), 65536);
     CHECK_EQ(Math_Lib.hightan((Angles)0x1000), 26880);
+    SLong ht135 = Math_Lib.hightan(ANGLES_135Deg);
+    CHECK(ht135 < 0 && ht135 < -60000 && ht135 > -70000);  // ~-1.0*65536
+    SLong ht225 = Math_Lib.hightan((Angles)0xA000);        // 225deg: tan=+1
+    CHECK(ht225 > 0 && ht225 > 60000 && ht225 < 70000);
+    CHECK_EQ(Math_Lib.hightan(ANGLES_180Deg), 0);
+    Math_Lib.hightan((Angles)0x7FFF);                      // boundary, no OOB
+    Math_Lib.hightan((Angles)0xFFFF);
 
     // arctan(dx,dy) = 10430.387*atan2(dx,dy) - quadrant-exact.
     CHECK_EQ((SWord)Math_Lib.arctan(0, 1000), 0);
@@ -3353,13 +3362,16 @@ static void test_mathlib_trig()
     CHECK_EQ((SWord)Math_Lib.HighArcTan(1000, -1000), ANGLES_135Deg);
     CHECK_EQ((SWord)Math_Lib.HighArcTan(0, 0), 0);
 
-    // arcsin/arccos: exact table matches only - return is the 10-bit
-    // index, i.e. angle>>8 in Rowan units.
+    // arcsin/arccos now delegate to high_arc_sin/high_arc_cos: real
+    // angles out, deterministic for every input (was uninit garbage).
     CHECK_EQ((SWord)Math_Lib.arcsin(0), 0);
-    CHECK_EQ((SWord)Math_Lib.arcsin(201), 1);
-    CHECK_EQ((SWord)Math_Lib.arcsin(23169), 128);     // sin45 -> 45deg>>6
-    CHECK_EQ((SWord)Math_Lib.arccos(32767), 0);
-    CHECK_EQ((SWord)Math_Lib.arccos(32766), 1);
+    CHECK_EQ((SWord)Math_Lib.arcsin(16384), 5461);    // sin^-1(0.5) -> 30deg
+    CHECK_EQ((SWord)Math_Lib.arcsin(32767), 16302);   // ~89.6deg
+    CHECK_EQ((SWord)Math_Lib.arcsin(-16384), -5461);
+    CHECK_EQ((SWord)Math_Lib.arccos(0), ANGLES_90Deg);
+    CHECK_EQ((SWord)Math_Lib.arccos(32767), (SWord)Math_Lib.high_arc_cos(32767));
+    CHECK_EQ((SWord)Math_Lib.arccos(-16384),
+             (SWord)(ANGLES_180Deg - (SWord)Math_Lib.arccos(16384)));
 
     // high-precision variants use real FP math (correct values).
     CHECK_EQ((SWord)Math_Lib.high_arc_sin(0), 0);
@@ -3746,9 +3758,10 @@ static void test_mathasm_misc()
 //------------------------------------------------------------------------------
 // BITCOUNT.H flag macros - ONLYFIELD wraps a value with a typed proxy;
 // the BEGIN_/FIRST_/BITFIELD/LAST_/END_BITFIELD_STRUCT family (the live
-// one - BOOLFIELDS is dead: BOOLFIELD is never defined) generates a
-// struct holding `value` plus one independent proxy per field; each
-// proxy masks writes to its declared width.
+// one - BOOLFIELDS is dead: BOOLFIELD is never defined) unions `value`
+// with one proxy per field, so fields alias the raw word like real
+// bitfields (was: independent storage - 4x size, value disconnected -
+// which bloated every serialized struct containing them).
 //------------------------------------------------------------------------------
 struct BitfieldBox {
     BEGIN_BITFIELD_STRUCT(Test16, UWord)
@@ -3768,8 +3781,8 @@ static void test_bitcount_macros()
     CHECK_EQ(o.flag.value, 7);
 
     BitfieldBox box = {};
-    // value + three UWord proxies under pack(1).
-    CHECK_EQ(sizeof(box.Test16), 8);
+    // All three proxies union over the single UWord `value`.
+    CHECK_EQ(sizeof(box.Test16), 2);
 
     // Field proxies mask to their declared bit width.
     box.Test16.low3 = 0xFF;                 // 3-bit field
@@ -3779,14 +3792,16 @@ static void test_bitcount_macros()
     box.Test16.top2 = 0x7;                  // 2-bit field
     CHECK_EQ((int)box.Test16.top2, 3);
 
-    // Proxies are separate members from `value` - writes to a field do
-    // not touch the raw word, and vice versa.
-    box.Test16.value = 0x1234;
-    CHECK_EQ((int)box.Test16.low3, 7);
-    box.Test16.low3 = 0;
-    CHECK_EQ(box.Test16.value, 0x1234);
-    box.Test16 = 0xABCD;                    // storage_t assign
+    // Fields alias `value` both directions - real bitfield semantics.
+    CHECK_EQ(box.Test16.value, (7 | (0xF << 3) | (3 << 7)));   // 0x01FF
+    box.Test16.value = 0xA5;                // raw write -> field reads
+    CHECK_EQ((int)box.Test16.low3, 5);
+    CHECK_EQ((int)box.Test16.mid4, 4);
+    CHECK_EQ((int)box.Test16.top2, 1);
+    box.Test16 = UWord(0xABCD);             // storage_t assign
     CHECK_EQ(box.Test16.value, 0xABCD);
+    box.Test16.low3 = 0;                    // field write preserves others
+    CHECK_EQ(box.Test16.value, 0xABC8);
 }
 
 //------------------------------------------------------------------------------

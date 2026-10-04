@@ -30,7 +30,7 @@
 #ifndef	BITF2_Included
 #define	BITF2_Included
 //   "limits.h"
-#define	DEFAULT_BITF2 0
+constexpr int	DEFAULT_BITF2 = 0;
 //TEMPCODE RDH 24/05/99 #define	TRACKBADASSIGNMENTS
 #ifdef	TRACKBADASSIGNMENTS
 #define	BITFIELD_AGGREGATOR	struct
@@ -87,14 +87,10 @@
 #define BEGIN_BITFIELD_STRUCT(Name, Storage)                                    \
     struct Name {                                                               \
         using storage_t = Storage;                                              \
-        storage_t value{};                                                      \
-                                                                                \
-        operator storage_t() const noexcept { return value; }                    \
-        Name& operator=(storage_t v) noexcept { value = v; return *this; }       \
-    private:
+        union {                                                                 \
+            storage_t value;
 
 #define FIRST_BITFIELD(Type, fieldname, maxbit)                                 \
-    public:                                                                     \
         struct {                                                                \
             storage_t fieldname : (maxbit + 1);                                 \
             storage_t : (8*sizeof(storage_t) - (maxbit + 1));                   \
@@ -102,36 +98,36 @@
                 { return Type(static_cast<storage_t>(fieldname)); }               \
             Type operator=(Type v) noexcept                                      \
                 { fieldname = static_cast<storage_t>(v); return v; }            \
-        } fieldname{};
+        } fieldname;
 
 #define BITFIELD(Type, fieldname, minbit, maxbit)                               \
-    public:                                                                     \
         struct {                                                                \
             storage_t : (minbit);                                               \
             storage_t fieldname : (maxbit + 1 - minbit);                        \
             storage_t : (8*sizeof(storage_t) - (maxbit + 1));                   \
             operator Type() const noexcept                                       \
-                { return Type(static_cast<storage_t>(fieldname)); }             \
+                { return Type(static_cast<storage_t>(fieldname)); }               \
             Type operator=(Type v) noexcept                                      \
                 { fieldname = static_cast<storage_t>(v); return v; }            \
-        } fieldname{};
+        } fieldname;
 
 #define LAST_BITFIELD(Type, fieldname, minbit, maxbit)                          \
-    public:                                                                     \
         struct {                                                                \
             storage_t : (minbit);                                               \
             storage_t fieldname : (maxbit + 1 - minbit);                        \
             operator Type() const noexcept                                       \
-                { return Type(static_cast<storage_t>(fieldname)); }             \
+                { return Type(static_cast<storage_t>(fieldname)); }               \
             Type operator=(Type v) noexcept                                      \
                 { fieldname = static_cast<storage_t>(v); return v; }            \
-        } fieldname{};
+        } fieldname;
 
 #define END_BITFIELD_STRUCT(Name, Storage)                                       \
-    public:                                                                     \
-        Name() noexcept = default;                                              \
-        Name(storage_t v) noexcept : value(v) {}                                \
+        };                                                                      \
+        Name() noexcept { value = 0; }                                          \
+        Name(storage_t v) noexcept { value = v; }                               \
+        operator storage_t() const noexcept { return value; }                    \
+        Name& operator=(storage_t v) noexcept { value = v; return *this; }       \
     };                                                                          \
-    Name Name;       /* ← THIS LINE IS THE MAGIC: automatically creates the member */
+    Name Name;       /* this line automatically creates the member */
 
 #endif

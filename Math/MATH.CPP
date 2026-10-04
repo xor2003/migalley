@@ -81,8 +81,8 @@ questions about this file may be asked at http://www.simhq.com/
 
 	#include <cmath> //RERUN for std::sqrt
 	
-#define	sin_index	0
-#define	cos_index	256
+constexpr int	sin_index	= 0;
+constexpr int	cos_index	= 256;
 
 UWord MathLib::Days_in_Month[] =
 {
@@ -614,18 +614,10 @@ void MathLib::high_sin_cos(ANGLES ang, SWord& sin_ang, SWord& cos_ang)
 //------------------------------------------------------------------------------
 ANGLES MathLib::arcsin(SWord ax)
 {
-	ANGLES ang;
-	SWord i;
-
-	for (i=0;i<256;i++)											//RJS 17Nov97
-	{															//RJS 17Nov97
-		if (sincos_table[i]==ax)								//RJS 17Nov97
-		{														//RJS 17Nov97
-			ang =(Angles) i;									//RJS 17Nov97
-			break;												//RJS 17Nov97
-		}														//RJS 17Nov97
-	}															//RJS 17Nov97
-	return(ang);
+	//the old table scan returned uninitialised garbage for any
+	//non-exact table value, and a raw index rather than an angle.
+	//high_arc_sin computes the real arcsin over the same input scale.
+	return high_arc_sin(ax);
 }
 
 
@@ -719,18 +711,9 @@ ANGLES MathLib::high_arc_sin(SWord sa)
 //------------------------------------------------------------------------------
 ANGLES MathLib::arccos(SWord ax)
 {
-	ANGLES ang;
-	SWord i;
-
-	for (i=0;i<256;i++)
-		{
-			if (sincos_table[i+cos_index]==ax)
-				{
-					ang = (Angles) i;
-				}
-		}
-	return(ang);
-	
+	//same uninitialised-return defect as arcsin; delegate to the
+	//real implementation which also handles ax==0 and ax<0.
+	return high_arc_cos(ax);
 }
 
 
@@ -938,10 +921,10 @@ SLong MathLib::hightan(ANGLES ang)
 	ANGLES a0, angmod;
 	SLong tan0, tan1, reqtan;
 
+	ANGLES frac = (Angles)(ang & (ANGLES_90Deg-1));
 	if (!(ang & ANGLES_90Deg))										//RDH 30Nov95
 	{
-		angmod = (Angles)(ang & ANGLES_90Deg-1);
-		a0 = angmod = (Angles)(angmod>>6);
+		a0 = angmod = (Angles)(frac>>6);
 		tan0 = tan_table[angmod];
 		if (angmod < 255)
 			angmod++;
@@ -949,15 +932,14 @@ SLong MathLib::hightan(ANGLES ang)
 	}
 	else
 	{
-		angmod = (Angles)(ang & ANGLES_90Deg-1);
-		a0 = angmod = (Angles)(angmod>>6);
+		a0 = angmod = (Angles)(frac>>6);
 		tan0 = -tan_table[255-angmod];							//DAW 27Sep00 from bob
-		if (angmod > 0)
+		if (angmod < 255)
 			angmod++;
-		tan0 = -tan_table[255-angmod];							//DAW 27Sep00 from bob
+		tan1 = -tan_table[255-angmod];							//DAW 27Sep00 from bob
 	}
 
-	reqtan = 256 * tan0 + 4 * (tan1 - tan0) * (ang - a0 * 64);
+	reqtan = 256 * tan0 + 4 * (tan1 - tan0) * (frac - a0 * 64);
 	return (reqtan);
 }
 
