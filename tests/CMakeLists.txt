@@ -8,6 +8,8 @@
 
 find_program(BASH_EXE bash REQUIRED)
 
+add_subdirectory(unit)
+
 add_test(
     NAME smoke_xvfb
     COMMAND ${BASH_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/smoke_xvfb.sh $<TARGET_FILE:MigAlley>

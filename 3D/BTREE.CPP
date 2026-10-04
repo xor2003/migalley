@@ -136,6 +136,11 @@ btree::btree(SLong land_tree_size,SLong item_tree_size)
 
 	item_list_index =
 	land_list_index = 0;
+
+	farobj = 0;
+	objcount = 0;
+	current_screen = NULL;
+	View_Point = NULL;
 }
 
 //------------------------------------------------------------------------------
@@ -344,10 +349,6 @@ void btree::insert_object2(BaseObj3DPtr new_object)				//PD 12Mar96
 	BaseObj3DPtr	scan_index,									//PD 12Mar96
 					next_index;
 
-	Obj3DPtr		o3dp = (Obj3DPtr )new_object;
-
-	itemptr			ip = o3dp->ItemPtr;
-
 	Float		scan_bodyz,
 				new_bodyz;
 
@@ -476,6 +477,9 @@ void btree::recurse(BaseObj3DPtr next_index)					//PD 12Mar96
 {
 	BaseObj3DPtr scan_index;									//PD 12Mar96
 
+	if (next_index==NULL)
+		return;
+
 	do
 	{
 		scan_index = next_index;
@@ -498,6 +502,9 @@ void btree::recurse(BaseObj3DPtr next_index)					//PD 12Mar96
 void btree::nz_recurse(BaseObj3DPtr next_index)					//PD 12Mar96
 {
 	BaseObj3DPtr scan_index;									//PD 12Mar96
+
+	if (next_index==NULL)
+		return;
 
 	do
 	{

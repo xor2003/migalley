@@ -75,6 +75,7 @@ questions about this file may be asked at http://www.simhq.com/
 #define F_BATTLE
 		#include	"POLYGON.H"
 		#include	"MATRIX.H"
+		#include	"FTOI.H"
 #include "SAVEGAME.H"
 		#include	"MIGLAND.H"
 		class polygon POLYGON;
@@ -138,15 +139,6 @@ inline SLong ASM_AmulBdivC(SLong a,SLong b,SLong c)
 	};															//RJS 17Nov97
 
 
-inline void FtoITexture(VERTEX_PTR* ppv)
-{
-	while (*ppv)
-	{
-		(*ppv)->ix.i=SLong((*ppv)->ix.f);
-		(*ppv)->iy.i=SLong((*ppv)->iy.f);
-		ppv++;
-	}
-}
 bool fNoFogOrClip=false;
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -3522,7 +3514,7 @@ void polygon::DoLine3D(Colour cc,DoPointStruc& svt,DoPointStruc& evt)
 {
 	if ((svt.clipFlags&evt.clipFlags)!=CF3D_NULL) return;	/* line is off screen */
 
-	VERTEX vin,vout,vclip;
+	VERTEX vin = VERTEX(),vout = VERTEX(),vclip = VERTEX();
 	vin.bx.f=svt.bodyx.f;
 	vin.by.f=svt.bodyy.f;
 	vin.bz.f=svt.bodyz.f;

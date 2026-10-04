@@ -139,7 +139,7 @@ inline UByte&	animptr::operator[] (int a)
 #ifndef	NANIMDEBUG
 	assert((size&~(1<<MINANIM))>a);
 #endif
-	return UByteP(ptr)[a];
+	return ((UByteP)ptr)[a];
 }
 
 inline UByte&	animptr::operator[] (SWord a)
@@ -147,7 +147,7 @@ inline UByte&	animptr::operator[] (SWord a)
 #ifndef	NANIMDEBUG
 	assert((size&~(1<<MINANIM))>a);
 #endif
-	return UByteP(ptr)[a];
+	return ((UByteP)ptr)[a];
 }
 
 inline UByte&	animptr::operator[] (UWord a)
@@ -155,7 +155,7 @@ inline UByte&	animptr::operator[] (UWord a)
 #ifndef	NANIMDEBUG
 	assert((size&~(1<<MINANIM))>a);
 #endif
-	return UByteP(ptr)[a];
+	return ((UByteP)ptr)[a];
 }
 
 inline UByte&	animptr::operator[] (UByte a)
@@ -163,7 +163,7 @@ inline UByte&	animptr::operator[] (UByte a)
 #ifndef	NANIMDEBUG
 	assert((size&~(1<<MINANIM))>a);
 #endif
-	return UByteP(ptr)[a];
+	return ((UByteP)ptr)[a];
 }
 
 inline void	animptr::operator += (int a)

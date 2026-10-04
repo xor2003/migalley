@@ -666,9 +666,10 @@ static inline int QueryPerformanceCounter(LARGE_INTEGER* lpPerformanceCount)
 static inline int QueryPerformanceFrequency(LARGE_INTEGER* lpFrequency)
 {
     // CLOCK_MONOTONIC is defined in nanoseconds
-    lpFrequency->QuadPart = 1000000000LL;
-    lpFrequency->LowPart  = (uint32_t)(lpFrequency->QuadPart & 0xFFFFFFFF);
-    lpFrequency->HighPart = (int32_t)(lpFrequency->QuadPart >> 32);
+    int64_t freq = 1000000000LL;
+    lpFrequency->QuadPart = freq;
+    lpFrequency->LowPart  = (uint32_t)(freq & 0xFFFFFFFF);
+    lpFrequency->HighPart = (int32_t)(freq >> 32);
     return 1; // TRUE
 }
 
@@ -802,15 +803,15 @@ struct HandleBase {
 // Internal wrapper types
 struct LinuxSemaphore : public HandleBase {
     sem_t sem;
-    int   maxCount;   // optional: track maximum count
+    int   maxCount = 0;   // optional: track maximum count
     LinuxSemaphore() { type = HandleType::Semaphore; }
 };
 
 struct PosixEventObject : public HandleBase {
     pthread_mutex_t mutex;
     pthread_cond_t  cond;
-    bool            signaled;
-    bool            manualReset;
+    bool            signaled = false;
+    bool            manualReset = false;
     PosixEventObject() { type = HandleType::Event; }
 };
 // Drop-in replacement for CreateEvent
@@ -944,6 +945,7 @@ inline HANDLE CreateSemaphore(void* /*lpSemaphoreAttributes*/,
         return nullptr;
     }
     // Note: POSIX semaphores don’t enforce max count, you’ll need to track it manually if required
+    s->maxCount = lMaximumCount;
     return s;
 }
 

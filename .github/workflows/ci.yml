@@ -121,9 +121,10 @@ jobs:
           # in changed.txt so errors located in them still gate
           grep -Ei '\.(cpp|cc|cxx)$' /tmp/changed.txt > /tmp/lint_files.txt || true
 
-      # lint.sh runs clang-check + clang-tidy + cppcheck per file.
-      # Legacy headers produce pre-existing noise, so only *errors* whose
-      # location is inside one of the changed files fail the job.
+      # lint.sh runs clang-check + cppcheck per file (clang-tidy stays
+      # manual-only via -t so the tree remains easy to diff against the
+      # original sources). Legacy headers produce pre-existing noise, so
+      # only *errors* whose location is inside a changed file fail the job.
       - name: Run linters
         run: |
           mapfile -t FILES < /tmp/lint_files.txt

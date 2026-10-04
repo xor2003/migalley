@@ -1724,6 +1724,10 @@ void shape::dopolygon(UByte *& instr_ptr)
 		val = *((ULongP)&GlobalAdptr[ptr->animoffset]);			//RJS 16Apr99
 		maxshift = 32;
 		break;
+	default:
+		val = 0;
+		maxshift = 0;
+		break;
 	}
 	oredFlags=CF3D_NULL;
 	andedFlags=CF3D_ALL;
@@ -1755,15 +1759,16 @@ void shape::dopolygon(UByte *& instr_ptr)
 		}
 		else
 		{
+			//x86 masks shift counts to 5 bits: >>32 behaved as >>0
 			if (ptr->shiftx)
 			{
-				minx += (val * ptr->width)>>maxshift;
+				minx += (val * ptr->width)>>(maxshift&31);
 				minx-=(rwidth/2);
 			}
 
 			if (ptr->shifty)
 			{
-				miny += (val * ptr->height)>>maxshift;
+				miny += (val * ptr->height)>>(maxshift&31);
 				miny-=(rheight/2);
 			}
 		}
@@ -2091,7 +2096,7 @@ void shape::dopolygon(UByte *& instr_ptr)
 			{
 				randno--;
 
-				DoPointStruc	dp1,dp2,dp3,dp4;
+				DoPointStruc	dp1 = DoPointStruc(),dp2,dp3,dp4;
 				SWord			width = ddptr->ix;
 				SWord			height = ddptr->iy;
 				SWord			nofx,stepx,stepy,minx,miny,maxx,maxy;
@@ -2747,8 +2752,8 @@ void shape::dogunsight(UByte *& instr_ptr)
 	}
 
 	SHAPE.oldAlphaSwitch = -1;
-	totintensity = totintensity / count;
-	if (totintensity > ptr->threshold)
+	totintensity = count ? totintensity / count : 0;
+	if (totintensity > ptr->threshold && ptr->threshold < 256)
 	{
 		SWord	depth = ((totintensity-ptr->threshold)*255)/(256-ptr->threshold);
 
@@ -6306,9 +6311,11 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 
 		//Scale back to cm units and add the base coordinates back on//PD 08Mar96
 
-		wx.i = (SLong)wx.f;
-		wy.i = (SLong)wy.f;
-		wz.i = (SLong)wz.f;
+		SLong	wxi = (SLong)wx.f,
+				wyi = (SLong)wy.f,
+				wzi = (SLong)wz.f;
+
+		wx.i = wxi; wy.i = wyi; wz.i = wzi;
 
 		wx.i += basex; wy.i += basey; wz.i += basez;
 
@@ -6446,7 +6453,7 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 			SWord	MaxDepth = 64;
 			ImageMapNumber	theImap;
 			ImageMapNumber	theImap2;
-			SWord	minx2,miny2,maxx2,maxy2;
+			SWord	minx2 = 0,miny2 = 0,maxx2 = 0,maxy2 = 0;
 			SWord	realfade = fadetype;
 			SLong	fadetime = adptr->LifeTime - adptr->FadeTime;
 			SLong	lifegone = adptr->LifeTime - adptr->lifeleft;
@@ -6898,7 +6905,7 @@ void shape::SunItemAnim(SunAnimData* adptr)
  			//Use body2screen to generate the correct screen 
  			//coordinates
  
- 			DoPointStruc	dps,dps2;
+ 			DoPointStruc	dps = DoPointStruc(),dps2 = DoPointStruc();
 			Float			disx, disy;
  
  			dps.bodyx.f=object_obj3d->Body.X.f;						//RJS 26Feb97
@@ -7407,6 +7414,9 @@ void shape::SunItemAnim(SunAnimData* adptr)
 		case 32:
 			flag = *((SLongP)&GlobalAdptr[ptr->animflag]);
 			flagsize--;										//RJS 10Feb98
+			break;
+		default:
+			flag = 0;
 			break;
 	}
 
@@ -8298,7 +8308,7 @@ void shape::docompass(UByte *& instr_ptr)
 					DOGROUP_PTR		gptr;
 					SLong			Col_NextDep = 0;
 					SLong			Col_PrevDep = 0;
-					Coords3D		pPos,nPos;
+					Coords3D		pPos = Coords3D(),nPos = Coords3D();
 					GrpMinAnimData*	gmad = (GrpMinAnimData*) mad;
 					UWord			panimoff,nanimoff;
 
@@ -14694,7 +14704,7 @@ SLong	shape::DrawSmokeTrail(	SWord		index,
 		UByteP			lastdrawnobj = NULL;
 		UByteP			thisdrawnobj = NULL;
 		UWord			failedcnt = 0;
-		VapAnimDat		AnimDat;
+		VapAnimDat		AnimDat = VapAnimDat();
 		VapAnimDatPtr	AnimDataPtr;
 		SLong			timesincebirth;
 		SLong			totcount = 0;
@@ -15685,7 +15695,7 @@ SLong	shape::DetatchVapourStream(int	index,int	LifeTime, bool novapour)
 	ShapeDescPtr	sdptr = SHAPESTUFF.GetShapePtr(pTrailItm->shape);//DAW 19May99
 	if (sdptr->Type.VapourType != TRAIL_OFF)
 	{
-		if (index > 0)
+		if (index > 0 && index < REAL_MAX_VAPOURS)
 		{
 //DeadCode DAW 19May99 			if (traillist[index].thelist && LifeTime && (traillist[index].nopoints > 1))//RJS 13Apr99
 			if (	traillist[index].thelist
@@ -18564,6 +18574,9 @@ void shape::DrawHitBox(MigWindow* screen,Obj3DPtr obj3dptr,MATRIX_PTR matp)
  		case SHP_16CM:
  			tmpscale = 4;										//PD 10Apr96
  			break;												//PD 10Apr96
+ 		default:
+ 			tmpscale = 0;
+ 			break;
  	}
 
 
@@ -19807,7 +19820,7 @@ void	shape::CollisionPlayback()
 		SWord			sin_ang, cos_ang;						//RJS 20May99
 		ANGLES			theHdg, thePitch;						//RJS 20May99
 		SLong			theDist;
-		SLong			dy,dh,dx,dz;							//RJS 20May99
+		SLong			dy = 0,dh,dx = 0,dz = 0;				//RJS 20May99
 
 		last_vdeltax = 0;
 		last_vdeltay = 0;
@@ -20735,7 +20748,7 @@ Bool	shape::GetSmokeTrailList(Bool dummy)
 
 	for (index=1; index < MAX_VAPOURS; index++)
 	{
-		if (bigindex&(1<<index))								//RJS 17Feb99
+		if (bigindex&(ULong(1)<<index))							//RJS 17Feb99
 		{
 // load smoke list
 			listptr = NULL;										//RJS 18Feb99
@@ -20948,7 +20961,7 @@ void	shape::DrawDirtTrail(	SWord		index,
 		UByteP			lastdrawnobj = NULL;
 		UByteP			thisdrawnobj = NULL;
 		UWord			failedcnt = 0;
-		VapAnimDat		AnimDat;
+		VapAnimDat		AnimDat = VapAnimDat();
 		VapAnimDatPtr	AnimDataPtr;
 		SLong			timesincebirth;
 		SLong			totcount = 0;
