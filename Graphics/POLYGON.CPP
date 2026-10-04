@@ -3260,8 +3260,6 @@ void	polygon::GetFog(UByte& r,UByte& g,UByte& b,SLong& s,SLong& e)
 }
 UWord polyRedBits,polyRedShift,polyGreenBits,polyGreenShift,polyBlueBits,polyBlueShift;
 
-SLong g_dbglineshape=-1;
-
 static SLong softFadeRedMask,softFadeGreenMask,softFadeBlueMask;
 static UWord softFadeRedDelta,softFadeGreenDelta,softFadeBlueDelta;
 
@@ -3610,10 +3608,6 @@ void polygon::DoLine3D(Colour cc,DoPointStruc& svt,DoPointStruc& evt)
 		else if (x2>=viewdata.clipRgt)	x2=viewdata.clipRgt-1;
 		if (y2<viewdata.clipTop)		y2=viewdata.clipTop;
 		else if (y2>=viewdata.clipBot)	y2=viewdata.clipBot-1;
-		{int _dy=y2-y1,_dx=x2-x1; if (_dy<0)_dy=-_dy; if (_dx<0)_dx=-_dx;
-		char* _e=getenv("MIG_DBGLINE");
-		if (_e&&((_dy>4*_dx&&_dy>20)||_e[0]=='2'))
-			printf("[VLINE] shape=%d col=%d (%d,%d)->(%d,%d) bz=(%g,%g)\n",(int)g_dbglineshape,(int)cc,(int)x1,(int)y1,(int)x2,(int)y2,(double)vin.bz.f,(double)vout.bz.f);}
 		currscreen->SetColour(cc);
 		currscreen->PlainLine16(x1,y1,x2,y2);
 	}

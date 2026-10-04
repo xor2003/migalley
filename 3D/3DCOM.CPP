@@ -212,8 +212,6 @@ inline SLong ASM_GetFadeColour(SLong a, SLong b)
 
 	MigWindow*				shape::current_screen;
 	Colour				shape::colour;
-
-UByte shape_newco_tag[512]; UByte shape_newco_cur;
 	ColourRange			shape::range;
 	ImageMapNumber		shape::image;
 
@@ -876,7 +874,6 @@ void shape::process_shape(	MigWindow 	*screen,ViewPoint* vp,					//JIM 12Dec95
 
 	oldMipMapState = true;										//RJS 24May99
 
-	if (newco==shpco) { memset(shape_newco_tag,0,sizeof(shape_newco_tag)); shape_newco_cur=0; }
 	draw_shape(this_obj3d);										//RJS 30Apr98
 																//RJS 30Apr98
 	View_Point->isLightShaded = TRUE;							//RJS 30Apr98
@@ -1230,7 +1227,6 @@ void shape::dopoint(UByte *& instr_ptr)
 {
 	DOPOINT_PTR ptr = (DOPOINT_PTR )instr_ptr;
 	DoPointStruc* dp=newco+UWord(ptr->vertex);
-	if (newco==shpco) shape_newco_tag[UWord(ptr->vertex)&511]=shape_newco_cur;
 	dp->bodyx.i = ptr->xcoord;
 	dp->bodyy.i = ptr->ycoord;
 	dp->bodyz.i = ptr->zcoord;
@@ -1434,15 +1430,6 @@ void shape::dopolygon(UByte *& instr_ptr)
 
 	ltLine.colour			= shape::colour;
 
-	if (getenv("MIG_DBGLN"))
-		printf("[DLN] shape=%d s=%d e=%d wt=%d/%d sv=(%g,%g,%g cf%x) ev=(%g,%g,%g cf%x) col=%d\n",
-			(int)object_obj3d->Shape,(int)start_vertex,(int)end_vertex,
-			(int)shape_newco_tag[start_vertex&511],(int)shape_newco_tag[end_vertex&511],
-			(double)newco[start_vertex].bodyx.f,(double)newco[start_vertex].bodyy.f,(double)newco[start_vertex].bodyz.f,(int)newco[start_vertex].clipFlags,
-			(double)newco[end_vertex].bodyx.f,(double)newco[end_vertex].bodyy.f,(double)newco[end_vertex].bodyz.f,(int)newco[end_vertex].clipFlags,
-			(int)shape::colour);
-	if (getenv("MIG_NOLINE")) { instr_ptr += sizeof(DOLINE); return; }
-
 	if (current_screen->DoHardLine(&ltLine)==FALSE)
 	{
 //DEAD		z0 = newco[start_vertex].bodyz.f;
@@ -1460,7 +1447,6 @@ void shape::dopolygon(UByte *& instr_ptr)
 //DEAD 								   		newco[end_vertex].screenx.f,
 //DEAD 								   		newco[end_vertex].screeny.f);
 //DEAD  		}
-		extern SLong g_dbglineshape; g_dbglineshape=(SLong)object_obj3d->Shape;
 		POLYGON.DoLine3D(shape::colour,newco[start_vertex],newco[end_vertex]);
 	}
 	else
@@ -2987,7 +2973,6 @@ void shape::doquikpoly(UByte *& instr_ptr)
 	instr_ptr+=vertex_count*sizeof(NNEXT)+sizeof(DONPOINTS);
 
 	DoPointStruc* pdp=newco+npnt_ptr->start_vertex;
-	shape_newco_cur=1;
 
 	const Float obx=object_obj3d->Body.X.f;
 	const Float oby=object_obj3d->Body.Y.f;
@@ -3044,7 +3029,6 @@ void shape::doquikpoly(UByte *& instr_ptr)
 					clipFlag|=(sign_high!=0)?CF3D_OFFBOTTOM:CF3D_OFFTOP;
 
 			pdp->clipFlags=clipFlag;
-			if (newco==shpco) shape_newco_tag[pdp-newco]=shape_newco_cur;
 			pdp++;
 		}
 //	}
@@ -3469,7 +3453,6 @@ void shape::doquikpoly(UByte *& instr_ptr)
 	}
 
 	dpPtr = &newco[ptr->vertex];
-	shape_newco_cur=4;
 	for (count =0; count < vno; count++)
 	{
 		DoPointStruc &dp = *dpPtr;
@@ -3482,7 +3465,6 @@ void shape::doquikpoly(UByte *& instr_ptr)
 		dp.intensity = -1;
 		dp.specFlip=
 		dp.specular=-1;
-		if (newco==shpco) shape_newco_tag[dpPtr-newco]=shape_newco_cur;
 		dpPtr++;
 	}
 
@@ -9738,12 +9720,6 @@ void shape::domorphnpoints(UByte *& instr_ptr)
 	UWord			vertex = ptr->startvertex;
 	SLong			timefrac = (timedelta<<13)/ptr->growtime;
 
-	if (getenv("MIG_DBGMORPH")&&(timedelta>ptr->growtime||timefrac>8192||timefrac<-8192))
-		printf("[MORPH] shape=%d sv=%d n=%d fco=%d td=%d gt=%d tf=%d adp=%p\n",
-			(int)object_obj3d->Shape,(int)ptr->startvertex,(int)ptr->nopoints,
-			(int)ptr->framecntoffset,(int)timedelta,(int)ptr->growtime,(int)timefrac,(void*)&GlobalAdptr[0]);
-	shape_newco_cur=3;
-
 //	if (ptr->haswind)
 //	{
 //		//rdh need to change to MiG Alley wind
@@ -9971,16 +9947,6 @@ void shape::doblobline(UByte *& instr_ptr)
 	//endVertex.scalefactor	= newco[end_vertex].scalefactor;
 
 	ltLine.colour			= shape::colour;
-
-	if (getenv("MIG_NOBLOB")) { instr_ptr += sizeof(DOBLOBLINE); return; }
-
-	if (getenv("MIG_DBGBLOB"))
-		printf("[BLOB] shape=%d s=%d e=%d wt=%d/%d sv=(%g,%g,%g cf%x) ev=(%g,%g,%g cf%x) col=%d maxr=%d\n",
-			(int)object_obj3d->Shape,(int)start_vertex,(int)end_vertex,
-			(int)shape_newco_tag[start_vertex&511],(int)shape_newco_tag[end_vertex&511],
-			(double)newco[start_vertex].bodyx.f,(double)newco[start_vertex].bodyy.f,(double)newco[start_vertex].bodyz.f,(int)newco[start_vertex].clipFlags,
-			(double)newco[end_vertex].bodyx.f,(double)newco[end_vertex].bodyy.f,(double)newco[end_vertex].bodyz.f,(int)newco[end_vertex].clipFlags,
-			(int)shape::colour,(int)ptr->maxradius);
 
 	if (current_screen->DoHardLine(&ltLine)==FALSE)
 	{
@@ -10921,7 +10887,6 @@ void	shape::DumpInterpHistory()
 		g_interp_hist[g_interp_hist_n & 63][1] = instruction;
 		g_interp_hist_n++;
 		instr_ptr ++;
-		shape_newco_cur=UByte(instruction);
 
 		if (instruction > dosetglassrangeno)
 		{
