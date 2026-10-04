@@ -190,7 +190,7 @@ void CRoute::OnSelectedMode(long ButtonNum)
 	else
 	{
 
-		RowanDialog	*dlist,*ddet,*dbut;
+		RowanDialog	*dlist=NULL,*ddet=NULL,*dbut=NULL;			//RERUN uninit ptrs
 		for (RowanDialog* ctl=(RowanDialog*)fchild;ctl;ctl=(RowanDialog*)ctl->sibling)
 		if (ctl->packnum==-1)	
 			dbut=ctl;			//buttons don't know about packages
@@ -199,13 +199,14 @@ void CRoute::OnSelectedMode(long ButtonNum)
 				dlist=ctl;		//ac num 
 			else
 				ddet=ctl;
-		if (ddet->acnum==0)
+		if (ddet && ddet->acnum==0)								//RERUN uninit ptrs
 		{
 	//		CRRadio* pradio;
 	//		pradio=(CRRadio*)GetDlgItem(IDC_MODE);
 			pradio->SetCurrentSelection(0);
 		}
 		else
+		if (ddet && dlist)										//RERUN uninit ptrs
 		{
 			if (ButtonNum==0)
 				ddet->RefreshData(1);

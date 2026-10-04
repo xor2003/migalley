@@ -2127,7 +2127,7 @@ void shape::dopolygon(UByte *& instr_ptr)
 					if (SHAPE.ClipSphere(dp1,dp2,dp3,dp4,750)==FALSE)//rjs 16Jun99
 					{
 						minx = miny = 0;
-						nofx = imptr->w / width;						
+						nofx = width ? imptr->w / width : 0;				//RERUN div-by-zero on bad file data
 						if (nofx)
 						{
 	 						stepy = randno / nofx;			
@@ -6637,8 +6637,8 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 						{
 							imptr = Image_Map.GetImageMapPtr(theImap2);
 
-							nofx = imptr->w / ptr->width2;
-							stepy = FrameNo / nofx;
+							nofx = (ptr->width2) ? imptr->w / ptr->width2 : 0;//RERUN div-by-zero on bad file data
+							stepy = nofx ? FrameNo / nofx : 0;				//RERUN div-by-zero on bad file data
 							stepx = FrameNo - (stepy*nofx);
 
 							minx2 = ptr->minix2;
@@ -6671,8 +6671,8 @@ void	shape::dorealisphere(UByteP	&instr_ptr)
 
 						imptr = Image_Map.GetImageMapPtr(theImap);
 
-						nofx = imptr->w / ptr->Width;
-						stepy = FrameNo / nofx;
+						nofx = (ptr->Width) ? imptr->w / ptr->Width : 0;	//RERUN div-by-zero on bad file data
+						stepy = nofx ? FrameNo / nofx : 0;				//RERUN div-by-zero on bad file data
 						stepx = FrameNo - (stepy*nofx);
 
 						minx += stepx*ptr->Width;
@@ -7656,7 +7656,7 @@ void shape::docompass(UByte *& instr_ptr)
 //DeadCode PD 05Oct98 	cz.i = ptr->zpos << shapescale;
 
 	Math_Lib.high_sin_cos(object_obj3d->AngR,sin_ang,cos_ang);
-	l1 = (ptr->radius * POLYGON.Cos_ArcSin((radius2<<8)/ptr->radius)) >> 15;
+	l1 = (ptr->radius) ? (ptr->radius * POLYGON.Cos_ArcSin((radius2<<8)/ptr->radius)) >> 15 : 0;//RERUN div-by-zero on bad file data
 
 	ex = (cos_ang * l1) / ANGLES_FRACT;
 	ey = (sin_ang * l1) / ANGLES_FRACT;
@@ -9903,7 +9903,7 @@ void shape::dowheeldamage(UByte *& instr_ptr)
 		{
 			if (GlobalAdptr[ptr->underoffset])
 			{
-				ULong	damage = (GlobalAdptr[ptr->suspoffset] * ((GlobalAdptr[ptr->underoffset]<<8)/ptr->animmax))>>8;
+				ULong	damage = (ptr->animmax) ? (GlobalAdptr[ptr->suspoffset] * ((GlobalAdptr[ptr->underoffset]<<8)/ptr->animmax))>>8 : 0;//RERUN div-by-zero on bad file data
 				if (damage > BS_DEAD)
 					damage = BS_DEAD;
 
@@ -10113,9 +10113,9 @@ void shape::dolight(UByte *& instr_ptr)
 
 						imptr = Image_Map.GetImageMapPtr((ImageMapNumber)ptr->imagemap);
 						
-						nofx = imptr->w / ptr->width;
+						nofx = (ptr->width) ? imptr->w / ptr->width : 0;	//RERUN div-by-zero on bad file data
 
-						stepy = 1 / nofx;
+						stepy = nofx ? 1 / nofx : 0;					//RERUN div-by-zero on bad file data
 						stepx = 1 - (stepy*nofx);
 
 						minx += stepx*ptr->width;
@@ -10241,7 +10241,7 @@ void shape::dodigitdial(UByte *& instr_ptr)
 
 	imapno = (ImageMapNumber) ptr->imagemap;
 	ImageMapDescPtr imptr = Image_Map.GetImageMapPtr(imapno);
-	SLong	noxframes = imptr->w / ptr->width;
+	SLong	noxframes = (ptr->width) ? imptr->w / ptr->width : 0;	//RERUN div-by-zero on bad file data
 	SLong	stepy,stepx;
 
 	dx = newco[ptr->vertex1].bodyx.f - newco[ptr->vertex0].bodyx.f;
@@ -10268,7 +10268,7 @@ void shape::dodigitdial(UByte *& instr_ptr)
 
 	for (i=0; i < nodigits; i++)
 	{
-		stepy = digits[i]/noxframes;
+		stepy = noxframes ? digits[i]/noxframes : 0;			//RERUN div-by-zero on bad file data
 		stepx = digits[i] - (stepy*noxframes);
 
 		miny = 32 + (stepy * ptr->height);		//shit cheat!
@@ -10348,7 +10348,8 @@ void shape::donianimverts(UByte *& instr_ptr)
 	}
 	else
 	{
-		frameno /= animscale;
+		if (animscale)											//RERUN div-by-zero on bad file data
+			frameno /= animscale;
 		if (ptr->mapscale)
 		{
 			UByte	totframes = frameno;
@@ -10360,7 +10361,7 @@ void shape::donianimverts(UByte *& instr_ptr)
 
 	nofx = ptr->noxframes;
 
-	stepy = frameno/nofx;
+	stepy = nofx ? frameno/nofx : 0;							//RERUN div-by-zero on bad file data
 	stepx = frameno - (stepy*nofx);
 
 	miny = stepy * ptr->framewy;
@@ -10688,9 +10689,9 @@ void shape::domorphnsphrsimapd(UByte *& instr_ptr)
 
 		imptr = Image_Map.GetImageMapPtr((ImageMapNumber )imap);
 
-		nofx = imptr->w / width;				
+		nofx = width ? imptr->w / width : 0;					//RERUN div-by-zero on bad file data
 														
-		stepy = frameno / nofx;							
+		stepy = nofx ? frameno / nofx : 0;					//RERUN div-by-zero on bad file data
 		stepx = frameno - (stepy*nofx);					
 														
 		minix += stepx * width;							
@@ -16221,7 +16222,7 @@ void	shape::drawsphere(	int	vertex,
 	RealRadius = dopointr.screenx.f - dopoint0.screenx.f;
 
 	if (animflag)
-		thecol = (Colour) (colour + (GlobalAdptr[animflag]/animscale));
+		thecol = (Colour) (colour + (animscale ? GlobalAdptr[animflag]/animscale : GlobalAdptr[animflag]));//RERUN div-by-zero on bad file data
 
 //DEAD	POLYGON.SetPixelWidth(1);
 
@@ -16232,7 +16233,7 @@ void	shape::drawsphere(	int	vertex,
 			if (lumdepth)
 			{
 				if (animflag2)
-					lumdepth -= (GlobalAdptr[animflag2]/animscale);
+					lumdepth -= (animscale ? GlobalAdptr[animflag2]/animscale : GlobalAdptr[animflag2]);//RERUN div-by-zero on bad file data
 
 				if (lumdepth > 0)
 				{
@@ -16244,7 +16245,7 @@ void	shape::drawsphere(	int	vertex,
 			else
 			{
 				if (animflag2)
-					transdepth -= ((GlobalAdptr[animflag2]*25)/animscale);
+					transdepth -= (animscale ? (GlobalAdptr[animflag2]*25)/animscale : GlobalAdptr[animflag2]*25);//RERUN div-by-zero on bad file data
 
 				POLYGON.createsphere(thecol,transdepth);
 				POLYGON.createsphvert(dopoint0,RealRadius);

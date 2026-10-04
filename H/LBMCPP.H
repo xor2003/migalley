@@ -70,7 +70,7 @@
 
 	LogicalPtr	scraddr=	((long)BytesPerScanLine * y) + logicalscreenptr;
 //TempCode JIM 19Feb96 	Colour		srccol;
-	UByte		b;
+	UByte		b = 0;											//RERUN uninit read on malformed RLE
 	SLong		i,Count;
 	int	residue=0;
 	Bool	skipplotting=FALSE;

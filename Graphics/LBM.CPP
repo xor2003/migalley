@@ -125,8 +125,8 @@ LBM::LBM()
 LBM::~LBM()
 {
 	delete	hdr;
-	delete	body;
-	delete	pal;
+	delete[]	body;
+	delete[]	pal;
 }
 
 
@@ -154,7 +154,7 @@ void LBM::MakeHead(short w, short h)
 
 ULong LBM::MakeBody(LogicalPtr logicalscreenptr,int	BytesPerScanLine)
 {
-	delete		body;
+	delete[]	body;
 	ULong		filelen,m,packedlength,x,k;
 	UByte		c;
 	//char*		p,q;
@@ -197,7 +197,7 @@ ULong LBM::MakeBody(LogicalPtr logicalscreenptr,int	BytesPerScanLine)
 
 void LBM::MakePall(char* newpal)
 {
-	delete	pal;
+	delete[]	pal;
 	pal = new char[3*256];
 	for (int i=0;i<768;i++)
 		pal[i]=newpal[i];										//JIM 16Jul96

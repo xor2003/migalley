@@ -95,7 +95,14 @@ done
 if [ "$MODE" = cpp ] || [ "$MODE" = all ]; then
     ENABLE="warning,performance,portability"
     [ "$WHOLE" = 1 ] && ENABLE="$ENABLE,unusedFunction"
+    # unknownMacro: cppcheck can't expand the generated names in legacy
+    # headers (ITEM_STATUS in WORLDINC.H etc.) - a config diagnostic,
+    # not a code finding. cppcheckError on SAVEGAME.H is cppcheck's own
+    # analysis crashing on the MAKEFIELD macro block; still reported as
+    # error: severity and would gate whole-tree audits forever.
     run_tool cppcheck cppcheck --enable="$ENABLE" \
+        --suppress=unknownMacro \
+        --suppress=cppcheckError:H/SAVEGAME.H \
         --inline-suppr -q $INC $DEF "${REAL_FILES[@]}"
 fi
 exit "$FAILED"
