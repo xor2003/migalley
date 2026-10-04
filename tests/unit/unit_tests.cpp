@@ -44,6 +44,12 @@
 // the on-disk layout differs from the natural C layout. Tests write
 // named struct fields (compiler applies packing); raw stream[] offsets
 // must use the packed offsets (see test_doanimation).
+//
+// Non-shape coverage: test_mathlib_* (trig/distance/calendar/rnd/a2iend),
+// test_fileman (fake-dir naming, exist/open/read wrappers,
+// translatedirlist), test_mathasm_* (the asm->GNU port: bit ops,
+// fixed-point mul/div, sign helpers, x87 cw), test_bitcount_macros,
+// test_matrix_int (fixed-point MATRIX path), test_malloc_wrappers.
 //------------------------------------------------------------------------------
 #include <cstdio>
 #include <cstring>
@@ -62,6 +68,16 @@
 #include "FTOI.H"
 #include "MODVEC.H"
 #include "DISPLAY.H"
+#include "MYMATH.H"
+#include "WIN32_COMPAT.H"
+#include "FILES.H"
+#include <sys/stat.h>
+// dirfakeblock/direntries are fileman-private; access control is
+// compile-time only, so expose them for this TU alone.
+#define private public
+#include "FILEMAN.H"
+#undef private
+#include "BITCOUNT.H"
 
 // shape:: statics + instruction handlers live in libMy3D but the class needs
 // the whole world include chain. Access control is compile-time only, so the
@@ -3264,6 +3280,606 @@ static void test_doanimation()
     std::memset(anim, 0, sizeof(anim));
 }
 
+//------------------------------------------------------------------------------
+// MathLib trigonometry - pins the 10-bit sincos_table (scale 32767, not
+// 32768) and 8.8-fixed tan_table. high_sin_cos interpolates within each
+// 64-angle step; sin_cos truncates.
+//
+// Quirks pinned, not "fixed":
+//  - arcsin/arccos are exact-match linear scans returning the table INDEX
+//    (units of 1/1024 turn). Non-table inputs return uninitialized stack
+//    garbage - only exact matches are pinned.
+//  - hightan's QII/QIII branch assigns tan0 twice and never sets tan1
+//    ("DAW 27Sep00 from bob" copy-paste): upper-half angles produce
+//    garbage. First-quadrant values only are pinned.
+//------------------------------------------------------------------------------
+static void test_mathlib_trig()
+{
+    SWord s, c;
+
+    // Cardinal points - raw table reads.
+    Math_Lib.sin_cos(ANGLES_0Deg, s, c);
+    CHECK_EQ(s, 0);          CHECK_EQ(c, 32767);
+    Math_Lib.sin_cos(ANGLES_90Deg, s, c);
+    CHECK_EQ(s, 32767);      CHECK_EQ(c, 0);
+    Math_Lib.sin_cos(ANGLES_180Deg, s, c);
+    CHECK_EQ(s, 0);          CHECK_EQ(c, -32767);
+    Math_Lib.sin_cos(ANGLES_270Deg, s, c);
+    CHECK_EQ(s, -32767);     CHECK_EQ(c, 0);
+    Math_Lib.sin_cos(ANGLES_45Deg, s, c);
+    CHECK_EQ(s, 23169);      CHECK_EQ(c, 23169);
+
+    // Truncation: angle 96 sits 32/64 through step 1 - sin_cos ignores the
+    // fraction, high_sin_cos interpolates (sin 201->300, cos stays 32766).
+    Math_Lib.sin_cos((Angles)96, s, c);
+    CHECK_EQ(s, 201);        CHECK_EQ(c, 32766);
+    Math_Lib.high_sin_cos((Angles)96, s, c);
+    CHECK_EQ(s, 300);        CHECK_EQ(c, 32766);
+    Math_Lib.high_sin_cos((Angles)0x2001, s, c);
+    CHECK_EQ(s, 23171);      CHECK_EQ(c, 23167);
+    // Wrap: 0xFFFF interpolates back toward sin 0.
+    Math_Lib.high_sin_cos((Angles)0xFFFF, s, c);
+    CHECK_EQ(s, -5);         CHECK_EQ(c, 32767);
+
+    // tan_table is 8.8 fixed: tan(45deg)=256. QII mirrors with sign flip.
+    CHECK_EQ(Math_Lib.tan(ANGLES_0Deg), 0);
+    CHECK_EQ(Math_Lib.tan(ANGLES_45Deg), 256);
+    CHECK_EQ(Math_Lib.tan(ANGLES_135Deg), -252);
+    CHECK_EQ(Math_Lib.tan((Angles)0x1000), 105);   // 22.5deg
+
+    // hightan is 16.16 fixed: hightan(45deg)=65536. Upper-half quadrants
+    // hit the uninitialized-tan1 bug - not pinned (see header).
+    CHECK_EQ(Math_Lib.hightan(ANGLES_0Deg), 0);
+    CHECK_EQ(Math_Lib.hightan(ANGLES_45Deg), 65536);
+    CHECK_EQ(Math_Lib.hightan((Angles)0x1000), 26880);
+
+    // arctan(dx,dy) = 10430.387*atan2(dx,dy) - quadrant-exact.
+    CHECK_EQ((SWord)Math_Lib.arctan(0, 1000), 0);
+    CHECK_EQ((SWord)Math_Lib.arctan(1000, 0), ANGLES_90Deg);
+    CHECK_EQ((SWord)Math_Lib.arctan(1000, 1000), ANGLES_45Deg);
+    CHECK_EQ((SWord)Math_Lib.arctan(-1000, 1000), (SWord)-8192);
+    CHECK_EQ((SWord)Math_Lib.arctan(0, -1000), (SWord)ANGLES_180Deg);
+    CHECK_EQ((SWord)Math_Lib.arctan(1000, -1000), ANGLES_135Deg);
+    CHECK_EQ((SWord)Math_Lib.arctan(0, 0), 0);
+
+    // HighArcTan agrees at cardinals and interpolates via matan[].
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(0, 1000), 0);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(1000, 0), ANGLES_90Deg);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(-1000, 0), (SWord)-16384);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(1000, 1000), ANGLES_45Deg);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(-1000, 1000), (SWord)-8192);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(0, -1000), (SWord)ANGLES_180Deg);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(-1000, -1000), (SWord)-24576);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(1000, -1000), ANGLES_135Deg);
+    CHECK_EQ((SWord)Math_Lib.HighArcTan(0, 0), 0);
+
+    // arcsin/arccos: exact table matches only - return is the 10-bit
+    // index, i.e. angle>>8 in Rowan units.
+    CHECK_EQ((SWord)Math_Lib.arcsin(0), 0);
+    CHECK_EQ((SWord)Math_Lib.arcsin(201), 1);
+    CHECK_EQ((SWord)Math_Lib.arcsin(23169), 128);     // sin45 -> 45deg>>6
+    CHECK_EQ((SWord)Math_Lib.arccos(32767), 0);
+    CHECK_EQ((SWord)Math_Lib.arccos(32766), 1);
+
+    // high-precision variants use real FP math (correct values).
+    CHECK_EQ((SWord)Math_Lib.high_arc_sin(0), 0);
+    CHECK_EQ((SWord)Math_Lib.high_arc_sin(32767), 16302);   // ~89.6deg
+    CHECK_EQ((SWord)Math_Lib.high_arc_sin(-32767), -16302);
+    CHECK_EQ((SWord)Math_Lib.high_arc_sin(16384), 5461);    // ~30deg
+    CHECK_EQ((SWord)Math_Lib.high_arc_cos(0), ANGLES_90Deg);
+    CHECK_EQ((SWord)Math_Lib.high_arc_cos(32767), 81);
+    CHECK_EQ((SWord)Math_Lib.high_arc_cos(-32767), 32687);
+}
+
+//------------------------------------------------------------------------------
+// MathLib distance/intercept - distance3d is exact sqrt; Distance2d/
+// Distance_Unsigned use the max+frac approximation (4993 vs 5000), with a
+// >>15 range modifier for large inputs.
+//------------------------------------------------------------------------------
+static void test_mathlib_distance()
+{
+    CHECK_EQ(Math_Lib.distance3d(3000, 4000, 0), 5000);
+    CHECK_EQ(Math_Lib.distance3d(0, 0, 0), 0);
+    CHECK_EQ(Math_Lib.distance3d(-3000, -4000, 12000), 13000);
+    CHECK_EQ(Math_Lib.distance3d(0, 0, 70000), 70000);
+
+    // Approximate 2D distance: ~0.14% under for the 3-4-5 triangle.
+    CHECK_EQ(Math_Lib.Distance_Unsigned(3000, 4000), 4993);
+    CHECK_EQ(Math_Lib.Distance_Unsigned(0, 0), 0);
+    CHECK_EQ(Math_Lib.Distance_Unsigned(5000, 0), 5000);
+    CHECK_EQ(Math_Lib.Distance2d(3000, 4000), 4993);
+    CHECK_EQ(Math_Lib.Distance2d(-3000, -4000), 4993);
+
+    CHECK_EQ(Math_Lib.DistAbsSum(3, -4, 0), 7);
+    CHECK_EQ(Math_Lib.DistAbsSum(-1, -2, -3, -4), 10);
+    CHECK_EQ(Math_Lib.DistAbsSum(0, 0, 0, 0), 0);
+
+    // Intercept: Range is exact 3D, heading is arctan(dx,dz).
+    SLong rng; int hd, pt;
+    Math_Lib.Intercept(100000, 0, 200000, rng, hd, pt);
+    CHECK_EQ(rng, 223607);                       // sqrt(1e10+4e10)
+    CHECK_EQ(hd, 4836);                          // atan2(1,2) = 26.57deg
+    CHECK_EQ(pt, 0);
+    Math_Lib.Intercept(0, 0, -50000, rng, hd, pt);
+    CHECK_EQ(rng, 50000);
+    CHECK_EQ(hd, 32768);                         // directly behind
+    CHECK_EQ(pt, 0);
+
+    // HighIntercept shares the heading but approximates range via the
+    // lookup sin/cos - 2 units off on this vector.
+    Math_Lib.HighIntercept(100000, 0, 200000, rng, hd, pt);
+    CHECK_EQ(rng, 223609);
+    CHECK_EQ(hd, 4836);
+    CHECK_EQ(pt, 0);
+
+    // InterceptHdg: approx 2D distance + HighArcTan heading.
+    ULong d2; UWord h2;
+    Math_Lib.InterceptHdg(1000, 2000, 3000, 5000, d2, h2);
+    CHECK_EQ(d2, 3597);                          // sqrt(13e6) = 3605.5
+    CHECK_EQ(h2, 6133);                          // atan2(2000,3000)=33.7deg
+}
+
+//------------------------------------------------------------------------------
+// MathLib calendar/time - days are 1-based in MonthFromDays (day 31 is
+// still January); DateFromSecs counts from day 1/month 0/year 0 (year 0
+// is a leap year: 1461 days -> year 4).
+//------------------------------------------------------------------------------
+static void test_mathlib_datetime()
+{
+    SWord dm;
+    CHECK_EQ(Math_Lib.MonthFromDays(0, dm, 0), 0);
+    CHECK_EQ(Math_Lib.MonthFromDays(31, dm, 0), 0);     // Jan 31
+    CHECK_EQ(Math_Lib.MonthFromDays(32, dm, 0), 1);     // Feb 1
+    CHECK_EQ(Math_Lib.MonthFromDays(59, dm, 0), 1);     // Feb 28 (normal)
+    CHECK_EQ(Math_Lib.MonthFromDays(60, dm, 0), 2);     // Mar 1 (normal)
+    CHECK_EQ(Math_Lib.MonthFromDays(60, dm, 1), 1);     // Feb 29 (leap)
+    CHECK_EQ(Math_Lib.MonthFromDays(334, dm, 0), 10);   // Nov 30
+    CHECK_EQ(Math_Lib.MonthFromDays(335, dm, 0), 11);   // Dec 1
+    CHECK_EQ(Math_Lib.MonthFromDays(365, dm, 0), 11);   // Dec 31
+    Math_Lib.MonthFromDays(60, dm, 0);
+    CHECK_EQ(dm, 59);                                   // days in full months
+
+    SWord dy, mo, yr;
+    Math_Lib.DateFromSecs(0, dy, mo, yr);
+    CHECK_EQ(dy, 1); CHECK_EQ(mo, 0); CHECK_EQ(yr, 0);  // Jan 1, year 0
+    Math_Lib.DateFromSecs(86400L * 59, dy, mo, yr);
+    CHECK_EQ(dy, 1); CHECK_EQ(mo, 2); CHECK_EQ(yr, 0);  // Mar 1, year 0
+    Math_Lib.DateFromSecs(86400L * 365, dy, mo, yr);
+    CHECK_EQ(dy, 1); CHECK_EQ(mo, 0); CHECK_EQ(yr, 1);
+    Math_Lib.DateFromSecs(86400L * 1461, dy, mo, yr);
+    CHECK_EQ(dy, 1); CHECK_EQ(mo, 0); CHECK_EQ(yr, 4);  // 4-year leap cycle
+    Math_Lib.DateFromSecs(86400L * (365 * 31 + 59), dy, mo, yr);
+    CHECK_EQ(dy, 22); CHECK_EQ(mo, 1); CHECK_EQ(yr, 31);
+
+    SWord hr, mn;
+    Math_Lib.TimeFromSecs(0, hr, mn);
+    CHECK_EQ(hr, 0); CHECK_EQ(mn, 0);
+    Math_Lib.TimeFromSecs(3661, hr, mn);
+    CHECK_EQ(hr, 1); CHECK_EQ(mn, 1);                   // drops seconds
+    Math_Lib.TimeFromSecs(86399, hr, mn);
+    CHECK_EQ(hr, 23); CHECK_EQ(mn, 59);
+
+    SWord dfy, lyr;
+    CHECK_EQ(Math_Lib.YearFromDays(0, dfy, lyr), 0);
+    CHECK_EQ(Math_Lib.YearFromDays(365, dfy, lyr), 0);
+    CHECK_EQ(Math_Lib.YearFromDays(1461, dfy, lyr), 4);
+    CHECK_EQ(Math_Lib.YearFromSecs(0), 0);
+    CHECK_EQ(Math_Lib.YearFromSecs(86400L * 365), 0);
+    CHECK_EQ(Math_Lib.YearFromSecs(86400L * 11000), 30);
+
+    // Sun angle: -90deg at midnight, +90deg at noon.
+    ANGLES sun;
+    Math_Lib.SunPosFromSecs(0, sun);
+    CHECK_EQ((SWord)sun, -16384);
+    Math_Lib.SunPosFromSecs(43200, sun);
+    CHECK_EQ((SWord)sun, 16384);
+
+    CHECK_EQ(Math_Lib.DofCampFromSecs(0, 0), 0);
+    CHECK_EQ(Math_Lib.DofCampFromSecs(86400L * 100, 0), 100);
+    CHECK_EQ(Math_Lib.DofCampFromSecs(86400L * 100, 86400L * 40), 60);
+}
+
+//------------------------------------------------------------------------------
+// MathLib misc - a2iend parses FORWARD from the pointer, advancing it
+// past consumed digits (name is misleading); the two-arg form decrements
+// lengthdec per digit. rnd() is a table-driven generator seeded by
+// statics bval=23/cval=54 - deterministic given identical state.
+//------------------------------------------------------------------------------
+static void test_mathlib_misc()
+{
+    // Forward parse, pointer stops on first non-digit.
+    char s1[] = "42abc"; char *p = s1;
+    CHECK_EQ(Math_Lib.a2iend(p), 42);
+    CHECK_EQ(*p, 'a');
+    char s2[] = "-42"; char *q = s2;
+    CHECK_EQ(Math_Lib.a2iend(q), 0);                    // '-' is not a digit
+    CHECK_EQ(q, s2);                                    // pointer unmoved
+    char s3[] = "7x"; char *r = s3;
+    CHECK_EQ(Math_Lib.a2iend(r), 7);
+    char s4[] = ""; char *t = s4;
+    CHECK_EQ(Math_Lib.a2iend(t), 0);
+
+    // Two-arg form: lengthdec decremented per consumed digit.
+    char s5[] = "15x3"; char *u = s5; ULong len = 5;
+    CHECK_EQ(Math_Lib.a2iend(u, len), 15);
+    CHECK_EQ(len, 3);
+    CHECK_EQ(*u, 'x');
+    char s6[] = "12345"; char *v = s6; ULong len2 = 5;
+    CHECK_EQ(Math_Lib.a2iend(v, len2), 12345);
+    CHECK_EQ(len2, 0);
+
+    // Overflow wraps mod 2^32 (99999999999 = 0x174876E7FF -> 0x4876E7FF).
+    char s7[] = "99999999999"; char *w = s7;
+    CHECK_EQ(Math_Lib.a2iend(w), 1215752191UL);
+
+    // rnd: deterministic given restored state. Snapshot the lookup table
+    // + bval/cval, run a sequence, restore, verify identical repeat.
+    UWord savedtab[MathLib::MAX_RND];
+    for (int i = 0; i < MathLib::MAX_RND; i++) savedtab[i] = Math_Lib.GetRndLookUp(i);
+    UWord svb = Math_Lib.Getbval(), svc = Math_Lib.Getcval();
+
+    Math_Lib.Setbval(23); Math_Lib.Setcval(54); Math_Lib.ResetRndCount();
+    SWord seq[8];
+    for (int i = 0; i < 8; i++) seq[i] = (SWord)Math_Lib.rnd();
+    // First warmup draw is rndlookup[23] + rndlookup[54].
+    CHECK_EQ((SWord)((savedtab[23] + savedtab[54]) & 0xFFFF), seq[0]);
+
+    // Warmup writes back into rndlookup (rndlookup[cval++]=b), so the
+    // table itself must be restored for an identical replay.
+    for (int i = 0; i < MathLib::MAX_RND; i++) Math_Lib.SetRndLookUp(i, savedtab[i]);
+    Math_Lib.Setbval(23); Math_Lib.Setcval(54); Math_Lib.ResetRndCount();
+    for (int i = 0; i < 8; i++)
+        CHECK_EQ((SWord)Math_Lib.rnd(), seq[i]);        // same state, same seq
+
+    // Restore caller's state.
+    for (int i = 0; i < MathLib::MAX_RND; i++) Math_Lib.SetRndLookUp(i, savedtab[i]);
+    Math_Lib.Setbval(svb); Math_Lib.Setcval(svc); Math_Lib.ResetRndCount();
+
+    // rnd(M) is a signed 16.16 multiply-shift of the RndVal: result stays
+    // strictly inside (-M, M) for positive M.
+    for (int i = 0; i < 200; i++) {
+        SLong v = (SLong)Math_Lib.rnd(1000);
+        CHECK(v > -1000 && v < 1000);
+    }
+}
+
+//------------------------------------------------------------------------------
+// fileman/FileMan - the fake-dir mechanism lets callers register a real
+// host path under a directory number (dirfakeblock+RUNTIME holds the dir
+// name, namedirdir+128 the file name); namenumberedfile then composes
+// "dir/file" inside namedirdir. fakefile always returns dirnum+8.
+// translatedirlist parses "dirnum parentnum dirname" lines in place,
+// compacting the name strings to the front of the buffer.
+//------------------------------------------------------------------------------
+static void test_fileman()
+{
+    // Real host dir + file the fake entries will point at.
+    mkdir("/tmp/migfmtest", 0755);
+    FILE* mk = fopen("/tmp/migfmtest/testfile.bin", "wb");
+    fputs("HELLO12345", mk);
+    fclose(mk);
+
+    static char fakebuf[512];
+    memset(fakebuf, 0, sizeof fakebuf);
+    void* savedfake = File_Man.dirfakeblock;
+    int savedassume = File_Man.assumefakedir;
+    File_Man.dirfakeblock = fakebuf;
+
+    File_Man.fakedir((FileNum)(5 << 8), (char*)"/tmp/migfmtest");
+    CHECK_EQ((int)File_Man.direntries[5].driverfile, RCH_DIRBASE);
+    CHECK_EQ((int)File_Man.direntries[5].parentdir, RAMCACHEHANDLEDIR);
+    CHECK_EQ((int)File_Man.direntries[5].dirnameind, 200);   // RUNTIME
+    CHECK_EQ(strcmp(fakebuf + 200, "/tmp/migfmtest"), 0);
+
+    FileNum f = File_Man.fakefile((FileNum)(5 << 8), "testfile.bin");
+    CHECK_EQ((int)f, 0x508);                                // dirnum(5) + 8
+    CHECK_EQ(File_Man.assumefakedir, 5);
+
+    string p = File_Man.namenumberedfile(f);
+    CHECK_EQ(strcmp(p, "/tmp/migfmtest/testfile.bin"), 0);
+    string p2 = File_Man.namenumberedfilelessfail(f);
+    CHECK_EQ(strcmp(p2, "/tmp/migfmtest/testfile.bin"), 0);
+    CHECK(File_Man.existnumberedfile(f) == TRUE);
+
+    // opennumberedfile + raw I/O wrappers.
+    FILE* fh = File_Man.opennumberedfile(f);
+    CHECK(fh != NULL);
+    CHECK_EQ((long)File_Man.getfilesize(fh), 10);
+    File_Man.seekfilepos(fh, 5);
+    char buf[16] = {0};
+    CHECK_EQ((long)File_Man.readfileblock(fh, buf, 5), 5);
+    CHECK_EQ(strcmp(buf, "12345"), 0);
+    File_Man.closefile(fh);
+
+    // Missing file in the same fake dir: naming works, exist fails.
+    FileNum f2 = File_Man.fakefile((FileNum)(5 << 8), "missing.bin");
+    CHECK_EQ((int)f2, 0x508);
+    CHECK(File_Man.existnumberedfile(f2) == FALSE);
+    string pm = File_Man.namenumberedfilelessfail(f2);
+    CHECK_EQ(strcmp(pm, "/tmp/migfmtest/missing.bin"), 0);
+
+    // Untouched dir (200): driverfile INVALIDFILENUM -> lessfail NULL,
+    // exist FALSE.
+    CHECK(File_Man.namenumberedfilelessfail((FileNum)(200 << 8)) == NULL);
+    CHECK(File_Man.existnumberedfile((FileNum)(200 << 8)) == FALSE);
+
+    // translatedirlist: "dirnum parentnum dirname". dir 8 self-parents
+    // (-> RAMCACHEHANDLEDIR, allowed for dirnum<=16); dir 9 hangs off 8.
+    // Name strings are compacted to the start of the same buffer.
+    static char dbuf[128];
+    strcpy(dbuf, "8 8 /tmp/tdir\n9 8 sub\n");
+    void* dp = dbuf; ULong dl = strlen(dbuf);
+    FILEMAN.currfilenum = (FileNum)0x9999;
+    FileMan::translatedirlist(dp, dl);
+    CHECK_EQ((int)FILEMAN.direntries[8].parentdir, RAMCACHEHANDLEDIR);
+    CHECK_EQ((int)FILEMAN.direntries[8].driverfile, 0x9999);
+    CHECK_EQ(strcmp(dbuf + (int)FILEMAN.direntries[8].dirnameind, "/tmp/tdir"), 0);
+    CHECK_EQ((int)FILEMAN.direntries[9].parentdir, 8);
+    CHECK_EQ(strcmp(dbuf + (int)FILEMAN.direntries[9].dirnameind, "sub"), 0);
+
+    // Restore shared state.
+    File_Man.direntries[5].driverfile = File_Man.direntries[8].driverfile =
+        File_Man.direntries[9].driverfile = INVALIDFILENUM;
+    File_Man.dirfakeblock = savedfake;
+    File_Man.assumefakedir = savedassume;
+    remove("/tmp/migfmtest/testfile.bin");
+    rmdir("/tmp/migfmtest");
+}
+
+//------------------------------------------------------------------------------
+// MATHASM bit ops - GNU replacements for the original bts/btr/btc/bsf/bsr
+// inline asm. BITSET/BITRESET/BITCOMP return the PREVIOUS bit value (the
+// carry flag), and mutate the operand in place.
+//------------------------------------------------------------------------------
+static void test_mathasm_bits()
+{
+    ULong w[2] = {0, 0};
+
+    // bts returns old bit, sets new.
+    CHECK_EQ(BITSET(w, 5), 0);
+    CHECK_EQ(w[0], 0x20);
+    CHECK_EQ(BITSET(w, 5), 1);              // already set -> reports 1
+    CHECK_EQ(w[0], 0x20);
+    CHECK_EQ(BITSET(w, 63), 0);             // crosses into w[1]
+    CHECK_EQ(w[1], 0x80000000UL);
+    CHECK_EQ(w[0], 0x20);
+
+    // btr returns old bit, clears.
+    CHECK_EQ(BITRESET(w, 5), 1);
+    CHECK_EQ(w[0], 0);
+    CHECK_EQ(BITRESET(w, 5), 0);            // already clear
+    CHECK_EQ(BITRESET(w, 63), 1);
+    CHECK_EQ(w[1], 0);
+
+    // bt (read-only).
+    w[0] = 0x21;
+    CHECK_EQ(BITTEST(w, 0), 1);
+    CHECK_EQ(BITTEST(w, 5), 1);
+    CHECK_EQ(BITTEST(w, 1), 0);
+    CHECK_EQ(BITTEST(w, 32), 0);
+
+    // btc returns old bit, toggles.
+    CHECK_EQ(BITCOMP(w, 3), 0);             // was clear -> sets
+    CHECK_EQ(w[0], 0x29);
+    CHECK_EQ(BITCOMP(w, 3), 1);             // was set -> clears
+    CHECK_EQ(w[0], 0x21);
+
+    // Immediate-value variants (no memory operand).
+    CHECK_EQ(BITSETI(0, 7), 0x80);
+    CHECK_EQ(BITRESETI(0xFF, 3), 0xF7);
+    CHECK_EQ(BITCOMPI(0xFF, 3), 0xF7);
+    CHECK_EQ(BITTESTI(0xFF, 3), 1);
+    CHECK_EQ(BITTESTI(0xF7, 3), 0);
+    // Index masks to 5 bits like the CPU shifter.
+    CHECK_EQ(BITSETI(0, 39), 0x80);         // 39 & 31 = 7
+
+    // bsf/bsr; zero input returns errcode (CPU leaves dest undefined).
+    CHECK_EQ(BITSCANLOWEST(0, 99), 99);
+    CHECK_EQ(BITSCANLOWEST(0x28, 9), 3);
+    CHECK_EQ(BITSCANHIGHEST(0, 77), 77);
+    CHECK_EQ(BITSCANHIGHEST(0x28, 9), 5);
+    CHECK_EQ(BITSCANHIGHEST(0x80000000UL, 0), 31);
+}
+
+//------------------------------------------------------------------------------
+// MATHASM fixed-point mul/div - 64-bit intermediates like the original
+// mul/imul + shrd/div sequences. Quirk pinned: MULSHSIN shifts the 64-bit
+// product LOGICALLY (matches shrd semantics - high zeros shift in, not
+// sign bits), and SHDIVSIN casts the divisor to int32 so divisors with
+// bit31 set go negative vs the original unsigned div.
+//------------------------------------------------------------------------------
+static void test_mathasm_muldiv()
+{
+    CHECK_EQ(MULSHUNS(0x8000, 0x8000, 16), 0x4000UL);
+    CHECK_EQ(MULSHUNS(0x40000, 0x40000, 16), 0x100000UL);
+    CHECK_EQ((ULong)MULSHSIN(-0x8000, 0x8000, 16), 0xFFFFC000UL);
+    // Negative product, extreme shift: 0xFFFFFFFFFFFF0000 >> 31 keeps
+    // 0xFFFFFFFF - logical shift of the 64-bit product (shrd semantics).
+    CHECK_EQ((ULong)MULSHSIN(-1, 65536, 31), 0xFFFFFFFFUL);
+
+    CHECK_EQ(SHDIVUNS(1, 16, 2), 0x8000UL);
+    CHECK_EQ(SHDIVUNS(1, 16, 0), 0);                    // div0 -> 0
+    CHECK_EQ(SHDIVUNS(65536, 0, 65536), 1);
+    CHECK_EQ((ULong)SHDIVSIN(-65536, 0, 2), (ULong)-32768);
+    CHECK_EQ(SHDIVSIN(1, 16, 0), 0);                    // div0 -> 0
+    // int32 divisor cast: 0xC0000000 becomes -1073741824, so
+    // -2147483648 / -1073741824 = 2 (unsigned div would give 0).
+    CHECK_EQ(SHDIVSIN((SLong)0x80000000, 0, 0xC0000000UL), 2);
+
+    CHECK_EQ(MULDIVUNS(6, 7, 2), 21);
+    CHECK_EQ(MULDIVUNS(0x8000, 0x8000, 3), 0x15555555UL); // 2^30/3
+    CHECK_EQ(MULDIVSIN(-6, 7, 2), -21);
+    CHECK_EQ(MULDIVSIN(6, -7, 2), -21);
+    CHECK_EQ(MULDIVSIN(-6, -7, 2), 21);
+}
+
+//------------------------------------------------------------------------------
+// MATHASM misc - sign extract/apply (the Pos/UseSign/AbsSign plumbing),
+// repmovsd block copy, and the real i386 x87 control-word accessors.
+//------------------------------------------------------------------------------
+static void test_mathasm_misc()
+{
+    CHECK_EQ(mathlib_w_getsign(-5), -1);
+    CHECK_EQ(mathlib_w_getsign(0), 0);
+    CHECK_EQ(mathlib_w_getsign(5), 0);
+    CHECK_EQ(mathlib_w_applysign(7, -1), -7);
+    CHECK_EQ(mathlib_w_applysign(7, 0), 7);
+    CHECK_EQ(mathlib_w_applysign(7, 1), 7);
+    CHECK_EQ(mathlib_l_getsign(-9), -1);
+    CHECK_EQ(mathlib_l_getsign(9), 0);
+    CHECK_EQ(mathlib_l_applysign(7, -1), -7);
+    CHECK_EQ(mathlib_l_applysign(-7, -1), 7);   // (a^s)-s restores abs
+
+    ULong src[4] = {1, 2, 3, 4}, dst[4] = {0, 0, 0, 0};
+    repmovsd(src, dst, 4);
+    CHECK_EQ(dst[0], 1); CHECK_EQ(dst[3], 4);
+
+    // x87 control word is real on i386 (0x37f = default extended prec).
+    UWord saved = GETFPCW();
+    CHECK_EQ(saved, 0x37F);
+    CHECK_EQ(GETPREC(), 3);                     // bits 8-9: 64-bit ext prec
+    SETPREC(2); CHECK_EQ(GETPREC(), 2);         // 53-bit double
+    SETPREC(3); CHECK_EQ(GETPREC(), 3);         // restore
+    SETFPCW(saved);
+}
+
+//------------------------------------------------------------------------------
+// BITCOUNT.H flag macros - ONLYFIELD wraps a value with a typed proxy;
+// the BEGIN_/FIRST_/BITFIELD/LAST_/END_BITFIELD_STRUCT family (the live
+// one - BOOLFIELDS is dead: BOOLFIELD is never defined) generates a
+// struct holding `value` plus one independent proxy per field; each
+// proxy masks writes to its declared width.
+//------------------------------------------------------------------------------
+struct BitfieldBox {
+    BEGIN_BITFIELD_STRUCT(Test16, UWord)
+    FIRST_BITFIELD(UByte, low3, 2)          // proxy stores 3 bits
+    BITFIELD(UByte, mid4, 3, 6)             // proxy stores 4 bits
+    LAST_BITFIELD(UByte, top2, 7, 8)        // proxy stores 2 bits
+    END_BITFIELD_STRUCT(Test16, UWord)
+};
+
+static void test_bitcount_macros()
+{
+    // ONLYFIELD: typed assign/read wrapper.
+    struct OnlyBox { ONLYFIELD(UByte, int, flag); };
+    OnlyBox o = {};
+    o.flag = 7;
+    CHECK_EQ((int)o.flag, 7);
+    CHECK_EQ(o.flag.value, 7);
+
+    BitfieldBox box = {};
+    // value + three UWord proxies under pack(1).
+    CHECK_EQ(sizeof(box.Test16), 8);
+
+    // Field proxies mask to their declared bit width.
+    box.Test16.low3 = 0xFF;                 // 3-bit field
+    CHECK_EQ((int)box.Test16.low3, 7);
+    box.Test16.mid4 = 0x1F;                 // 4-bit field
+    CHECK_EQ((int)box.Test16.mid4, 0xF);
+    box.Test16.top2 = 0x7;                  // 2-bit field
+    CHECK_EQ((int)box.Test16.top2, 3);
+
+    // Proxies are separate members from `value` - writes to a field do
+    // not touch the raw word, and vice versa.
+    box.Test16.value = 0x1234;
+    CHECK_EQ((int)box.Test16.low3, 7);
+    box.Test16.low3 = 0;
+    CHECK_EQ(box.Test16.value, 0x1234);
+    box.Test16 = 0xABCD;                    // storage_t assign
+    CHECK_EQ(box.Test16.value, 0xABCD);
+}
+
+//------------------------------------------------------------------------------
+// matrix fixed-point path - MATRIX elements are SWord 2.15 (1.0 = 32766
+// after the >>15 product quantization). generate uses interpolated
+// high_sin_cos; generateh/p/r single-axis builders use raw 32767.
+//------------------------------------------------------------------------------
+static void test_matrix_int()
+{
+    matrix m;
+    static MATRIX im;
+
+    // Identity via the full generate path: diagonal quantizes to 32766.
+    m.generate(ANGLES_0Deg, ANGLES_0Deg, ANGLES_0Deg, &im);
+    CHECK_EQ(im.L11, 32766); CHECK_EQ(im.L22, 32766); CHECK_EQ(im.L33, 32766);
+    CHECK_EQ(im.L12, 0); CHECK_EQ(im.L21, 0); CHECK_EQ(im.L31, 0);
+
+    // Heading 90: forward (+z) maps to +x.
+    m.generate(ANGLES_90Deg, ANGLES_0Deg, ANGLES_0Deg, &im);
+    CHECK_EQ(im.L11, 0); CHECK_EQ(im.L31, -32766); CHECK_EQ(im.L13, 32766);
+    CHECK_EQ(im.L22, 32766); CHECK_EQ(im.L33, 0);
+
+    // Pitch 90 / roll 90 spot rows.
+    m.generate(ANGLES_0Deg, ANGLES_90Deg, ANGLES_0Deg, &im);
+    CHECK_EQ(im.L32, -32767); CHECK_EQ(im.L23, 32765);
+    m.generate(ANGLES_0Deg, ANGLES_0Deg, ANGLES_90Deg, &im);
+    CHECK_EQ(im.L12, 32766); CHECK_EQ(im.L21, -32766);
+
+    // Single-axis builders keep the unquantized 32767.
+    m.generateh(ANGLES_90Deg, &im);
+    CHECK_EQ(im.L31, -32767); CHECK_EQ(im.L13, 32767); CHECK_EQ(im.L22, 32767);
+    m.generatep(ANGLES_90Deg, &im);
+    CHECK_EQ(im.L32, -32767); CHECK_EQ(im.L23, 32767); CHECK_EQ(im.L11, 32767);
+    m.generater(ANGLES_90Deg, &im);
+    CHECK_EQ(im.L12, 32767); CHECK_EQ(im.L21, -32767); CHECK_EQ(im.L33, 32767);
+
+    // rotate: (0,0,32768) under h90 -> +x.
+    m.generate(ANGLES_90Deg, ANGLES_0Deg, ANGLES_0Deg, &im);
+    SLong x = 0, y = 0, z = 32768;
+    m.rotate(&im, x, y, z);
+    CHECK_EQ(x, 32766); CHECK_EQ(y, 0); CHECK_EQ(z, 0);
+
+    // transform: identity maps v -> v*32766*2 (ASMTransform scaling),
+    // clip flags 0. Large inputs shift right to fit 16 bits, cf != 0.
+    m.generate(ANGLES_0Deg, ANGLES_0Deg, ANGLES_0Deg, &im);
+    x = 100; y = 200; z = 300;
+    CHECK_EQ(m.transform(&im, x, y, z), 0);
+    CHECK_EQ(x, 6553200); CHECK_EQ(y, 13106400); CHECK_EQ(z, 19659600);
+    x = 70000; y = 0; z = 0;
+    CHECK_EQ(m.transform(&im, x, y, z), 2);
+    CHECK_EQ(x, 1146810000);
+
+    // scaleto16bit: bsr(max|v|)-14, returns shift applied to all three.
+    x = 100; y = 200; z = 300;
+    CHECK_EQ(m.scaleto16bit(x, y, z), 0);
+    CHECK_EQ(x, 100); CHECK_EQ(z, 300);
+    x = 70000; y = 200; z = 300;
+    CHECK_EQ(m.scaleto16bit(x, y, z), 2);   // 70000 needs >>2 for <32768
+    CHECK_EQ(x, 17500); CHECK_EQ(y, 50); CHECK_EQ(z, 75);
+    x = 0; y = 0; z = 0;
+    CHECK_EQ(m.scaleto16bit(x, y, z), 0);   // bsr(0) -> no shift
+
+    // multiply: h90 squared = h180 (L11/L33 ~= -1).
+    static MATRIX a;
+    m.generate(ANGLES_90Deg, ANGLES_0Deg, ANGLES_0Deg, &a);
+    static MATRIX b;
+    b = a;
+    m.multiply(&b, &a);                     // b = a * b
+    CHECK_EQ(b.L11, -32765); CHECK_EQ(b.L33, -32765);
+    CHECK_EQ(b.L31, 0); CHECK_EQ(b.L13, 0);
+
+    // inverse of h90 == h270 (transposed signs on L31/L13).
+    static MATRIX inv;
+    m.inverse(ANGLES_90Deg, ANGLES_0Deg, ANGLES_0Deg, &inv);
+    CHECK_EQ(inv.L31, 32766); CHECK_EQ(inv.L13, -32767);
+}
+
+//------------------------------------------------------------------------------
+// GENERAL malloc wrappers - ailmalloc/radmalloc forward to malloc with
+// the RAD/Miles PTR4 conventions; failure paths return NULL.
+//------------------------------------------------------------------------------
+void* ailmalloc(size_t numbytes);           // ailfree/rad* are commented out
+static void test_malloc_wrappers()
+{
+    CHECK_EQ(ailmalloc(0), (void*)NULL);    // size 0 -> NULL, no EmitSysErr
+    void* p = ailmalloc(128);
+    CHECK(p != NULL);
+    if (p) {
+        memset(p, 0xAB, 128);               // usable memory
+        delete[] (char*)p;
+    }
+}
+
 int main()
 {
     test_type_layout();
@@ -3323,6 +3939,18 @@ int main()
     test_dospin();
     test_dolighttimer();
     test_doanimation();
+
+    test_mathlib_trig();
+    test_mathlib_distance();
+    test_mathlib_datetime();
+    test_mathlib_misc();
+    test_fileman();
+    test_mathasm_bits();
+    test_mathasm_muldiv();
+    test_mathasm_misc();
+    test_bitcount_macros();
+    test_matrix_int();
+    test_malloc_wrappers();
 
     test_win32_events();
     test_win32_semaphore();
