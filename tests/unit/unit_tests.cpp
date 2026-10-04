@@ -22,6 +22,7 @@
 #include "ANIMPTR.H"
 #include "FTOI.H"
 #include "MODVEC.H"
+#include "DISPLAY.H"
 
 // shape:: statics + instruction handlers live in libMy3D but the class needs
 // the whole world include chain. Access control is compile-time only, so the
@@ -56,6 +57,14 @@ extern void           shape_domorphnpoints(UByte*& ip)
                                              __asm__("_ZN5shape14domorphnpointsERPh");
 extern void           shape_domorphpoint(UByte*& ip)
                                              __asm__("_ZN5shape12domorphpointERPh");
+extern void           shape_doifbright(UByte*& ip)
+                                             __asm__("_ZN5shape10doifbrightERPh");
+extern void           shape_doifcross(UByte*& ip)
+                                             __asm__("_ZN5shape9doifcrossERPh");
+extern void           shape_doflipvector(UByte*& ip)
+                                             __asm__("_ZN5shape12doflipvectorERPh");
+extern void           shape_doflipnvec(UByte*& ip)
+                                             __asm__("_ZN5shape10doflipnvecERPh");
 
 extern void           shape_doifcase(UByte*& ip)
                                              __asm__("_ZN5shape8doifcaseERPh");
@@ -145,6 +154,13 @@ static void test_ifshare()
     CHECK(s.f == s.f);                   // readable; value is garbage-double
     CHECK_EQ(sizeof(IFShare), 8);
     CHECK_EQ(offsetof(IFShare, i), offsetof(IFShare, f));
+
+    // .i aliases the LOW 32 bits of the double (little-endian). Doubles
+    // with zero low-mantissa read 0 even with a sign/exponent set:
+    s.f = -0.0;                          // 0x80000000_00000000
+    CHECK_EQ(s.i, 0);                    // sign lives in the HIGH dword
+    s.f = 1.1;                           // 0x3FF19999_9999999A
+    CHECK_EQ(s.i, (SLong)0x9999999A);    // raw low mantissa, not a float cast
 }
 
 static void test_vertex_layout()
@@ -381,6 +397,18 @@ static void test_ftoitexture()
     CHECK_EQ(v[1].ix.i, -4);
     CHECK_EQ(v[1].iy.i, 255);
     CHECK_EQ(v[2].ix.i, 0);
+
+    // Edge: truncation is C-style toward zero on both signs; the loop
+    // stops at the NULL terminator (v[2] is still covered above).
+    vertex w;
+    w.ix.f = 256.9;  w.iy.f = -255.99;
+    VERTEX_PTR p2[2] = { &w, NULL };
+    FtoITexture(p2);
+    CHECK_EQ(w.ix.i, 256);
+    CHECK_EQ(w.iy.i, -255);              // truncates toward zero, not -256
+
+    VERTEX_PTR empty[1] = { NULL };      // empty list: no-op, no deref
+    FtoITexture(empty);
 }
 
 //------------------------------------------------------------------------------
@@ -446,6 +474,13 @@ static void test_animptr()
     animptr d; d = buf;
     UByteP raw = &d;
     CHECK_EQ((void*)raw, (void*)buf);
+
+    // NANIMDEBUG is raw pointer math: negative indices read before the
+    // base, and Offset() backward is a wrapped byte distance. The debug
+    // assertions that would catch these are compiled out - the wrap is
+    // the live contract.
+    CHECK_EQ(c[-4], buf[2]);             // c = buf+6; [-4] -> buf[2] = 99
+    CHECK_EQ(c.Offset(buf + 2), (ULong)-4); // -4 wrapped to ULong
 }
 
 //------------------------------------------------------------------------------
@@ -1419,6 +1454,178 @@ static void test_modvec_edges()
 }
 
 //------------------------------------------------------------------------------
+// shape::doifbright - averages (256 - intensity) over a vertex byte list,
+// then either skips forward by offset or stays to interpret the stream
+// after the list (bright path -> DoSetGlobalAlpha through current_screen).
+// That call walks MigWindow -> Master() -> MigDisplay::SetGlobalAlpha,
+// which reads the member DD.lpDirect3D. `master` is protected in Graphic,
+// so the dummy window's pointer slots are all filled with the display
+// address: wherever master sits it resolves to the zeroed MigDisplay
+// (lpDirect3D == NULL -> returns the alpha value unchanged).
+// Edge guards pinned: nopoints=0 and threshold=256 take the offset path.
+//------------------------------------------------------------------------------
+static void test_doifbright()
+{
+    static UByte fake_screen[16384];
+    static UByte fake_display[16384];
+    std::memset(fake_display, 0, sizeof(fake_display));
+    for (size_t i = 0; i < sizeof(fake_screen) / sizeof(void*); ++i)
+        ((void**)fake_screen)[i] = fake_display;
+    shape_current_screen = fake_screen;
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    // [DOIFBRIGHT][v0][v1] - vertex indices are the stream bytes after hdr
+    UByte stream[16] = {0};
+    DOIFBRIGHT* p = (DOIFBRIGHT*)stream;
+    p->threshold = 100;
+    p->offset = 40;
+    stream[sizeof(DOIFBRIGHT)] = 4;                 // vertex index 4
+    stream[sizeof(DOIFBRIGHT) + 1] = 5;             // vertex index 5
+
+    // nopoints=0: avg=0, 0 > 100 false -> +offset (no /0, no alpha call)
+    p->nopoints = 0;
+    UByte* ip = stream;
+    shape_doifbright(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFBRIGHT) + 40);
+
+    // dim: intensity 250 each -> avg 6 <= 100 -> +offset; consumed verts
+    // are reset to intensity/specular -1.
+    p->nopoints = 2;
+    shape_shpco[4].intensity = 250;
+    shape_shpco[5].intensity = 250;
+    ip = stream;
+    shape_doifbright(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFBRIGHT) + 40);
+    CHECK_EQ(shape_shpco[4].intensity, -1);
+    CHECK_EQ(shape_shpco[4].specular, -1);
+
+    // boundary: avg == threshold is NOT bright (strict >).
+    shape_shpco[4].intensity = 156;                 // 256-156 = 100 avg
+    shape_shpco[5].intensity = 156;
+    ip = stream;
+    shape_doifbright(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFBRIGHT) + 40);
+
+    // bright: intensity 0 each -> avg 256 > 100 -> alpha set (255) and
+    // instr_ptr stays at the byte after the vertex list.
+    shape_shpco[4].intensity = 0;
+    shape_shpco[5].intensity = 0;
+    ip = stream;
+    shape_doifbright(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFBRIGHT) + 2);
+
+    // threshold=256: even max brightness takes offset (256 < 256 false).
+    p->threshold = 256;
+    shape_shpco[4].intensity = 0;
+    shape_shpco[5].intensity = 0;
+    ip = stream;
+    shape_doifbright(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFBRIGHT) + 40);
+}
+
+//------------------------------------------------------------------------------
+// shape::doifcross - backface/winding test through _matrix.crossproduct
+// (projects bodyx/bodyz, bodyy/bodyz; temp <= 0 -> clockwise -> continue,
+// else +offset). Pins both windings plus the temp=0 collinear boundary.
+//------------------------------------------------------------------------------
+static void test_doifcross()
+{
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+    shape_shpco[0].bodyx.f = 0.0;
+    shape_shpco[0].bodyy.f = 0.0;
+    shape_shpco[0].bodyz.f = 100.0;
+    shape_shpco[1].bodyx.f = 100.0;                 // -> (1,0)
+    shape_shpco[1].bodyy.f = 0.0;
+    shape_shpco[1].bodyz.f = 100.0;
+    shape_shpco[2].bodyx.f = 0.0;                   // -> (0,1)
+    shape_shpco[2].bodyy.f = 100.0;
+    shape_shpco[2].bodyz.f = 100.0;
+
+    UByte stream[8] = {0};
+    DOIFCROSS* p = (DOIFCROSS*)stream;
+    p->vertex1 = 0;
+    p->vertex2 = 1;
+    p->vertex3 = 2;
+    p->offset = 60;
+
+    // (0,0),(1,0),(0,1): temp = 1 > 0 -> anti-clockwise -> +offset.
+    UByte* ip = stream;
+    shape_doifcross(ip);
+    CHECK_EQ(ip - stream, 60);
+
+    // Swap v2/v3: temp = -1 <= 0 -> clockwise -> continue past header.
+    p->vertex2 = 2;
+    p->vertex3 = 1;
+    ip = stream;
+    shape_doifcross(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFCROSS));
+
+    // All three verts identical -> temp = 0 -> clockwise (degenerate).
+    p->vertex2 = 0;
+    p->vertex3 = 0;
+    ip = stream;
+    shape_doifcross(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOIFCROSS));
+}
+
+//------------------------------------------------------------------------------
+// shape::doflipvector / doflipnvec - face-flip fixup: intensity -> 256-i
+// (clamped at 0), specular <-> specFlip swap. doflipnvec loops nopoints
+// verts starting at ptr->vertex.
+//------------------------------------------------------------------------------
+static void test_flip_writers()
+{
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    UByte stream[8] = {0};
+    DOFLIPVECTOR* p = (DOFLIPVECTOR*)stream;
+    p->vertex = 2;
+
+    shape_shpco[2].intensity = 100;
+    shape_shpco[2].specular = 10;
+    shape_shpco[2].specFlip = 20;
+    UByte* ip = stream;
+    shape_doflipvector(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOFLIPVECTOR));
+    CHECK_EQ(shape_shpco[2].intensity, 156);        // 256 - 100
+    CHECK_EQ(shape_shpco[2].specular, 20);          // swapped
+    CHECK_EQ(shape_shpco[2].specFlip, 10);
+
+    // Edge: intensity > 256 underflows negative -> clamps to 0.
+    shape_shpco[2].intensity = 300;
+    ip = stream;
+    shape_doflipvector(ip);
+    CHECK_EQ(shape_shpco[2].intensity, 0);
+
+    // Edge: intensity = 0 -> 256 (full flip, no clamp).
+    shape_shpco[2].intensity = 0;
+    ip = stream;
+    shape_doflipvector(ip);
+    CHECK_EQ(shape_shpco[2].intensity, 256);
+
+    // doflipnvec: nopoints=2 covers verts 3,4; vert 5 untouched.
+    DOFLIPNVEC* np = (DOFLIPNVEC*)stream;
+    np->vertex = 3;
+    np->nopoints = 2;
+    shape_shpco[3].intensity = 100;
+    shape_shpco[3].specular = 1;
+    shape_shpco[3].specFlip = 2;
+    shape_shpco[4].intensity = 0;
+    shape_shpco[5].intensity = 50;
+    ip = stream;
+    shape_doflipnvec(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOFLIPNVEC));
+    CHECK_EQ(shape_shpco[3].intensity, 156);
+    CHECK_EQ(shape_shpco[3].specular, 2);
+    CHECK_EQ(shape_shpco[3].specFlip, 1);
+    CHECK_EQ(shape_shpco[4].intensity, 256);
+    CHECK_EQ(shape_shpco[5].intensity, 50);         // outside range
+}
+
+//------------------------------------------------------------------------------
 int main()
 {
     test_type_layout();
@@ -1451,6 +1658,9 @@ int main()
     test_divzero_guards();
     test_edge_boundaries();
     test_modvec_edges();
+    test_doifbright();
+    test_doifcross();
+    test_flip_writers();
     test_ftoitexture();
     test_select_palette();
 

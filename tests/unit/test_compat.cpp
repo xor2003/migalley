@@ -39,6 +39,15 @@ void test_win32_events()
     HANDLE iev = CreateEvent(nullptr, false, true, nullptr);
     CHECK_EQ(WaitForSingleObject(iev, 0), WAIT_OBJECT_0);
     CloseHandle(iev);
+
+    // Signals do not queue: SetEvent twice still leaves one consume on an
+    // auto-reset event (the flag is boolean, not a count).
+    HANDLE sev = CreateEvent(nullptr, false, false, nullptr);
+    CHECK(SetEvent(sev));
+    CHECK(SetEvent(sev));
+    CHECK_EQ(WaitForSingleObject(sev, 0), WAIT_OBJECT_0);
+    CHECK_EQ(WaitForSingleObject(sev, 0), WAIT_TIMEOUT);
+    CloseHandle(sev);
 }
 
 //------------------------------------------------------------------------------
@@ -60,6 +69,29 @@ void test_win32_semaphore()
     CHECK_EQ((DWORD)WaitForSingleObject(nullptr, 0), (DWORD)WAIT_FAILED);
     CHECK_EQ((DWORD)WaitForSingleObject(INVALID_HANDLE_VALUE, 0),
              (DWORD)WAIT_FAILED);
+
+    // Initial count 0 -> immediate timeout without consuming anything.
+    HANDLE zsem = CreateSemaphore(nullptr, 0, 2, nullptr);
+    CHECK_EQ(WaitForSingleObject(zsem, 0), WAIT_TIMEOUT);
+
+    // Win32 contract: ReleaseSemaphore fails without releasing if the
+    // count would exceed lMaximumCount. Fill to max, then overflow.
+    CHECK(ReleaseSemaphore(zsem, 1, nullptr));
+    CHECK(ReleaseSemaphore(zsem, 1, nullptr));      // count = 2 = max
+    CHECK_EQ(ReleaseSemaphore(zsem, 1, nullptr), false); // would exceed
+    // Overflow left the count intact: drain twice, third blocks.
+    CHECK_EQ(WaitForSingleObject(zsem, 0), WAIT_OBJECT_0);
+    CHECK_EQ(WaitForSingleObject(zsem, 0), WAIT_OBJECT_0);
+    CHECK_EQ(WaitForSingleObject(zsem, 0), WAIT_TIMEOUT);
+    CloseHandle(zsem);
+
+    // Releasing 0 is a legal no-op that still reports prevCount.
+    HANDLE nsem = CreateSemaphore(nullptr, 1, 3, nullptr);
+    LONG prev2 = -1;
+    CHECK(ReleaseSemaphore(nsem, 0, &prev2));
+    CHECK_EQ(prev2, 1);
+    CHECK_EQ(WaitForSingleObject(nsem, 0), WAIT_OBJECT_0);
+    CloseHandle(nsem);
 }
 
 //------------------------------------------------------------------------------
@@ -86,4 +118,23 @@ void test_win32_timing()
     CHECK(QueryPerformanceCounter(&c2) != 0);
     CHECK(c2.QuadPart >= c1.QuadPart);                  // monotonic
     Sleep(1);                                            // must not spin
+
+    // Frequency is a stable constant across calls.
+    LARGE_INTEGER f2 = {};
+    CHECK(QueryPerformanceFrequency(&f2) != 0);
+    CHECK_EQ(f2.QuadPart, freq.QuadPart);
+
+    // A real timed wait actually sleeps ~the timeout (measured in ms via
+    // QPC; generous upper bound for loaded CI runners).
+    HANDLE ev = CreateEvent(nullptr, false, false, nullptr);
+    LARGE_INTEGER t0 = {}, t1 = {};
+    QueryPerformanceCounter(&t0);
+    DWORD wr = WaitForSingleObject(ev, 50);
+    QueryPerformanceCounter(&t1);
+    CloseHandle(ev);
+    CHECK_EQ(wr, WAIT_TIMEOUT);
+    long long elapsed_ms =
+        (long long)((t1.QuadPart - t0.QuadPart) * 1000 / freq.QuadPart);
+    CHECK(elapsed_ms >= 40);                            // waited, not poll
+    CHECK(elapsed_ms < 5000);                           // and not forever
 }
