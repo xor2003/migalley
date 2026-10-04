@@ -87,6 +87,9 @@ questions about this file may be asked at http://www.simhq.com/
 #include "FILES.H"
 #include "IMAGEMAP.H"
 #include "IMAGEMAP.G"
+//RERUN: software-mode land palette lives in this global; originally contiguous
+//before palette_buffer so GetPaletteTable()-256 hit it (GRAFPRIM.CPP)
+extern uint16_t landscape_palette[256];
 #include "MIGLAND.H"
 #include "DISPLAY.H"
 #include "WORLDINC.H"
@@ -757,7 +760,7 @@ void SetTexturePointers(const bool hardVer=true)
 		//make the landscape palette lookup table here
 		UWord* plup=(UWord*)win->GetPaletteTable();
 		UByte* palp=imagePalette;
-		plup-=256;
+		plup=(UWord*)::landscape_palette;
 
 		UWord redMask,greenMask,blueMask;
 		SWord redShift1,greenShift1,blueShift1;

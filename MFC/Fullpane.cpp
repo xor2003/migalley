@@ -2645,9 +2645,10 @@ Bool RFullPanelDial::StartFlying()
 	LogChild(0,	flybox = MakeTopDialog(placement, flyBoxDial));
 
 	if (flybox && flybox->GetParent())
+	{
 		Master_3d.winst = flybox->GetParent()->GetSafeHwnd();
-
-	flybox->GetParent()->SetWindowPos(flybox->GetParent(), 0,0, w, h, 0);
+		flybox->GetParent()->SetWindowPos(flybox->GetParent(), 0,0, w, h, 0);
+	}
 
 	localnote=(&RFullPanelDial::OnFlyingClosed);
 	return TRUE;
@@ -3168,47 +3169,23 @@ Bool RFullPanelDial::FragInit()
 			numopts = CFrag::FillFlightParamswithSquads(CFrag::comboparams[CFrag::comboindex].pack, params);
 		}															  //RDH 10/06/99
 	}
-	DialBox* ND=NULL;
-
 	DialBox emptyBox(FIL_NULL, new EmptyChildWindow, EDGES_NOSCROLLBARS_NODRAGGING);
 
-	const DialBox& pilot0 = (numopts > 0)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[0] = new CFragPilot(params[0]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
-
-	const DialBox& pilot1 = (numopts > 1)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[1] = new CFragPilot(params[1]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
-
-	const DialBox& pilot2 = (numopts > 2)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[2] = new CFragPilot(params[2]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
-	
-	const DialBox& pilot3 = (numopts > 3)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[3] = new CFragPilot(params[3]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
-
-	const DialBox& pilot4 = (numopts > 4)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[4] = new CFragPilot(params[4]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
-
-	const DialBox& pilot5 = (numopts > 5)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[5] = new CFragPilot(params[5]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
-	
-	const DialBox& pilot6 = (numopts > 6)
-		? (const DialBox&)DialBox(FIL_NULL, CFrag::pilotlines[6] = new CFragPilot(params[6]), EDGES_NOSCROLLBARS_NODRAGGING)
-		: *ND;
+	//RERUN: NULL diallist entries terminate the child walk, so absent pilots
+	//must stay NULL pointers - the old ': *ND' bound a null pointer to a
+	//reference (UB; flagged by scan-build). Build a NULL-terminated array and
+	//use the pointer-list DialList ctor instead.
+	const DialBox* pilots[8];
+	int npilots = numopts<7 ? numopts : 7;
+	for (int i=0;i<npilots;i++)
+		pilots[i] = new DialBox(FIL_NULL,
+				CFrag::pilotlines[i] = new CFragPilot(params[i]),
+				EDGES_NOSCROLLBARS_NODRAGGING);
+	pilots[npilots]=NULL;
 
 	DialList innerList(
 		emptyBox,
-		pilot0,
-		pilot1,
-		pilot2,
-		pilot3,
-		pilot4,
-		pilot5,
-		pilot6
+		pilots
 	);
 
 	DialList outerList(topbit, innerList);
@@ -4327,7 +4304,7 @@ void	PackageList::PackagePrepareForFrag()
 		case TEAMPLAY:
 		case DEATHMATCH:
 			side=0;
-			for (wave=0;wave<8;wave++)
+			for (wave=0;wave<Profile::MAX_WAVES;wave++)	//RERUN was <8: pack[].wave is only MAX_WAVES(6) wide - wrote past the Profile
 			{
 				for (grp=0;grp<3;grp++)
 				{
@@ -4349,7 +4326,7 @@ void	PackageList::PackagePrepareForFrag()
 		{
 			for (side = 0; side < 2; side++)
 			{
-				 for (wave=0;wave<8;wave++)
+				 for (wave=0;wave<Profile::MAX_WAVES;wave++)	//RERUN was <8: pack[].wave is only MAX_WAVES(6) wide - wrote past the Profile
 				 {
 					for (grp=0;grp<3;grp++)
 					{
@@ -4374,7 +4351,7 @@ void	PackageList::PackagePrepareForFrag()
 		{
 			for (side = 0; side < 2; side++)
 			{
-				 for (int wave=0;wave<8;wave++)
+				 for (int wave=0;wave<Profile::MAX_WAVES;wave++)	//RERUN was <8: pack[].wave is only MAX_WAVES(6) wide - wrote past the Profile
 				 {
 					for (int grp=0;grp<3;grp++)
 					{
@@ -4706,7 +4683,7 @@ void	DPlay::ClearPackages()
 {
 	for (int side = 0; side < 2; side++)
 	{
-		for (int wave=0;wave<8;wave++)
+		for (int wave=0;wave<Profile::MAX_WAVES;wave++)	//RERUN was <8: pack[].wave is only MAX_WAVES(6) wide - wrote past the Profile
 		{
 			for (int grp=0;grp<3;grp++)
 			{

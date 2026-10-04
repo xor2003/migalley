@@ -478,6 +478,9 @@ void	ItemBase::operator delete(void* area)
 {
 	if (!area)	return;
 	ItemBasePtr	it=(ItemBasePtr)area;
+	//RERUN: ::delete() calls below bypass class operator delete hooks, so this
+	//dispatcher is the only funnel that can splice items out of ACList/MobileList
+	UnlinkFromMoveLists((MobileItemPtr)it);
 	if (it->MigStatus.LaunchFlags.size==ItemBaseSize)
 		::delete(ItemBasePtr)it;
 	else

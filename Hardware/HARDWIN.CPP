@@ -378,7 +378,7 @@ else
 #endif
 		if (ddrval != DD_OK)
 		{			 //DDERR_SURFACELOST
-			printf("SDL_UpdateTexture case 1 failed! error: %d\n", SDL_GetError());
+			printf("SDL_UpdateTexture case 1 failed! error: %s\n", SDL_GetError());
 		}
 
 	break;
@@ -392,7 +392,7 @@ else
 			ddrval = SDL_UpdateTexture(Master_3d.SdlMigTexture, NULL, DD.lpDDSPrimary->pixels, DD.lpDDSPrimary->pitch);
 			if (ddrval != DD_OK)
 			{			 //DDERR_SURFACELOST
-				printf("SDL_UpdateTexture case 2 failed! error: %d\n", SDL_GetError());
+				printf("SDL_UpdateTexture case 2 failed! error: %s\n", SDL_GetError());
 			}
 		}
 #endif
@@ -415,8 +415,8 @@ else
 	}
 
 
-	if (SDL_RenderClear(DD.lpDD2) != DD_OK)	{printf("Error: %d\n", SDL_GetError());}
-	if (SDL_RenderCopy(DD.lpDD2, Master_3d.SdlMigTexture, NULL, NULL) != DD_OK)	{printf("Error: %d\n", SDL_GetError());}
+	if (SDL_RenderClear(DD.lpDD2) != DD_OK)	{printf("Error: %s\n", SDL_GetError());}
+	if (SDL_RenderCopy(DD.lpDD2, Master_3d.SdlMigTexture, NULL, NULL) != DD_OK)	{printf("Error: %s\n", SDL_GetError());}
 	SDL_RenderPresent(DD.lpDD2);
 }
 }

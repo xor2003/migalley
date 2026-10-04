@@ -7,12 +7,14 @@
 
 //RERUN DISABLED #include "RAD.H"
 #ifndef RADDEFSTART
-#define s8 signed char
-#define u8 unsigned char
-#define u32 unsigned long
-#define s32 signed long
-#define u64 unsigned __int64
-#define s64 signed __int64
+//RERUN: typedefs, not macros - the u64 macro collided with the member name
+//`u64` in <vulkan_core.h> when a TU included smack.h before vulkan headers.
+typedef signed char s8;
+typedef unsigned char u8;
+typedef unsigned long u32;
+typedef signed long s32;
+typedef unsigned long long u64;
+typedef signed long long s64;
 #endif
 
 extern "C" {

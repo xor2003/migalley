@@ -363,6 +363,10 @@ inline	void ASM_SmokedGlassLine(UByte * a, VERTEX& b, VERTEX& c)
 extern "C" {
 	uint16_t PixelWidth = 4;
     SWord Trns3DEnabled = 0; // MASM: DW 0
+    //RERUN: extent of the locked SDL surface; set in direct_draw::LockScr,
+    //checked by the XASM_*Line* writers so a stray span can't write OOB
+    uint8_t* xasm_surface_end = nullptr;
+    uint8_t* xasm_surface_start = nullptr;
 
     // Global buffers (match MASM sizes and zero-init)
     uint8_t LandFadeData[4098 * 2] = {0};
@@ -1107,6 +1111,11 @@ extern "C" void XASM_GouraudHoriLine4(Vertex* right, Vertex* left, uint16_t* scr
         // Advance destination by 8 bytes at the top (add edi,8)
         dstBytes += 8;
 
+        //RERUN: bound writes to the locked surface (original asm relied on
+        //clipped verts; off-screen edges still overrun on the SDL heap buffer)
+        if (xasm_surface_end && (dstBytes+8 > xasm_surface_end || dstBytes < xasm_surface_start))
+            break;
+
         // Shade index from (INTENS + JITTER) >> 16, clamped to 0x0..0xF
         int32_t shade = INTENS + static_cast<int32_t>(jitter);
         shade >>= 16;
@@ -1159,6 +1168,9 @@ extern "C" void XASM_ImageHoriLine4(Vertex* right, Vertex* left, uint16_t* scree
     uint8_t  yshift = colour_data.imageyshift;
 
     for (int cx = width; cx > 0; --cx, dst += 4) {
+        //RERUN: bound writes to the locked surface
+        if (xasm_surface_end && ((uint8_t*)(dst+4) > xasm_surface_end || (uint8_t*)dst < xasm_surface_start))
+            break;
         // Masked texture coords
         uint32_t ebx = IX & xmask;
         uint32_t eax = IY & ymask;
@@ -1206,6 +1218,9 @@ extern "C" void XASM_MImageHoriLine4(Vertex* right, Vertex* left, uint16_t* scre
     uint8_t  yshift = colour_data.imageyshift;
 
     for (int cx = width; cx > 0; --cx, dst += 4) {
+        //RERUN: bound writes to the locked surface
+        if (xasm_surface_end && ((uint8_t*)(dst+4) > xasm_surface_end || (uint8_t*)dst < xasm_surface_start))
+            break;
         // Masked texture coords
         uint32_t ebx = IX & xmask;
         uint32_t eax = IY & ymask;
@@ -1267,6 +1282,9 @@ extern "C" void XASM_SImageHoriLine4(Vertex* right, Vertex* left, uint16_t* scre
     uint8_t  yshift = colour_data.imageyshift;
 
     for (int cx = width; cx > 0; --cx, dst += 4) {
+        //RERUN: bound writes to the locked surface
+        if (xasm_surface_end && ((uint8_t*)(dst+4) > xasm_surface_end || (uint8_t*)dst < xasm_surface_start))
+            break;
         // Masked texture coords
         uint32_t ebx = IX & xmask;
         uint32_t eax = IY & ymask;
@@ -1337,6 +1355,9 @@ extern "C" void XASM_TFImageHoriline4(Vertex* right, Vertex* left, uint16_t* scr
     uint8_t  yshift = colour_data.imageyshift;
 
     for (int cx = width; cx > 0; --cx, dst += 4) {
+        //RERUN: bound writes to the locked surface
+        if (xasm_surface_end && ((uint8_t*)(dst+4) > xasm_surface_end || (uint8_t*)dst < xasm_surface_start))
+            break;
         // Masked texture coords
         uint32_t ebx = IX & xmask;
         uint32_t eax = IY & ymask;
@@ -1412,6 +1433,9 @@ extern "C" void XASM_AImageHoriline4(Vertex* right, Vertex* left, uint16_t* scre
     uint8_t  yshift = colour_data.imageyshift;
 
     for (int cx = width; cx > 0; --cx, dst += 4) {
+        //RERUN: bound writes to the locked surface
+        if (xasm_surface_end && ((uint8_t*)(dst+4) > xasm_surface_end || (uint8_t*)dst < xasm_surface_start))
+            break;
         // Masked texture coords
         uint32_t ebx = IX & xmask;
         uint32_t eax = IY & ymask;
@@ -1483,6 +1507,9 @@ extern "C" void XASM_CImageHoriLine4(Vertex* right, Vertex* left, uint16_t* scre
     uint8_t  yshift = colour_data.imageyshift;
 
     for (int cx = width; cx > 0; --cx, dst += 4) {
+        //RERUN: bound writes to the locked surface
+        if (xasm_surface_end && ((uint8_t*)(dst+4) > xasm_surface_end || (uint8_t*)dst < xasm_surface_start))
+            break;
         // Masked texture coords
         uint32_t ebx = IX & xmask;
         uint32_t eax = IY & ymask;

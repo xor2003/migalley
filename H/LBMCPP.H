@@ -56,6 +56,14 @@
 	#define DELTAVALUE(x,d) (TRANSFERVALUESIZE*&)x += d
 	#endif
 
+	//RERUN: bound all compressed-stream reads at LBM_END_PTR; past-end reads
+	//decode as a 1-byte COPY (b==0) so every state-machine loop still
+	//converges instead of running off the end of the fileblock
+	#ifndef LBM_END_PTR
+	#define LBM_END_PTR	((UByte*)~0UL)
+	#endif
+	#define LBMREADB()	((c < (UByte*)LBM_END_PTR) ? *(c++) : (UByte)0)
+
 	TRANSFERVALUESIZE TRANSFERVALUE;
 
 //THIS IS THE ACTUAL START
@@ -73,7 +81,7 @@
 	{
 		while (x<minx)
 		{
-			b=*(c++);
+			b=LBMREADB();
 			if (b<0x80)
 			{	//COPY
 				Count = 1+(SByte) b;
@@ -83,7 +91,7 @@
 			}
 			elseif (b==0x80)
 			{	//SKIP
-				Count= 1 + *(c++);
+				Count= 1 + LBMREADB();
 				x+=Count;
 				width-=Count;
 			}
@@ -114,7 +122,7 @@
 			if (Count)
 			do
 			{
-				COPYVALUE(scraddr,*c++);
+				COPYVALUE(scraddr,LBMREADB());
 			}
 			while (--Count!=0);
 			c+=residue;	
@@ -122,7 +130,7 @@
 		else
 		if (b!=0x80)
 		{
-			LOADVALUE(*(c-1));
+			LOADVALUE(((c-1) < (UByte*)LBM_END_PTR) ? *(c-1) : 0);
 			residue=x-minx;
 			x=minx;
 			DELTAVALUE(scraddr,x);			//set to starting pixel...
@@ -163,20 +171,20 @@
 	/////CASE 3A: FAST UNPACK - CLIP TO WIDTH
 			while (width)
 			{
-				b=*(c++);
+				b=LBMREADB();
 				if (b<0x80)
 				{	//COPY
 					Count = 1+(SByte) b;
 					width-=Count;
 					do
 					{
-						COPYVALUE(scraddr,*c++);
+						COPYVALUE(scraddr,LBMREADB());
 					}
 					while (--Count!=0);
 				}
 				elseif (b==0x80)
 				{	//SKIP
-					Count= 1 + *(c++);
+					Count= 1 + LBMREADB();
 					width-=Count;
 					DELTAVALUE(scraddr,Count);
 				}
@@ -184,7 +192,7 @@
 				{	//RUN
 					Count = 1-(SByte) b;
 					width-=Count;
-					LOADVALUE(*c++);
+					LOADVALUE(LBMREADB());
 					do
 					{
 						SAVEVALUE(scraddr);
@@ -197,7 +205,7 @@
 		{
 			while (x<=maxx)
 			{
-				b=*(c++);
+				b=LBMREADB();
 				if (b<0x80)
 				{	//COPY
 					Count = 1+(SByte) b;
@@ -206,13 +214,13 @@
 					if (x<=maxx)
 						do
 						{
-							COPYVALUE(scraddr,*c++);
+							COPYVALUE(scraddr,LBMREADB());
 						}
 						while (--Count!=0);
 				}
 				elseif (b==0x80)
 				{	//SKIP
-					Count= 1 + *(c++);
+					Count= 1 + LBMREADB();
 					width-=Count;
 					x+=Count;
 					DELTAVALUE(scraddr,Count);
@@ -222,7 +230,7 @@
 					Count = 1-(SByte) b;
 					x+=Count;
 					width-=Count;
-					LOADVALUE(*c++);
+					LOADVALUE(LBMREADB());
 					if (x<=maxx)
 						do
 						{
@@ -241,7 +249,7 @@
 					Count-=residue;
 					do
 					{
-						COPYVALUE(scraddr,*c++);
+						COPYVALUE(scraddr,LBMREADB());
 					}
 					while (--Count!=0);
 					c+=residue;
@@ -263,7 +271,7 @@
 	if (width)
 		while(width>0)
 		{
-			b=*(c++);
+			b=LBMREADB();
 			if (b<0x80)
 			{	//COPY
 				Count = 1+(SByte) b;
@@ -272,7 +280,7 @@
 			}
 			elseif (b==0x80)
 			{	//SKIP
-				Count= 1 + *(c++);
+				Count= 1 + LBMREADB();
 				width-=Count;
 			}
 			else

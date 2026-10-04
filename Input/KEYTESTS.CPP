@@ -189,12 +189,19 @@ void	keytests::Reg3dConv(KeyMapping* mapreq, int i)
 	ClearKeyTables();
 	KeyMap3d* keymap = (KeyMap3d*)reftable3d.flat;
 
-	while (i--)
+	//Bound by pointer, not count: the table may have no terminator, so
+	//the original peek at the next record after mapreq++ read past the
+	//file block. The bound check needs no load, so no entry past the
+	//buffer is ever touched. scancode/shiftstate must stay inside
+	//mappings[MAXKEYS][8] or the write corrupts keymap.
+	KeyMapping* mapend = mapreq + (i > 0 ? i : 0);
+	while (mapreq < mapend)
 	{
-		keymap->mappings[mapreq->scancode][mapreq->shiftstate] = mapreq->bitflag;
-		mapreq++;
 		if (mapreq->scancode == 0)
 			break;
+		if (mapreq->scancode < KeyMap3d::MAXKEYS && mapreq->shiftstate < 8)
+			keymap->mappings[mapreq->scancode][mapreq->shiftstate] = mapreq->bitflag;
+		mapreq++;
 	}
 	((KeyMap3d*)reftable3d.flat)->active = true;
 	ModeIs3D = BOOL_TRUE;

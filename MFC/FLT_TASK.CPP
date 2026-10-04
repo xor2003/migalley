@@ -484,7 +484,7 @@ void	CFlt_Task::SetFlightCount()
 //DeadCode DAW 22Jun99 			RefreshParent();
 		displayedflights=flights;
 		char buffer[20];
-		sprintf(buffer,"%s (%i/%i)",RESLIST(SQ_BF_F86A,Todays_Packages[packnum][wavenum][groupnum].squadron),flights,maxavail);
+		sprintf(buffer,"%s (%i/%i)",(const char*)RESLIST(SQ_BF_F86A,Todays_Packages[packnum][wavenum][groupnum].squadron),flights,(int)maxavail);
 		squad->SetCaption(buffer);
 	}
 	else

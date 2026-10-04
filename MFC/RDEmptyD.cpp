@@ -106,7 +106,9 @@ BOOL RDEmptyD::OnInitDialog()
 	CDialog::OnInitDialog();
 
 	// RERUN: Enable Help and Close buttons on the title bar
-	CRButton* title = (CRButton*)GetDlgItem(IDJ_TITLE);
+	// Use CWnd::GetDlgItem (returns CWnd*) rather than RowanDialog::GetDlgItem
+	// (returns DlgItem&) - the control may legitimately be absent.
+	CRButton* title = (CRButton*)CWnd::GetDlgItem(IDJ_TITLE);
 	if (!title) {
 		// RERUN: Manually create title bar if missing from template
 		title = new CRButton();

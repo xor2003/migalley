@@ -1794,11 +1794,13 @@ void	ArtInt::PersonalThreatMsg(AirStrucPtr trg,AirStrucPtr agg)
 }
 bool	ArtInt::PersonalThreat(AirStrucPtr trg,AirStrucPtr agg,bool process)
 {
+	if (!trg || !agg)										  //RERUN
+		return(false);
+
 	if (trg->AutoMoveInfo.nationality==agg->AutoMoveInfo.nationality)		  //MS 11/05/99
 		return(false);
 
-	if (	trg && agg
-		&&	trg->MigStatus.LaunchFlags.size==AIRSTRUCSIZE
+	if (	trg->MigStatus.LaunchFlags.size==AIRSTRUCSIZE
 		&&	agg->MigStatus.LaunchFlags.size==AIRSTRUCSIZE	)
 	{	//It is a valid pairing - now some quick throwouts:
 		//If aircraft already committed

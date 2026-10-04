@@ -3403,6 +3403,8 @@ DataRecord CMigLand::GetData(ULong x,ULong z)
 
 	if (!bFound){
 		UByte* ptr=pMigFMan->getdata(*pMigFile,*pMigLandDecomp,x,z);
+		static UByte faketile[]={0xFF,0xFF,0x00,0xFF};	//RERUN: flat-tile sentinel for blocks outside the map/cache
+		if (!ptr) ptr=faketile;
 		pMigLandDecomp->UnPack(x,z,ptr,pData);
 	}
 	retVal.pData=pData->DataStart();

@@ -97,11 +97,21 @@ struct DialBox:DialMake
 {
 	RDialog*	dial;
 	const	DialBox*	diallist[10];
+	Edges	edgesval;
 	DialBox(FileNum artnum,RDialog*	newdial,const Edges& e=*(Edges*)NULL):
 	DialMake(&e,artnum)
-	{dial=newdial;diallist[0]=NULL;diallist[1]=(DialBox*)0x12345678;}
+	{
+		dial=newdial;diallist[0]=NULL;diallist[1]=(DialBox*)0x12345678;
+		//Caller may pass a temporary Edges which dies at end of the
+		//full expression; keep an owned copy so 'edges' never dangles.
+		if (&e)	{ edgesval=e; edges=&edgesval; }
+	}
 protected:
-	DialBox(DialBox& d):DialMake(d.edges,d.art){dial=d.dial;}
+	DialBox(DialBox& d):DialMake(NULL,d.art)
+	{
+		dial=d.dial;
+		if (d.edges)	{ edgesval=*d.edges; edges=&edgesval; }
+	}
 	DialBox()	{ dial = NULL; edges = NULL; art = FIL_NULL; }
 };
 
@@ -128,6 +138,16 @@ struct DialList:DialBox
 		diallist[7]=&d7;
 		diallist[8]=NULL;
 		diallist[9]=NULL;
+		childtype=CLUMP;
+	}
+	//RERUN: pointer-list form - a NULL slot is a list terminator, which is the
+	//only defined-behavior way to spell "no pane": binding *(DialBox*)NULL to
+	//a const ref is a null dereference the analyzer (correctly) flags.
+	DialList(DialBox& d,const DialBox*const* boxes):DialBox(d)
+	{
+		int i=0;
+		for (;i<10 && boxes[i];i++)	diallist[i]=boxes[i];
+		for (;i<10;i++)				diallist[i]=NULL;
 		childtype=CLUMP;
 	}
 protected:
@@ -544,7 +564,12 @@ public:
 
 	typedef	CRComboExtra	CRCombo,*CRComboPtr;
 	typedef	CRSpinButExtra	CRSpinBut,*CRSpinButPtr;
-	DlgItem&	GetDlgItem(int ID)	{return *(DlgItem*)CDialog::GetDlgItem(ID);}
+	DlgItem&	GetDlgItem(int ID)
+	{
+		DlgItem* item=(DlgItem*)CDialog::GetDlgItem(ID);
+		static DlgItem	missing;	//never return a null reference
+		return item?*item:missing;
+	}
 	RFullPanelDial* FullPanel()	{ASSERT(GetFullPanel(m_pView));return GetFullPanel(m_pView);}
 	//
 };

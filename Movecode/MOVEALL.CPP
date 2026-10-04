@@ -122,7 +122,31 @@ questions about this file may be asked at http://www.simhq.com/
 
 MobileItemPtr	mobileitem::ACList=NULL;
 MobileItemPtr	mobileitem::MobileList=NULL;
+
+//RERUN: splice an item out of the move lists before it is freed - a stale
+//nextmobile left the freed slot to be reused (ShapeNumField) then walked.
+void UnlinkFromMoveLists(MobileItemPtr it)
+{
+	for (MobileItemPtr* pp=&mobileitem::ACList;*pp;pp=&(*pp)->nextmobile)
+		if (*pp==it)	{*pp=(*pp)->nextmobile;break;}
+	for (MobileItemPtr* pp=&mobileitem::MobileList;*pp;pp=&(*pp)->nextmobile)
+		if (*pp==it)	{*pp=(*pp)->nextmobile;break;}
+	//RERUN: also clear transient back-links to the freed item - bullets outlive
+	//their launcher and PersonalThreat dereferences Launcher unconditionally
+	for (TransientItem* t=TransientItem::TransientList;t;t=t->nexttrans)
+	{
+		if (t->Launcher==(itemptr)it)	t->Launcher=NULL;
+		if (t->Target==(itemptr)it)		t->Target=NULL;
+	}
+}
 TransientItemPtr	TransientItem::TransientList=NULL;
+
+//RERUN: splice a transient out of TransientList before it is freed
+void TransientItem::UnlinkTransList(TransientItemPtr it)
+{
+	for (TransientItemPtr* pp=&TransientList;*pp;pp=&(*pp)->nexttrans)
+		if (*pp==it)	{*pp=(*pp)->nexttrans;break;}
+}
 WorldStuff*		mobileitem::currworld=NULL;
 UByte	mobileitem::timerseed=0;
 int		mobileitem::timeofday=0;
@@ -212,7 +236,7 @@ void mobileitem::MoveList(MobileItemPtr entry,WorldStuff& world)
 		else
 			oldsector=-1;
 
-		if (entry==Persons2::PlayerGhostAC)				
+		if (entry==Persons2::PlayerGhostAC)
 		{
 			INT3;
 		}

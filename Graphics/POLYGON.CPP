@@ -1965,7 +1965,16 @@ void polygon::gpolyscancnvrt(HLINELIST &hll)
 
 	leftvertex.sy.i = hll.starty;									//PD 10Jun96
 
-	while(hll.length--)
+	//RERUN: original asm trusted clipped verts; a stray vertex writes off the
+	//surface. sx is 16-bit fp PIXELS; the *LineN routines add a column on the
+	//right edge (rightX=(sx+0x40000)>>18 etc), so clamp sx to
+	//(pitch_px - 2*PixelWidth) and bound the line count to surface height
+	extern uint16_t PixelWidth;					//GRAFPRIM.CPP
+	SLong xmaxsx=(((SLong)rsd.lPitch/2)-2*PixelWidth)<<16;
+	if (hll.starty+hll.length>(SLong)rsd.dwHeight)
+		hll.length=(SLong)rsd.dwHeight-hll.starty;
+
+	while(hll.length-->0)
 	{
 		//Do a single scan line
 
@@ -1976,6 +1985,11 @@ void polygon::gpolyscancnvrt(HLINELIST &hll)
 
 		if (lin<0)	leftvertex.intensity=0;
 		if (rin<0)	rightvertex.intensity=0;
+
+		if (leftvertex.sx.i<0)			leftvertex.sx.i=0;
+		if (leftvertex.sx.i>xmaxsx)		leftvertex.sx.i=xmaxsx;
+		if (rightvertex.sx.i<0)			rightvertex.sx.i=0;
+		if (rightvertex.sx.i>xmaxsx)	rightvertex.sx.i=xmaxsx;
 
 		ASM_Call(horilinertn,scradr,leftvertex,rightvertex);	//PD 03Jan96
 

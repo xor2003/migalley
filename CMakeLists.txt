@@ -70,6 +70,15 @@ target_include_directories(ProjectDefaults INTERFACE
     ${VULKAN_INCLUDE_DIRS}
 )
 
+# gcc's multilib config finds the 32-bit sysroot libs implicitly, but clang
+# (scan-build's linker driver) needs the pkg-config lib dirs spelled out.
+target_link_directories(ProjectDefaults INTERFACE
+    ${SDL2_LIBRARY_DIRS}
+    ${SDL2TTF_LIBRARY_DIRS}
+    ${SDL2_MIXER_LIBRARY_DIRS}
+    ${VULKAN_LIBRARY_DIRS}
+)
+
 target_link_libraries(ProjectDefaults INTERFACE
     ${SDL2_LIBRARIES}
     ${SDL2TTF_LIBRARIES}

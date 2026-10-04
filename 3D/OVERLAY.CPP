@@ -4779,10 +4779,10 @@ MapScr COverlay::userMsgScrCOMMS=
 Key MapScr::UserOptionsInit()
 {
 	MapScr::OptionList termOpt=MSListEnd;
-	MapScr::OptionList escOpt = MSEscapeLine(MYPREFIX &MapScr::SelectFromUserOptions); // RERUN added the &
+	MapScr::OptionList escOpt = MSEscapeLine(MYPREFIX MapScr::SelectFromUserOptions); // RERUN added the &
 	MapScr::OptionList blankOpt=MSBlankLine;
-	MapScr::OptionList quitOpt = { IDS_MAP_EXIT, 0, SEL_0, MYPREFIX &MapScr::SelectFromUserOptions }; // RERUN idem
-	MapScr::OptionList miscOpt = { IDS_INDIRECT00, 0, SEL_1, MYPREFIX &MapScr::SelectFromUserOptions }; // RERUN idem
+	MapScr::OptionList quitOpt = { IDS_MAP_EXIT, 0, SEL_0, MYPREFIX MapScr::SelectFromUserOptions }; // RERUN idem
+	MapScr::OptionList miscOpt = { IDS_INDIRECT00, 0, SEL_1, MYPREFIX MapScr::SelectFromUserOptions }; // RERUN idem
 
 	DecisionAI* dec=localDec;
 	DecisionAI::OptionRef* opt=dec->GetMsgOptions();
@@ -4811,10 +4811,10 @@ Key MapScr::UserOptionsInit()
 Key MapScr::UserOptsMapInit()
 {
 	MapScr::OptionList termOpt=MSListEnd;
-	MapScr::OptionList escOpt = MSEscapeLine(MYPREFIX &MapScr::SelectFromUserOptsMap); // RERUN
+	MapScr::OptionList escOpt = MSEscapeLine(MYPREFIX MapScr::SelectFromUserOptsMap); // RERUN
 	MapScr::OptionList blankOpt=MSBlankLine;
-	MapScr::OptionList quitOpt = { IDS_MAP_EXIT, 0, SEL_0, MYPREFIX &MapScr::SelectFromUserOptsMap }; // RERUN
-	MapScr::OptionList miscOpt = { IDS_INDIRECT00, 0, SEL_1, MYPREFIX &MapScr::SelectFromUserOptsMap }; // RERUN
+	MapScr::OptionList quitOpt = { IDS_MAP_EXIT, 0, SEL_0, MYPREFIX MapScr::SelectFromUserOptsMap }; // RERUN
+	MapScr::OptionList miscOpt = { IDS_INDIRECT00, 0, SEL_1, MYPREFIX MapScr::SelectFromUserOptsMap }; // RERUN
 
 	DecisionAI* dec=localDec;
 	DecisionAI::OptionRef* opt=dec->GetMsgOptions();

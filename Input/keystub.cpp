@@ -283,12 +283,17 @@ void	keytests::Reg3dConv(KeyMapping* mapreq,int	i)
 KeyMap3d*
 	keymap=(KeyMap3d*) reftable3d.flat;
 	uint64_t	keychecksum=0;
-	while (i--)
+	//Bound the peek at the next record: the table may end without a
+	//terminator, and reading mapreq->bitflag after the last entry is an
+	//out-of-bounds access. The pointer test must come first so the
+	//dereference is short-circuited at the end of the buffer.
+	KeyMapping*	mapend=mapreq+(i>0?i:0);
+	while (mapreq<mapend)
 	{
 		keychecksum=keychecksum*2+(keychecksum>>63)+mapreq->scancode+mapreq->shiftstate+mapreq->bitflag;
 		keymap->mappings[mapreq->scancode][mapreq->shiftstate]=mapreq->bitflag;
 		mapreq++;
-		breakif(mapreq->bitflag==0);
+		breakif(mapreq>=mapend||mapreq->bitflag==0);
 	}
 	((KeyMap3d*) reftable3d.flat)->active=TRUE;
 	ModeIs3D=TRUE;

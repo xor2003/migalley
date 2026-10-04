@@ -254,6 +254,15 @@ char	namedirdir[256]={'D','I','R','.','D','I','R',0,	 		0,0,0,0,0,0,0,0,
 
 int	(*fileman::MemFailPFU) (unsigned)=NULL;
 int	interlocker=0;
+
+//RERUN: the fileblocklink dir/heap lists (openfiles/freedfiles/allfreedfiles)
+//were mutated from both the render and move threads with only partial
+//interlocker coverage - breaklink had none at all. FMlistmutex serialises
+//all list mutation; it is recursive because
+//makefileblock->MakeRoomFor->deletelink->UnLoadRequiredShapes->~fileblock
+//->breaklink nests inside the same thread.
+#include <mutex>
+std::recursive_mutex	FMlistmutex;
 #ifdef	__MSVC__	
 //inline	int	LockExchange(int* loc,int newval=0)
 //{
@@ -501,7 +510,7 @@ ULong	datalength=datalengthin;
 
 dirindex	dirnum,parentnum;
 ULong	mathret;
-	while (	(*datascan<'0')	  ||	(*datascan>'9'))
+	while (	(datalength>0) && ((*datascan<'0') || (*datascan>'9')))
 	{
 		datascan++;
 		datalength--;
@@ -517,13 +526,13 @@ ULong	mathret;
 		if (mathret>255)
 			_Error.EmitSysErr("Dir num %i too high!",mathret);
 		dirnum=(dirindex) mathret;
-		while (*datascan<=' ')
+		while ((datalength>0) && (*datascan<=' '))
 		{
 			datascan++;
 			datalength--;
 		}
 		//if second field is numeric then read that
-		if ((*datascan<='9')&&(*datascan>='0'))
+		if ((datalength>0) && (*datascan<='9')&&(*datascan>='0'))
 		{
 			mathret=Math_Lib.a2iend(datascan,datalength);
 			if (mathret>255)
@@ -531,7 +540,7 @@ ULong	mathret;
 			parentnum=(dirindex) mathret;
 			if (parentnum==dirnum)
 				parentnum=RAMCACHEHANDLEDIR;
-			while (*datascan<=' ')
+			while ((datalength>0) && (*datascan<=' '))
 			{
 				datascan++;
 				datalength--;
@@ -541,26 +550,26 @@ ULong	mathret;
 			parentnum=RAMCACHEHANDLEDIR;
 		//copy the text field which is the directory name
 int		pathstart=outind;
-		if (datascan[0]=='"')
+		if ((datalength>0) && (datascan[0]=='"'))
 			do{
 				outptr[outind++]=*++datascan;
 				datalength--;
-			}while (datascan[1]!='"');
+			}while ((datalength>1) && (datascan[1]!='"'));
 		else
-			while (*datascan>' ')
+			while ((datalength>0) && (*datascan>' '))
 			{
 				outptr[outind++]=*(datascan++);
 				datalength--;
 			}
 		outptr[outind++]=0;
 		//skip to end of line
-		while (*datascan!='\n')
+		while ((datalength>0) && (*datascan!='\n'))
 		{
 			datascan++;
 			datalength--;
 		}
 		//skip to useful data on next line, assuming we haven't run out!
-		while (	(*datascan<'0') &&	(datalength>0))
+		while (	(datalength>0) && (*datascan<'0'))
 		{
 			datascan++;
 			datalength--;
@@ -627,7 +636,7 @@ string	datascan=	(char*)dataarea,
 int		outind=0,
 		datalength=datalengthin;
 //Skip leading garbage...
-	while (	(*datascan<'0')	  ||	(*datascan>'9'))
+	while (	(datalength>0) && ((*datascan<'0') || (*datascan>'9')))
 	{
 		datascan++;
 		datalength--;
@@ -638,54 +647,54 @@ int		outind=0,
 
 //First read in the line:
 		//get first number field
-		while (	(*datascan>='0') &&	(*datascan<='9'))
+		while (	(datalength>0) && (*datascan>='0') && (*datascan<='9'))
 		{
 			datascan++;
 			datalength--;
 		}
 		//find second
-		while (	(*datascan<=' '))
+		while (	(datalength>0) && (*datascan<=' '))
 		{
 			datascan++;
 			datalength--;
 		}
 
 		//if second field is numeric then read that
-		if ((*datascan<='9')&&(*datascan>='0'))
+		if ((datalength>0) && (*datascan<='9')&&(*datascan>='0'))
 		{
-			while (	(*datascan>='0') &&	(*datascan<='9'))
+			while (	(datalength>0) && (*datascan>='0') && (*datascan<='9'))
 			{
 				datascan++;
 				datalength--;
 			}
 			//find 3rd field
-			while (*datascan<=' ')
+			while ((datalength>0) && (*datascan<=' '))
 			{
 				datascan++;
 				datalength--;
 			}
 		}
 		//copy the text field which is the directory name
-		if (datascan[0]=='"')
+		if ((datalength>0) && (datascan[0]=='"'))
 			do{
 				outptr[outind++]=*++datascan;
 				datalength--;
-			}while (datascan[1]!='"');
+			}while ((datalength>1) && (datascan[1]!='"'));
 		else
-			while (*datascan>' ')
+			while ((datalength>0) && (*datascan>' '))
 			{
 				outptr[outind++]=*(datascan++);
 				datalength--;
 			}
 		outptr[outind++]=0;
 		//skip to end of line
-		while (*datascan!='\n')
+		while ((datalength>0) && (*datascan!='\n'))
 		{
 			datascan++;
 			datalength--;
 		}
 		//skip to useful data on next line, assuming we haven't run out!
-		while (	(*datascan<'0') &&	(datalength>0))
+		while (	(datalength>0) && (*datascan<'0'))
 		{
 			datascan++;
 			datalength--;
@@ -805,11 +814,11 @@ fileblock	tmp((direntries[reqdir].driverfile==RCH_DIRBASE)
 								?	dirfakeblock
 								:	dirrootblock);
 
-string		srcpos=&((string) getdata(tmp))[direntries[reqdir].dirnameind];
-int			strsize=strlen(srcpos);
 			//copy name to path space, (add '\' if required)
 			if ((direntries[reqdir].dirnameind!=ALIASDIRIND))
 			{													//DAW 03Oct96
+string		srcpos=&((string) getdata(tmp))[direntries[reqdir].dirnameind];
+int			strsize=strlen(srcpos);
 				if (	(strsize!=0)		//(add '\' if required)
 #if defined (__MSVC__)
 		   		&&(srcpos[strsize-1]!='\\')
@@ -891,13 +900,13 @@ string	srcchar=(string)	srcdata;
 		//3) copy the entries
 int		entries=0;
 ULong	indexer=0;
-		while (srcchar[indexer]<=' ')	indexer++;
+		while (indexer<srcsize && srcchar[indexer]<=' ')	indexer++;
 		while (indexer<srcsize)
 		{
 			entries++;
-			while 	(srcchar[indexer]>' ')	indexer++;
-			while 	(	(srcchar[indexer]<=' ')
-					 &&	(indexer<srcsize)
+			while 	(indexer<srcsize && srcchar[indexer]>' ')	indexer++;
+			while 	(	(indexer<srcsize)
+					 &&	(srcchar[indexer]<=' ')
 					)
 				indexer++;
 		}
@@ -912,15 +921,18 @@ void*		outstart=srcdata;
 		indexer=0;
 		while(entries--)
 		{
-			while (srcchar[indexer]<=' ')	indexer++;
+			while (indexer<srcsize && srcchar[indexer]<=' ')	indexer++;
 int			count=16;
-			while 	(srcchar[indexer]>' ')
+			while 	(count>0 && indexer<srcsize && srcchar[indexer]>' ')
 			{
 				*(outchar++)=srcchar[indexer++];
 				count--;
 			}
-			while (count--)
+			while (count>0)
+			{
 				*(outchar++)=0;
+				count--;
+			}
 		}
 	}
 }
@@ -1073,8 +1085,8 @@ FILE*	fileman::easyopennumberedfile(FileNum	MyFile)
 {
 string	name=namenumberedfile(MyFile);
 		FILE* rv=fopen_ci(name,"rb");
-		if (!rv) 
-			std::cout << "fopen failed!!" << std::endl;
+		if (!rv)
+			std::cout << "fopen failed!! " << name << " (file " << std::hex << MyFile << std::dec << ")" << std::endl;
 		return(rv);
 			
 }
@@ -1159,7 +1171,7 @@ Bool	fileman::existnumberedfile(FileNum	MyFile)
 			FILE* retval=fopen_ci(name,"rb");
 		if (retval==NULL)
 		{
-			std::cout << "fopen failed!!!" << std::endl;
+			std::cout << "fopen failed!!! " << name << " (file " << std::hex << MyFile << std::dec << ")" << std::endl;
 			return(FALSE);
 		}
 		//else
@@ -1300,11 +1312,13 @@ FILE*	filehandle;
 	if (BLOCKCHILD) //RDH 08/07/99
 		return; //RDH 08/07/99
 
+	if (processlock)										  //RERUN
+		FMlistmutex.lock();
+
 	if (processlock)
 	{
 //		(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'M';
-		while(LockExchange(&interlocker,1))
-			Sleep(20);
+		FMlistmutex.lock();										  //RERUN
 	}
 
 	if ((fileblockdata=link->makelink(MyFile,offset,blocksize,link))==NULL)
@@ -1316,7 +1330,7 @@ FILE*	filehandle;
 			if (processlock)
 			{
 //				(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'m';
-				LockExchange(&interlocker,0);
+				FMlistmutex.unlock();
 			}
 			link->datasize=blocksize;
 			assert(blocksize&&"Must provide data size for RAMBUFFER");
@@ -1331,7 +1345,7 @@ FILE*	filehandle;
 				if (processlock)
 				{
 //					(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'m';
-					LockExchange(&interlocker,0);
+					FMlistmutex.unlock();
 				}
 				filehandle=FILEMAN.direntries[di].openfile.handle;
 				link->datasize=blocksize;
@@ -1357,7 +1371,7 @@ FILE*	filehandle;
 					if (processlock)
 					{
 //						(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'m';
-						LockExchange(&interlocker,0);
+						FMlistmutex.unlock();
 					}
 					FILEMAN.fileloadedthisframe=TRUE;
 					link->datasize=		FILEMAN.getfilesize(filehandle);
@@ -1446,12 +1460,15 @@ FILE*	filehandle;
 		if (processlock)
 		{
 //			(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'m';
-			LockExchange(&interlocker,0);
+			FMlistmutex.unlock();
 		}
 #ifndef	NDEBUG
 	if (link)
 		robtotalfilememused += link->datasize;
 #endif
+
+	if (processlock)										  //RERUN
+		FMlistmutex.unlock();
 }
 ////////////////////////////////////////////////////////
 //	I sometimes need to make a block of data look like a fileblock
@@ -1507,6 +1524,8 @@ FILE*	filehandle;
 ////////////////////////////////////////////////////////
 	fileblock::~fileblock()
 {
+	if (link && *(FileNum*)link==0xab1c)							  //RERUN dbg
+		fprintf(stderr,"[FB] ~fileblock %p link=%p fnum=%04x data=%p\n",(void*)this,(void*)link,(int)*(FileNum*)link,link->fileblockdata);
 	if (link)
 		link->breaklink();	//this does all the work now!
 	{
@@ -1647,6 +1666,7 @@ fileblocklink	*s2;
 //------------------------------------------------------------------------------
 Bool	fileblocklink::breaklink()
 {
+	std::lock_guard<std::recursive_mutex>	fmg(FMlistmutex);	  //RERUN
 	if (this)
 	{	//flexibility are us
 		//remove from open list
@@ -1682,6 +1702,7 @@ Bool	fileblocklink::breaklink()
 
 void	fileblocklink::deletedirchain(FileNum fnum)
 {
+std::lock_guard<std::recursive_mutex>	fmg(FMlistmutex);		  //RERUN
 dirindex reqdir=dirnum(fnum);
 fileblocklink	*s2;
 fileblocklink	*search=FILEMAN.direntries[reqdir].freedfiles;
@@ -1711,6 +1732,7 @@ fileblocklink	*search=FILEMAN.direntries[reqdir].freedfiles;
 //------------------------------------------------------------------------------
 Bool	fileblocklink::deletelink(ULong size)
 {
+	std::lock_guard<std::recursive_mutex>	fmg(FMlistmutex);	  //RERUN
 	//find a bigger link to free
 	fileblocklink	*s2 = FILEMAN.allfreedfiles;
 		while (s2 && s2->datasize<size)
@@ -1864,12 +1886,11 @@ CON	dirlist::dirlist(FileNum d):
 //	FILEMAN.pathname[FILEMAN.filenameindex]=0;
 
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'D';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	
 	static char dirdummy[] = "*.*"; //RERUN
 	makedirlist(FILEMAN.makedirectoryname(::dirnum(d)),dirdummy);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'d';
 }
 
@@ -1882,10 +1903,9 @@ CON	dirlist::dirlist(FileNum d,char* w):
 //	FILEMAN.pathname[FILEMAN.filenameindex]=0;
 
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'L';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	makedirlist(FILEMAN.makedirectoryname(::dirnum(d)),w);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'l';
 }
 
@@ -1981,7 +2001,7 @@ DES	dirlist::~dirlist()
 	if (ownfilelist)
  		delete [] filelist;
 	filelist=NULL;
-	delete pathname;
+	delete [] pathname;
 	pathname=NULL;
 	pathlen=0;
 }
@@ -2120,20 +2140,18 @@ return	(fb.getsize()>>4);
 int		FileMan::filesindir(FileNum dirnum)
 {
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'F';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	int rv=fileman::filesindir(dirnum);
-	LockExchange(&interlocker,0);
+	FMlistmutex.unlock();
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'f';
 	return rv;
 }
 Bool	FileMan::existnumberedfile(FileNum filenum)
 {
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'E';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	Bool rv=fileman::existnumberedfile(filenum);
-	LockExchange(&interlocker,0);
+	FMlistmutex.unlock();
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'e';
 	return rv;
 }
@@ -2149,10 +2167,9 @@ ULong	FileMan::seekfilepos(FILE* openhandle,ULong offset)
 FILE*	FileMan::opennumberedfile(FileNum filenum)
 {
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'O';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	FILE*	rv=fileman::opennumberedfile(filenum);
-	LockExchange(&interlocker,0);
+	FMlistmutex.unlock();
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'o';
 	return rv;
 }
@@ -2176,41 +2193,37 @@ char*	FileMan::makedirectoryname(dirindex	reqdir)
 string	FileMan::namenumberedfile(FileNum f)
 {	//requires external unlocking of access, or string copy operation
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'N';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	string rv=fileman::namenumberedfile(f);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'n';
 	return rv;
 }
 
 void FileMan::flushcachedfiles()
 {
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	fileman::flushcachedfiles();
-	LockExchange(&interlocker,0);
+	FMlistmutex.unlock();
 }
 
 string	FileMan::namenumberedfile(FileNum f, string sss)
 {	//requires external unlocking of access, or string copy operation
 
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'S';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	string rv=fileman::namenumberedfile(f);
 	strcpy(sss,rv);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'s';
 	return sss;
 }
 string	FileMan::namenumberedfilelessfail(FileNum f)
 {	//requires external unlocking of access, or string copy operation
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'X';
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	string rv=fileman::namenumberedfilelessfail(f);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 //	(ULONG&)(((UWord*)0xb0000)[stuffed+=1])=0x700+'x';
 	return rv;
 }
@@ -2221,35 +2234,31 @@ void	FileMan::InitFileSystem()
 
 void FileMan::SetupAreaFiles(FileNum* fn)
 {
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	fileman::SetupAreaFiles(fn);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 }
 
 void FileMan::CloseAreaFiles()
 {
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	fileman::CloseAreaFiles();
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 }
 
 void* FileMan::loadCDfile(FileNum a,SLong b,SLong c,Bool skipread)
 {
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	void* retval=fileman::loadCDfile(a,b,c,skipread);
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 	return retval;
 }
 
 void FileMan::pingCD()
 {
-	while(LockExchange(&interlocker,1))
-		Sleep(20);
+	FMlistmutex.lock();										  //RERUN
 	fileman::pingCD();
-	LockExchange(&interlocker,0);	//NOT GOOD ENOUGH!!!
+	FMlistmutex.unlock();	//NOT GOOD ENOUGH!!!
 }
 
 SLong	FileMan::getTotalMem()

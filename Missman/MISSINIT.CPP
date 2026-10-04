@@ -3405,7 +3405,7 @@ int Campaign::StoresDestroyedForNodeRoute(SupplyNode* node)
 	int stores_destroyed=0;
 	int i = 0;
 	SupplyRoute* currroute=node->forward;
-	while	(	(i <= NUM_OF_SUPPLYROUTES)
+	while	(	(i < NUM_OF_SUPPLYROUTES)	//RERUN was <=: read route[3] past the array and walked a garbage SupplyRoute*
 			)
 	{
 		while (currroute)
@@ -3413,7 +3413,7 @@ int Campaign::StoresDestroyedForNodeRoute(SupplyNode* node)
 			stores_destroyed += currroute->stores_destroyed;
 			currroute = currroute->alternateroute;
 		}
-		currroute =	node->route[i];	  //accesses the non-existant route[3],but then quits
+		currroute =	node->route[i];
 		i++;
 	}
 	return (stores_destroyed);

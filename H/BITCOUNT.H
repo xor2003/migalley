@@ -102,7 +102,7 @@
                 { return Type(static_cast<storage_t>(fieldname)); }               \
             Type operator=(Type v) noexcept                                      \
                 { fieldname = static_cast<storage_t>(v); return v; }            \
-        } fieldname;
+        } fieldname{};
 
 #define BITFIELD(Type, fieldname, minbit, maxbit)                               \
     public:                                                                     \
@@ -114,7 +114,7 @@
                 { return Type(static_cast<storage_t>(fieldname)); }             \
             Type operator=(Type v) noexcept                                      \
                 { fieldname = static_cast<storage_t>(v); return v; }            \
-        } fieldname;
+        } fieldname{};
 
 #define LAST_BITFIELD(Type, fieldname, minbit, maxbit)                          \
     public:                                                                     \
@@ -125,7 +125,7 @@
                 { return Type(static_cast<storage_t>(fieldname)); }             \
             Type operator=(Type v) noexcept                                      \
                 { fieldname = static_cast<storage_t>(v); return v; }            \
-        } fieldname;
+        } fieldname{};
 
 #define END_BITFIELD_STRUCT(Name, Storage)                                       \
     public:                                                                     \

@@ -859,8 +859,9 @@ void	ImageMap_Desc::FixLbmImageMap(fileblock* fblockptr)
 
 	UByte* buffer = (UByteP) fblockptr->getdata();
 	UByte* start=buffer;
+	UByte* cend = buffer + fblockptr->getsize();		//RERUN: RLE stream bound
 	UByte	*tmp;
-	SWord	picwidth,picheight,picy,picx,x,y;
+	SWord	picwidth=0,picheight=0,picy,picx,x,y;	//RERUN: init - garbage when no BMHD hunk (clang-check)
 	SLong	blocksize;
 	int		colline;
 
@@ -912,7 +913,7 @@ void	ImageMap_Desc::FixLbmImageMap(fileblock* fblockptr)
 	}
 
 	tmp = lbmSearch.alfa.hunkPtr;
-	if (tmp)
+	if (tmp && picwidth>0 && picheight>0)			//RERUN: no decode without valid BMHD
 	{
 		alpha = new UByte[picwidth*picheight];
 		if (alpha)
@@ -937,6 +938,7 @@ void	ImageMap_Desc::FixLbmImageMap(fileblock* fblockptr)
 				#define	LOADVALUE(x)	TRANSFERVALUE=x
 				#define	COPYVALUE(t,s)	*t++=s
 				#define	return(s)
+				#define	LBM_END_PTR	cend
 
 				{
 				#include "LBMCPP.H"
@@ -948,7 +950,7 @@ void	ImageMap_Desc::FixLbmImageMap(fileblock* fblockptr)
 	}
 
 	tmp = lbmSearch.body.hunkPtr;
-	if (tmp)
+	if (tmp && picwidth>0 && picheight>0)			//RERUN: no decode without valid BMHD
 	{
 		// blah... alocate buffer body (width * height)
 		body = new UByte[picwidth*picheight];

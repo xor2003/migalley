@@ -580,8 +580,8 @@ void	DPlay::DisplayReadyDialogue(char* name, char* text)
 	{
 	 	rlistbox->AddString(name,0);
  		rlistbox->AddString(text,1);
+		rlistbox->SetHilightRow(-1) ;							//AMM 10Jul99 //RERUN: was outside the NULL guard (scan-build)
 	}
-	rlistbox->SetHilightRow(-1) ;								//AMM 10Jul99
 	//delete rlistbox;
 }
 

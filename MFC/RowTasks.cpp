@@ -182,6 +182,6 @@ int		RowanTasks::GetCurrTask()
 			lowestvalueabove=taskstacks[count];
 			entforlowest=count;
 		}
-	return count;
+	return entforlowest;	//RERUN was `return count` == MAX_TASKS always; EndTask then wrote taskstacks[32]=0 past the array (scan-build)
 }
 

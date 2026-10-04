@@ -138,6 +138,7 @@ questions about this file may be asked at http://www.simhq.com/
 #include	"string.h"
 #include	"REPLAY.H"
 	#include	"SHAPENAM.H"
+#include	<iostream>
 #ifdef	__WATCOMC__
 	extern	"C" SLong ASM_GetFadeColour(SLong, SLong );			//PD 10May96
 #else
@@ -339,6 +340,7 @@ shape::shape()
 
 	if (InterpTable)
 	{
+		memset(InterpTable,0,(dosetglassrangeno+1)*sizeof(InterpProc*));
 		InterpTable[dopointno] 				= &dopoint;
 		InterpTable[dopolygonno] 			= &dopolygon;
 		InterpTable[dosetlcno] 				= &dosetlc;
@@ -672,7 +674,7 @@ void calcSpecular(Float& specDot,Float& lightDot,SLong& specular,SLong& specFlip
 	double spa=ARCCOS(specDot,pi);
 	double lia=ARCCOS(lightDot,pi);
 #elif defined (__GNUC__)
-	constexpr double PI = acos(-1.0);
+	constexpr double PI = 3.14159265358979323846;	//RERUN: acos() isn't constexpr before C++26 (clang rejects)
     //constexpr double PI_2 = PI / 2.0;
     //constexpr double PI_4 = PI / 4.0;
 
@@ -916,6 +918,8 @@ void shape::animate_shape(Obj3DPtr thisobj3d)
 		adptr = thisobj3d->AnimPtr;								//RJS 21Apr99
 
 		sdptr = SHAPESTUFF.GetShapePtr((ShapeNum)thisobj3d->Shape);
+		if (!sdptr)
+			return;								//shape file missing
 
 		// We need this for smoke launchers......				//MS 30Nov98
 //DEADCODE DAW 23/04/99  		switch (SHAPESTUFF.GetShapeScale(sdptr))				//MS 30Nov98
@@ -1148,6 +1152,8 @@ void shape::draw_shape(Obj3DPtr this_obj3d)						//PD 13Mar96
 	
 	animlag = 0;													//RJS 30Jun99
 	header_ptr = SHAPESTUFF.GetShapePtr((ShapeNum)this_obj3d->Shape);
+	if (!header_ptr)											//RERUN
+		return;
 	if (header_ptr->AnimDataSize == AIRCRAFTANIM)					//RJS 30Jun99
 	{
 		AircraftAnimData*	adptr = (AircraftAnimData*)GlobalAdptr;
@@ -1178,6 +1184,21 @@ void shape::draw_shape(Obj3DPtr this_obj3d)						//PD 13Mar96
 	{
 		AircraftAnimData*	adptr = (AircraftAnimData*)GlobalAdptr;
 		adptr->timenotvis = 0;
+	}
+
+	if (*instr_ptr==0)										//RERUN
+	{
+		std::cerr << "[SHP] zero instr: shape=" << (int)this_obj3d->Shape
+				  << " istate=" << (int)mad->itemstate
+				  << " live=" << (int)header_ptr->liveshpref
+				  << " dmg=" << (int)header_ptr->damagedshpref
+				  << " dying=" << (int)header_ptr->dyingshpref
+				  << " dead=" << (int)header_ptr->deadshpref
+				  << " animsz=" << (int)header_ptr->AnimDataSize
+				  << " adptr=" << (void*)(MinAnimData*)GlobalAdptr
+				  << " off=" << (int)(instr_ptr-(UByte*)header_ptr)
+				  << std::endl;
+		return;			//no shape block for this state - don't interpret
 	}
 
 	InterpLoop(instr_ptr);									//RJS 16Nov98
@@ -1595,9 +1616,14 @@ void shape::dopolygon(UByte *& instr_ptr)
 //Externals
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
- void shape::donop(UByte *& )									//PD 29Nov95
+ void shape::donop(UByte *& instr_ptr)							//PD 29Nov95
 {
-	_Error.EmitSysErr(__FILE__":Not a real instruction (DONOP)\n");
+	//RERUN: DONOP is a real instruction (opcode + 1 operand byte); skip it.
+	//This also lets a desynced stream resync forward instead of dying.
+	static int donopcount = 0;
+	if (donopcount++ < 20)
+		std::cerr << "[SHP] donop skipped" << std::endl;
+	instr_ptr += sizeof(DONOP);
 }
 
 //------------------------------------------------------------------------------
@@ -10251,7 +10277,7 @@ void shape::dodigitdial(UByte *& instr_ptr)
 		POLYGON.drawpoly();
 	}
 
-	delete digits;
+	delete[] digits;
 
 	instr_ptr += sizeof(DODIGITDIAL);
 }
@@ -10851,6 +10877,7 @@ void	shape::DumpInterpHistory()
  void	shape::InterpLoop(UByteP	instr_ptr)
 {
 	UWord	instruction;
+	int		icount = 0;
 	if (!g_interp_base) g_interp_base = instr_ptr;
 
 	for(;;)
@@ -10869,8 +10896,21 @@ void	shape::DumpInterpHistory()
 
 		if(instruction==doretno) break;
 
+		if (!InterpTable[instruction])
+		{
+			std::cerr << "[SHP] no handler for op " << (int)instruction
+					  << " at +" << (long)(instr_ptr-g_interp_base-1) << std::endl;
+			DumpInterpHistory();
+			continue;						//treat as nop — may resync on next byte
+		}
+
 		(*InterpTable[instruction]) (instr_ptr);
 
+		if (++icount > 65536)
+		{
+			DumpInterpHistory();
+			_Error.EmitSysErr(__FILE__":Interpreter runaway");
+		}
 	}
 }
 
@@ -10922,7 +10962,8 @@ Bool	shape::TestHitBoxes(ItemPtr	itm, ShapeNum theShape,animptr& AnimPtr, UByteP
 		if (_Replay.FakeCollisionOn)							//AMM 12Jul99
 			CollisionOn=FALSE;									//AMM 12Jul99
 
-		(*InterpTable[instruction]) (instr_ptr);				//RJS 17Sep98
+		if (InterpTable[instruction])							//RERUN skip unassigned slots
+			(*InterpTable[instruction]) (instr_ptr);				//RJS 17Sep98
 
 		if (_Replay.FakeCollisionOn)							//AMM 12Jul99
 			CollisionOn=TRUE;									//AMM 12Jul99
@@ -11043,7 +11084,8 @@ void	shape::ForceDamage(	ItemPtr		itm,
 				if (_Replay.FakeCollisionOn)					//AMM 12Jul99
 					CollisionOn=FALSE;							//AMM 12Jul99
 
-				(*InterpTable[instruction]) (instr_ptr);
+				if (InterpTable[instruction])						//RERUN skip unassigned slots
+					(*InterpTable[instruction]) (instr_ptr);
 
 				if (_Replay.FakeCollisionOn)					//AMM 12Jul99
 					CollisionOn=TRUE;							//AMM 12Jul99
@@ -13301,9 +13343,9 @@ void	shape::LauncherToWorld(	itemptr	itm,
 
 		if ((tmpitm == Manual_Pilot.ControlledAC2) && !_Replay.Playback)//RJS 21Jun99
 			((AirStrucPtr)tmpitm)->fly.pModel->CalcLauncherPos(tmpx,tmpy,tmpz);
-		else
-		{
-			MATRIX   			omat;						
+		else if (tmpitm->MigStatus.LaunchFlags.size >= RotatedSize)
+		{	//RERUN: plain 'item' launchers (AAA sites) have no hdg/pitch/roll
+			MATRIX   			omat;
 			MATRIX_PTR			obj_matrix = &omat;
 
 			_matrix.generate2(tmpitm->hdg, tmpitm->pitch, tmpitm->roll, obj_matrix);
@@ -18441,7 +18483,9 @@ void shape::SetPilotedAcAnim(AirStrucPtr pilotedac)
 {
 	int		count;												//RJS 23Aug96
 
-	PolyPitAnimData		*newanim = new PolyPitAnimData;
+	//Anim buffers are always new UByte[] blocks (see SetAnimData) and are
+	//released by animptr::Delete() (delete[]) - allocate matching storage.
+	PolyPitAnimData		*newanim = (PolyPitAnimData*)new UByte[sizeof(PolyPitAnimData)];
 	AircraftAnimData	*oldanim = (AircraftAnimData* )pilotedac->Anim,
 						*naa=newanim;
 
@@ -18464,7 +18508,7 @@ void shape::SetPilotedAcAnim(AirStrucPtr pilotedac)
 //	newanim->compasscount = 0;									//RJS 05Jun97
 //	newanim->muzzlego = FALSE;									//RJS 05Jun97
 
-	delete (oldanim);
+	delete [] (oldanim);
 
 	pilotedac->Anim = thenewanim;
 	pilotedac->Anim = sizeof(PolyPitAnimData)
@@ -19533,7 +19577,8 @@ void	shape::FixUpColLog()
 			if ((instr_ptr == inst_col) || (instr_ptr > inst_col))
 				break;
 
-			(*InterpTable[instruction]) (instr_ptr);
+			if (InterpTable[instruction])							//RERUN skip unassigned slots
+				(*InterpTable[instruction]) (instr_ptr);
 		}
 
 		//   |--- Hit_Byte ----|
@@ -19933,7 +19978,8 @@ void	shape::CollisionPlayback()
 					||	(instruction==doendno))
 					break;
 
-				(*InterpTable[instruction]) (instr_ptr);
+				if (InterpTable[instruction])						//RERUN skip unassigned slots
+					(*InterpTable[instruction]) (instr_ptr);
 			}
 
 			index++;

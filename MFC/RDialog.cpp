@@ -232,7 +232,7 @@ RDialog*	RDialog::MakeParentDialog(CRect& dialsize,RDialog* parent,DialBox* tree
 	main->RECT_NORMAL=dialsize;
 	if (parent!=NULL)
 	{
-		if ((tree->edges->l&EDGE::ACTIONS_MASK)==EDGE::ACTIONS_ARTCHILD)
+		if (tree->edges && (tree->edges->l&EDGE::ACTIONS_MASK)==EDGE::ACTIONS_ARTCHILD)
 			main->Create(IDD_EMPTYCHILD,parent);
 		else 
 			main->Create(main->MY_IID,parent);
@@ -294,7 +294,7 @@ RDialog*	RDialog::MakeParentDialog(CRect& dialsize,RDialog* parent,DialBox* tree
 		if (dialxposflag || dialyposflag)
 		{
 			CRect apppos;
-			int delta;
+			int delta=0;								//RERUN: uninit if flag outside POSN_MIN..MAX (scan-build)
 			m_pView->GetWindowRect(&apppos);
 			if (apppos.Width()<m_pView->m_size.cx) 
 				apppos.bottom-=15;
@@ -396,7 +396,7 @@ volatile int progressind=0;
 RDialog*	RDialog::AddChildren(const DialBox*const* diallist,int X2flag,CRect& rect)			  
 {
 	int	usedy=homesize.Height();
-	RDialog* dial;
+	RDialog* dial=NULL;								//RERUN: empty diallist returned garbage (scan-build)
 
 	progressind++;
 	progress[progressind]='X';
@@ -1358,9 +1358,8 @@ void RDialog::OnLButtonDown(UINT nFlags, CPoint p)
 		{
 			ReleaseCapture();
 			RDialog* newparent=parent;
-			while(TRUE)
+			while(newparent)								//RERUN was while(TRUE) - walked off the parent chain and dereferenced NULL if no DRAG_DIALOG ancestor
 			{
-				ASSERT(newparent); // this might happen if the topmost parent isnt a DRAG_DIALOG
 				if (newparent->parent && (newparent->parent->dragstate==DRAG_DIALOG))
 				{
 					newparent->dragstate=DRAG_MOVE;
@@ -1375,14 +1374,17 @@ void RDialog::OnLButtonDown(UINT nFlags, CPoint p)
 				}
 				else newparent=newparent->parent;
 			}
-			newparent->SetCapture();
-			CRect rect;
-			CRect newparentrect;
-			GetClientRect(rect);
-			ClientToScreen(&rect);
-			newparent->GetClientRect(newparentrect);
-			newparent->ClientToScreen(&newparentrect);
-			newparent->lastdown=p-newparentrect.TopLeft()+rect.TopLeft();
+			if (newparent)									//RERUN: no ancestor qualified
+			{
+				newparent->SetCapture();
+				CRect rect;
+				CRect newparentrect;
+				GetClientRect(rect);
+				ClientToScreen(&rect);
+				newparent->GetClientRect(newparentrect);
+				newparent->ClientToScreen(&newparentrect);
+				newparent->lastdown=p-newparentrect.TopLeft()+rect.TopLeft();
+			}
 		}
 		else
 		{

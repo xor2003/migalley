@@ -627,7 +627,7 @@ void LandScape::ManageHighLandTextures(SLong px,SLong pz)
 				if (!Save_Data.fSoftware)	currscreen->DoFreeTexture(droppedTextures->hText[i]);
 				else						Three_Dee.pTMake->DoFreeTexture(droppedTextures->hText[i]);
 			}
- 			delete[]droppedTextures;
+ 			delete droppedTextures;
  		}
  		lastPx=px;
  		lastPz=pz;
@@ -6168,7 +6168,7 @@ void LandScape::DoCloudLayer()
 		{16,23,8}
 	};
 		
-	const SLong _stripPoints=sizeof(HStripPtsA)/sizeof(fpCOORDS3D);
+	const SLong _stripPoints=sizeof(HStripPtsA)/sizeof(SHCoords);	//RERUN: was /sizeof(fpCOORDS3D) - overcounted, read past the array
 	const SLong _solidPolys=sizeof(SolidPolys)/sizeof(SStripPoly);
 	const SLong _transPolys=sizeof(TransPolys)/sizeof(SStripPoly);
 

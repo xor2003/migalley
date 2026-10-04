@@ -802,6 +802,12 @@ void ThreeDee::add_cockpit(rotitem& viewpoint,PitTypes pittype,ANGLES h,ANGLES p
 
 	ClassPtr	clstyp;
 
+	//RERUN: ControlledAC2 can be NULL or a stale pointer across world
+	//transitions - dereferencing it produced garbage Shape/Anim values.
+	if (!Manual_Pilot.ControlledAC2 ||
+		Manual_Pilot.ControlledAC2->MigStatus.LaunchFlags.size!=AirStrucSize)
+		return;
+
 	clstyp = Manual_Pilot.ControlledAC2->classtype;
 
 	if (View_Point->viewnum.viewmode!=VM_InPadlock)
@@ -987,7 +993,11 @@ void ThreeDee::Add_Sun(rotitem& viewpoint,WorldStuff *worldptr)
  
  	SHAPE.SunInVision = FALSE;								//PD 27Nov96
  
- 	itemptr	sunitemp = new item;
+	//RERUN: stack, not heap - `sunitemp->Anim = 0` below is a dead store that
+	//GCC eliminates, and ItemBase::operator delete re-runs ~item() internally,
+	//so the second Anim.Delete() freed the shared sunanimptr every frame.
+ 	item	sunitem;
+ 	itemptr	sunitemp = &sunitem;
   	sunitemp->shape=SUN;							//RJS 29Sep97
  	sunitemp->World = sunpos;						//RJS 29Sep97
 
@@ -1021,8 +1031,6 @@ void ThreeDee::Add_Sun(rotitem& viewpoint,WorldStuff *worldptr)
  	Land_Scape.fade_band_end=oldfaderange;				//PD 27Nov96
 
 	sunitemp->Anim = 0;
-
- 	delete (sunitemp);
 }
 
 //------------------------------------------------------------------------------
@@ -1115,7 +1123,9 @@ void ThreeDee::Add_Shadow(AirStrucPtr	ac, Bool dopiloted)
 						}
 					}
 
-					shaditem->Anim = 0;
+					//Anim is a loan of ac->Anim; drop below ItemSize so
+					//~ItemBase skips Anim.Delete() and can't free the loan.
+					shaditem->MigStatus.LaunchFlags.size = ItemBaseSize;
 					delete (shaditem);
 				}
 			}
@@ -1139,11 +1149,12 @@ void	ThreeDee::AddLensObject(DoPointStruc	*dopointP, ShapeNum	shpno, int	frameno
 {
 	if (!Save_Data.fSoftware)
 	{
-		Obj3DPtr	obj3dptr;										
+		Obj3DPtr	obj3dptr;
 		IFShare		wx,wy,wz;
 		IFShare			bzoffset;
 		ShapeDescPtr	sdptr;
-		itemptr			tempitemptr = new item;
+		item			tempitem;	//RERUN: stack item - same loaned-Anim/double-dtor hazard as Add_Sun
+		itemptr			tempitemptr = &tempitem;
 		int				thisscale = 4;
 		FlareAnimData	*adptr;
 
@@ -1185,7 +1196,6 @@ void	ThreeDee::AddLensObject(DoPointStruc	*dopointP, ShapeNum	shpno, int	frameno
 		bt->insert_object(obj3dptr);							
 
 		tempitemptr->Anim = 0;
-		delete (tempitemptr);
 	}
 }
 

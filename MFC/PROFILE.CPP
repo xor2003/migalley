@@ -635,7 +635,7 @@ void	CProfile::FillWaveRow(int wave)
 	char buffer[10];
 	int uid = (int)Todays_Packages[packnum][wave][0].uid;
 	info_airgrp* a=*Persons2::ConvertPtrUID(Todays_Packages[packnum][wave][0].uid);
-	sprintf(buffer,"%i.%s",wave+1,RESLIST(DUTY_BOMB,a->duty.Evaluate()/ACTIONSUBCODEMAX));
+	sprintf(buffer,"%i.%s",wave+1,(const char*)RESLIST(DUTY_BOMB,a->duty.Evaluate()/ACTIONSUBCODEMAX));
 	rlistbox->ReplaceString(buffer,wave+1,0);
 	int t=Todays_Packages[packnum][wave].targettime/60;
 	sprintf(buffer,"%02i:%02i",t/60,t%60);
@@ -643,7 +643,7 @@ void	CProfile::FillWaveRow(int wave)
 	int ac = a->inform.Evaluate();
 	if (ac)
 	{
-		sprintf(buffer,"%s (%i)",RESLIST(SQ_BF_F86A,a->type.Evaluate()),a->inform.Evaluate()/4);
+		sprintf(buffer,"%s (%i)",(const char*)RESLIST(SQ_BF_F86A,a->type.Evaluate()),a->inform.Evaluate()/4);
 		rlistbox->ReplaceString(buffer,wave+1,2);
 	}else
 		rlistbox->ReplaceString("",wave+1,2);
@@ -651,7 +651,7 @@ void	CProfile::FillWaveRow(int wave)
 	a=*Persons2::ConvertPtrUID(Todays_Packages[packnum][wave][1].uid);
 	if (a)
 	{
-		sprintf(buffer,"%s (%i)",RESLIST(SQ_BF_F86A,a->type.Evaluate()),a->inform.Evaluate()/4);
+		sprintf(buffer,"%s (%i)",(const char*)RESLIST(SQ_BF_F86A,a->type.Evaluate()),a->inform.Evaluate()/4);
 		rlistbox->ReplaceString(buffer,wave+1,3);
 	}
 	else
@@ -661,7 +661,7 @@ void	CProfile::FillWaveRow(int wave)
 	a=*Persons2::ConvertPtrUID(Todays_Packages[packnum][wave][2].uid);
 	if (a)
 	{
-		sprintf(buffer,"%s (%i)",RESLIST(SQ_BF_F86A,a->type.Evaluate()),a->inform.Evaluate()/4);
+		sprintf(buffer,"%s (%i)",(const char*)RESLIST(SQ_BF_F86A,a->type.Evaluate()),a->inform.Evaluate()/4);
 		rlistbox->ReplaceString(buffer,wave+1,4);
 	}
 	else

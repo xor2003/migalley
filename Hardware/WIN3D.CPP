@@ -1627,6 +1627,11 @@ void direct_draw::LockScr(struct _DirectDraw* pdirectd,ROWANSURFACEDESC* rsd)
 		rsdGlobal.dwHeight=sd.dwHeight;
 		rsdGlobal.lPitch=sd.lPitch;
 		rsdGlobal.dwRGBBitCount=sd.ddpfPixelFormat.dwRGBBitCount;
+		//RERUN: bound the XASM_*Line* writers to this surface's extent
+		extern uint8_t* xasm_surface_end;
+		extern uint8_t* xasm_surface_start;
+		xasm_surface_end=(uint8_t*)rsdGlobal.lpSurface+(uintptr_t)rsdGlobal.lPitch*rsdGlobal.dwHeight;
+		xasm_surface_start=(uint8_t*)rsdGlobal.lpSurface;
 	}
 	lockLevel++;
 	*rsd=rsdGlobal;

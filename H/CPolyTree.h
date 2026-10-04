@@ -60,7 +60,11 @@ class CPolyTree
                 if (pLast==NULL)	pHead=pScan->lptr;
                 else				pLast->rptr=pScan->lptr;
             }
-            else					pLast->rptr=NULL;
+            else
+            {
+                if (pLast==NULL)	pHead=NULL;		//RERUN: single-node tree - pLast is NULL here
+                else				pLast->rptr=NULL;
+            }
             return true;
     }
 

@@ -446,7 +446,7 @@ void	CWPGround::Describeonewp(CRListBox* listbox,UniqueID u,TableType t,int addr
 		if (action==ENABLE_COMPLEX_VAL)
 			action=wpacnoactionno;
 		if (simpleform)
-			sprintf(buffer,"%c) %s",currletter,RESLIST(WPACTION_NONE,action));
+			sprintf(buffer,"%c) %s",currletter,(const char*)RESLIST(WPACTION_NONE,action));
 		else
 		{
 			if (w->applyelt.Evaluate()!=ENABLE_COMPLEX_VAL)
@@ -456,7 +456,7 @@ void	CWPGround::Describeonewp(CRListBox* listbox,UniqueID u,TableType t,int addr
 				sprintf(buffer2,RESSTRING(FL_PC),w->applyflight.Evaluate()+1);
 			else
 				sprintf(buffer2,RESSTRING(ALL));
-			sprintf(buffer,"%c (%s) %s",currletter,buffer2,RESLIST(WPACTION_NONE,action));
+			sprintf(buffer,"%c (%s) %s",currletter,buffer2,(const char*)RESLIST(WPACTION_NONE,action));
 		}
 
 		listbox->AddString(buffer,0);

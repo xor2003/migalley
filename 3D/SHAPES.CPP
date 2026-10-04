@@ -73,6 +73,9 @@ questions about this file may be asked at http://www.simhq.com/
 //
 //------------------------------------------------------------------------------
 #include "_3D.H" //RERUN
+#include <mutex> //RERUN
+extern "C" __attribute__((noinline)) void dbg_shape_loaded(void* p) { __asm__ volatile(""::"r"(p):"memory"); }	//RERUN dbg gdb marker
+extern std::recursive_mutex	FMlistmutex; //RERUN
 
 	#include	"DOSDEFS.H"
 #define F_GRAFIX												//DAW 05Aug96
@@ -504,6 +507,7 @@ void shapestuff::UnLoadRequiredShapes()
 //------------------------------------------------------------------------------
 void shapestuff::UnLoadShape(ShapeNumber shape_number)
 {
+	std::lock_guard<std::recursive_mutex>	fmg(FMlistmutex);	  //RERUN
 	if (shapetable != NULL) //RERUN
 	{
 		if (shapetable[shape_number] != NULL)
@@ -528,12 +532,13 @@ void shapestuff::UnLoadShape(ShapeNumber shape_number)
 //------------------------------------------------------------------------------
 ShapeDescPtr shapestuff::GetShapePtr(ShapeNumber shape_number)
 {
+	std::lock_guard<std::recursive_mutex>	fmg(FMlistmutex);	  //RERUN
 	UByte	*tmp = NULL;
 
 	//cludge level fix
 	if (shape_number==0)	shape_number=1;						//JIM 28Mar96
 
-	if (shapetable == NULL)
+	if (shapetable == NULL || shape_number >= list_size)		  //RERUN
 		return((ShapeDescPtr)tmp); //RERUN
 
 
@@ -541,9 +546,27 @@ ShapeDescPtr shapestuff::GetShapePtr(ShapeNumber shape_number)
 	{
 		*glob_list |= (ShapeNum)shape_number;
 		(void )LoadShape(shape_number);
+		UByte*	dt = (UByte *)getdata(shapetable[shape_number]);		  //RERUN debug
+		if (dt)
+			fprintf(stderr,"[SHP] loaded shape %d fb=%p @%p: %02x %02x %02x %02x %02x %02x %02x %02x\n",
+					(int)shape_number,(void*)shapetable[shape_number],(void*)dt,
+					dt[0],dt[1],dt[2],dt[3],dt[4],dt[5],dt[6],dt[7]);
+		if (shape_number==284 && shapetable[shape_number])	  //RERUN dbg watch marker
+			dbg_shape_loaded((void*)&shapetable[shape_number]);
 	}
 
+	extern int g_shp_last_num; extern void* g_shp_last_fb; extern void* g_shp_last_data; //RERUN dbg
+	g_shp_last_num = shape_number;
+	g_shp_last_fb = shapetable[shape_number];
+
 	tmp = (UByte *)getdata(shapetable[shape_number]);
+	g_shp_last_data = tmp;
+
+	if (tmp == NULL || *(UWord*)tmp == 0)				  //RERUN: zeroed block counts as missing
+	{
+		fprintf(stderr,"[SHP] GetShapePtr(%d): file %04x has no data\n",(int)shape_number,(int)(shape_number+DIR_SHAPES));
+		return NULL;		//shape file failed to load
+	}
 
 	tmp +=2; //Skip size word
 

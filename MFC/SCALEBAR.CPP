@@ -328,7 +328,7 @@ void CScaleBar::OnPaint()
 				if (counter%20==0 || (counter%10==0 && zoom>0.5) || zoom>=1.5)
 				{
 					if (counter==0)
-						sprintf(string,"0 %s",LoadResString(Save_Data.dist.longabbr));
+						sprintf(string,"0 %s",(const char*)LoadResString(Save_Data.dist.longabbr));
 					else
 						sprintf(string,"%d",counter*10);
 					pDC->TextOut(15,x-offset,string);
@@ -400,7 +400,7 @@ void CScaleBar::OnPaint()
 				if (counter%20==0 || (counter%10==0 && zoom>0.5) || grad_10>10)
 				{
 					if (counter==0)
-						sprintf(string,"0 %s",LoadResString(Save_Data.dist.longabbr));
+						sprintf(string,"0 %s",(const char*)LoadResString(Save_Data.dist.longabbr));
 					else
 						sprintf(string,"%d",counter*10);
 					pDC->TextOut(m_width-15,x-offset,string);

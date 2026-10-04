@@ -198,6 +198,10 @@ typedef formationitem	FormationItem,*FormationItemPtr;
 typedef shipitem		*ShipItemPtr;
 typedef	AirStruc		*AirStrucPtr;
 
+//RERUN: splice an item out of ACList/MobileList before it is freed - stale
+//nextmobile links let a freed slot be reused then walked by the move code
+extern	void	UnlinkFromMoveLists(MobileItemPtr it);
+
 class ItemBase//:public	TextBlockKnown
 {protected:
 	ItemBase()	
@@ -389,7 +393,7 @@ enum	WPNames
 struct	WayPoint:public	WPOverlayItem	//o14 //o30	//uniqueid and position	
 {
 	friend	COORDS3D* FindDesPos(WayPointPtr);
-	void	operator delete(void* obj)	{::delete(WayPointPtr) obj;}
+	void	operator delete(void* obj)	{UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN unlink before free
 
 	WayPointPtr		prev;							//o14s04
 	SLong			range;							//o18s04
@@ -469,7 +473,7 @@ class	hdgitem:public	item			//o1Cs02
 public:
 	ANGLES		hdg;
 	hdgitem()	{MigStatus.LaunchFlags.size=HdgSize;}
-	void	operator delete(void* obj)	{::delete(HdgItemPtr) obj;}
+	void	operator delete(void* obj)	{UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN unlink before free
 };
 
 //
@@ -481,7 +485,7 @@ class	hpitem:public	hdgitem			//o1Es02
 public:
 	ANGLES		pitch;
 	hpitem()	{MigStatus.LaunchFlags.size=HPSize;}
-	void	operator delete(void* obj) {::delete(hpitem*) obj;}
+	void	operator delete(void* obj) {UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN unlink before free
 };
 
 //
@@ -493,7 +497,7 @@ class	rotitem:public	hpitem			//o20s02
 public:
 	ANGLES		roll;
 	rotitem()	{MigStatus.LaunchFlags.size=RotatedSize;}
-	void	operator delete(void* obj) {::delete(rotitem*) obj;}
+	void	operator delete(void* obj) {UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN unlink before free
 };
 
 //
@@ -543,6 +547,7 @@ class	mobileitem:public	MovingItem	//o2C
 private:
 	static	void MoveList(MobileItemPtr entry,WorldStuff& world);
 	static	MobileItemPtr	MobileList;
+	friend	void UnlinkFromMoveLists(MobileItemPtr it);				//RERUN
 protected:
 	static	void MoveItem(MobileItemPtr entry,WorldStuff&);				//PD 02May96
 	static	MobileItemPtr	ACList;
@@ -552,7 +557,7 @@ public:
 	static int	timeofday;
 	static	void SetWorld(WorldStuff* w)	{currworld=w;}					//JIM 25Jul96
 	static	WorldStuff& GetWorld() {return *currworld;}				//ARM 25Jul96
-	void	operator delete(void* obj)	{::delete(MovingItemPtr) obj;}
+	void	operator delete(void* obj)	{UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN
 	static	void MoveAll(WorldStuff& world);
 
 	MobileItemPtr			nextmobile;			//o2Cs04
@@ -598,7 +603,8 @@ class	TransientItem:public	mobileitem		//o35	//o50
 {
 public:
 	static int transcount;
-	void	operator delete(void* obj)	{::delete(TransientItemPtr) obj;}
+	void	operator delete(void* obj)	{UnlinkTransList((TransientItemPtr)obj);UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN
+	static	void UnlinkTransList(TransientItemPtr it);					//RERUN
 	TransientItem()
 	{
 		MigStatus.LaunchFlags.size=TransientSize;														//RJS 15Jun99
@@ -684,7 +690,7 @@ FormationItemPtr&	Follower()	{return (follower);}
 		leader=NULL;follower=NULL;contourlist=NULL;
 	}
 
-	void	operator delete(void* obj)	{::delete(FormationItemPtr) obj;}
+	void	operator delete(void* obj)	{UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN
 	SWord TimeLeft();
 	void SetManoeuvreTime (UWord time=6000);
 	void	AutoTaxi ();
@@ -920,7 +926,7 @@ public:
 #endif
 
 	void AddToList();
-	void	operator delete(void* obj)	{::delete(AirStrucPtr) obj;}
+	void	operator delete(void* obj)	{UnlinkFromMoveLists((MobileItemPtr)obj);::operator delete(obj);}	//RERUN
 
 //movecodes
 	void	AutoCommsAccel();

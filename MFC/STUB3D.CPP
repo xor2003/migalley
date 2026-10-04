@@ -324,7 +324,16 @@ Inst3d::Inst3d(bool flag)
  	paused=TRUE;
 	accel=FALSE;
 	interactive=FALSE;
+	insidetimer=FALSE;									//RERUN: uninit
 	nextinst=Master_3d.currinst;
+	//RERUN: freeze every live move thread - all instances share the global
+	//mobileitem lists. Mutex (not a flag) drains in-flight DoMoveCycle.
+	for (Inst3d* t=nextinst; t; t=t->nextinst)
+	{
+		t->Paused(TRUE);
+		WaitForSingleObject(t->mutex,INFINITE);
+	}
+	WaitForSingleObject(mutex,INFINITE);				//RERUN: BlockTick skips mapview, hold raw mutex
 	Master_3d.currinst=this;	  //at this point the thread starts receiving timer messages.
 
 	commonkeymaps=(KeyMap3d*) Key_Tests.reftable3d.flat;
@@ -354,6 +363,9 @@ Inst3d::Inst3d(bool flag)
 	timeofday=11*60*60*100;
 	OverLay.SetToMapViewScreen();
 	Dead_Stream.GetWorldDead(&world);				//RDH 02Oct96	  //JIM 03/06/99
+	ReleaseMutex(mutex);							//RERUN: world ready, let moves run
+	for (Inst3d* t=nextinst; t; t=t->nextinst)	//RERUN: release drained insts
+		ReleaseMutex(t->mutex);
 
 //do this as very last thing!!!
 	Log_Stack.UnLog(LogStack::MESSAGELOOP);
@@ -411,7 +423,17 @@ Inst3d::Inst3d()
  	paused=TRUE;
 	accel=FALSE;
 	interactive=FALSE;
+	insidetimer=FALSE;									//RERUN: uninit before BlockTick spins on it
 	nextinst=Master_3d.currinst;
+	//RERUN: freeze every live move thread - all instances share the global
+	//mobileitem lists this ctor is about to rebuild. Mutex (not a flag)
+	//drains any in-flight DoMoveCycle before the lists are touched.
+	for (Inst3d* t=nextinst; t; t=t->nextinst)
+	{
+		t->Paused(TRUE);
+		WaitForSingleObject(t->mutex,INFINITE);
+	}
+	BlockTick(TRUE);
 	Master_3d.currinst=this;
 
 	commonkeymaps=(KeyMap3d*) Key_Tests.reftable3d.flat;
@@ -459,6 +481,9 @@ Inst3d::Inst3d()
 	_Collide.SetWorld(&world);								//PD 22Mar96
 	MobileItem::SetWorld(&world);
 	Three_Dee.current_world=&world;
+	BlockTick(FALSE);								//RERUN: world + lists ready, let moves run
+	for (Inst3d* t=nextinst; t; t=t->nextinst)	//RERUN: release drained insts
+		ReleaseMutex(t->mutex);
 	Trans_Obj.CleanUpTrailList();								//JIM 26Mar99
 
 	//Load in the shape files requested by the battle field file loads

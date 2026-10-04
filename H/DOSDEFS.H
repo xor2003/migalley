@@ -21,7 +21,7 @@
 #define MYPREFIX &
 #else
 #define MYCALL __cdecl
-#define MYPREFIX 
+#define MYPREFIX &						//RERUN: &Class::member is standard C++; needed for clang too
 #endif
 
 //RERUN #define LOCAL_new(DEBUG_NEW_PARAMS)	new
