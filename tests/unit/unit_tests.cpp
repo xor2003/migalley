@@ -152,6 +152,34 @@ extern LightVec       shape_TransViewVector
 extern Bool           shape_specularEnabled
                                              __asm__("_ZN5shape15specularEnabledE");
 extern Bool           shape_IsSubShape       __asm__("_ZN5shape10IsSubShapeE");
+extern FPMATRIX_PTR   shape_fprealobject_matrix
+                                             __asm__("_ZN5shape19fprealobject_matrixE");
+extern void           shape_dovector(UByte*& ip)
+                                             __asm__("_ZN5shape8dovectorERPh");
+extern void           shape_docopyivert(UByte*& ip)
+                                             __asm__("_ZN5shape11docopyivertERPh");
+extern void           shape_dobitsoffcock(UByte*& ip)
+                                             __asm__("_ZN5shape13dobitsoffcockERPh");
+extern void           shape_doondamaged(UByte*& ip)
+                                             __asm__("_ZN5shape11doondamagedERPh");
+extern void           shape_doweaponoff(UByte*& ip)
+                                             __asm__("_ZN5shape11doweaponoffERPh");
+extern void           shape_douserealtime(UByte*& ip)
+                                             __asm__("_ZN5shape13douserealtimeERPh");
+extern void           shape_dosetglassrange(UByte*& ip)
+                                             __asm__("_ZN5shape15dosetglassrangeERPh");
+extern void           shape_doiswitch(UByte*& ip)
+                                             __asm__("_ZN5shape9doiswitchERPh");
+extern void           shape_docopybvert(UByte*& ip)
+                                             __asm__("_ZN5shape11docopybvertERPh");
+extern void           shape_docreateivert(UByte*& ip)
+                                             __asm__("_ZN5shape13docreateivertERPh");
+extern void           shape_dobitsofffx(UByte*& ip)
+                                             __asm__("_ZN5shape11dobitsofffxERPh");
+extern void           shape_dosetmappingplaner(UByte*& ip)
+                                             __asm__("_ZN5shape18dosetmappingplanerERPh");
+extern void           shape_dosetmappingtan(UByte*& ip)
+                                             __asm__("_ZN5shape15dosetmappingtanERPh");
 
 // MODVEC.CPP - FP/FCRD/FORI signatures come from MODVEC.H.
 extern void mv_NullVec(FCRD& v) __asm__("_Z7NullVecR5_fcrd");
@@ -2660,6 +2688,243 @@ static void test_dotransformlight()
     shape_IsSubShape = FALSE;
 }
 
+//------------------------------------------------------------------------------
+// dovector: single-vertex variant of the dondupvec lighting calc - same
+// ambientfiddle split (>>8 vs /232), always +sizeof(DOVECTOR).
+//------------------------------------------------------------------------------
+static void test_dovector()
+{
+    static UByte fake_viewpoint[4096];
+    std::memset(fake_viewpoint, 0, sizeof(fake_viewpoint));
+    shape_View_Point = fake_viewpoint;
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    UByte stream[8] = {0};
+    DOVECTOR* hdr = (DOVECTOR*)stream;
+    hdr->an = 127;
+    hdr->vertex = 3;
+    hdr->ambientfiddle = 0;
+    hdr->bn = 0;
+    hdr->cn = 0;
+
+    // not light-shaded: nothing written, still advances.
+    shape_shpco[3].intensity = 0x7777;
+    UByte* ip = stream;
+    shape_dovector(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOVECTOR));
+    CHECK_EQ(shape_shpco[3].intensity, 0x7777);
+
+    *(int*)(fake_viewpoint + 0x222) = 1;   // isLightShaded = TRUE
+    shape_TransLightVector.ni.f = 1.0;
+    shape_TransLightVector.nj.f = 0.0;
+    shape_TransLightVector.nk.f = 0.0;
+    shape_specularEnabled = FALSE;
+
+    // ambientfiddle=0, facing normal: 64770>>8=253 -> 256-253=3.
+    ip = stream;
+    shape_dovector(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOVECTOR));
+    CHECK_EQ(shape_shpco[3].intensity, 3);
+    CHECK_EQ(shape_shpco[3].specular, -1);
+    CHECK_EQ(shape_shpco[3].specFlip, -1);
+
+    // ambientfiddle=1: 64770/232=279 -> 280-279=1.
+    hdr->ambientfiddle = 1;
+    ip = stream;
+    shape_dovector(ip);
+    CHECK_EQ(shape_shpco[3].intensity, 1);
+
+    // back-facing normal: 256-0=256.
+    hdr->ambientfiddle = 0;
+    hdr->an = -128;
+    ip = stream;
+    shape_dovector(ip);
+    CHECK_EQ(shape_shpco[3].intensity, 256);
+
+    *(int*)(fake_viewpoint + 0x222) = 0;
+    shape_specularEnabled = FALSE;
+}
+
+//------------------------------------------------------------------------------
+// Small GlobalAdptr-driven handlers: conditional advances and rewinds that
+// re-run or skip the following instruction.
+//------------------------------------------------------------------------------
+static void test_anim_conditionals2()
+{
+    static UByte anim[64];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+
+    // docopyivert: copies image coords into the vertex record.
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+    UByte stream[16] = {0};
+    DOCOPYIVERT* ci = (DOCOPYIVERT*)stream;
+    ci->vertex = 4;
+    ci->image_x = 320;
+    ci->image_y = 240;
+    UByte* ip = stream;
+    shape_docopyivert(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOCOPYIVERT));
+    CHECK_EQ(shape_shpco[4].ix, 320);
+    CHECK_EQ(shape_shpco[4].iy, 240);
+    // UWord 0xFFFF narrows to SWord -1.
+    ci->image_x = 0xFFFF;
+    ip = stream;
+    shape_docopyivert(ip);
+    CHECK_EQ(shape_shpco[4].ix, -1);
+
+    // dobitsoffcock: bit clear -> +offset; bit set -> +sizeof.
+    DOBITSOFFCOCK* bc = (DOBITSOFFCOCK*)stream;
+    bc->bitflag = 3;
+    bc->animflag = 10;
+    bc->offset = 40;
+    *(ULong*)(anim + 10) = 0x8;              // bit 3 set
+    ip = stream;
+    shape_dobitsoffcock(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOBITSOFFCOCK));
+    *(ULong*)(anim + 10) = 0x4;              // bit 3 clear
+    ip = stream;
+    shape_dobitsoffcock(ip);
+    CHECK_EQ(ip - stream, 40);
+    // bitflag beyond the flag's bits -> always clear.
+    bc->bitflag = 31;
+    ip = stream;
+    shape_dobitsoffcock(ip);
+    CHECK_EQ(ip - stream, 40);
+
+    // doondamaged: rewind when damval outside [thresh, topthresh).
+    DOONDAMAGED* od = (DOONDAMAGED*)stream;
+    od->topthresh = 200;
+    od->animoff = 20;
+    od->thresh = 100;
+    anim[20] = 50;                            // below thresh -> rewind 1
+    ip = stream;
+    shape_doondamaged(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOONDAMAGED) - 1);
+    anim[20] = 100;                           // == thresh -> in range
+    ip = stream;
+    shape_doondamaged(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOONDAMAGED));
+    anim[20] = 199;                           // topthresh-1 -> in range
+    ip = stream;
+    shape_doondamaged(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOONDAMAGED));
+    anim[20] = 200;                           // == topthresh -> out
+    ip = stream;
+    shape_doondamaged(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOONDAMAGED) - 1);
+    // topthresh=0 means 256: 255 stays in range.
+    od->topthresh = 0;
+    anim[20] = 255;
+    ip = stream;
+    shape_doondamaged(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOONDAMAGED));
+
+    // doweaponoff: rewind unless launchertype matches AND stores remain.
+    DOWEAPONOFF* wo = (DOWEAPONOFF*)stream;
+    wo->launchertype = 7;
+    wo->storesoffset = 30;
+    wo->launchoffset = 32;
+    anim[32] = 7;                             // launcher matches
+    *(SWord*)(anim + 30) = 0;                 // no stores -> rewind
+    ip = stream;
+    shape_doweaponoff(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOWEAPONOFF) - 1);
+    *(SWord*)(anim + 30) = 3;                 // stores remain -> keep
+    ip = stream;
+    shape_doweaponoff(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOWEAPONOFF));
+    anim[32] = 9;                             // different launcher -> rewind
+    ip = stream;
+    shape_doweaponoff(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOWEAPONOFF) - 1);
+}
+
+//------------------------------------------------------------------------------
+// douserealtime seeds a zero birth-time slot with View_Point->TimeOfDay();
+// a non-zero slot is left alone.
+//------------------------------------------------------------------------------
+static void test_douserealtime()
+{
+    static UByte anim[64];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+    init_fake_viewpoint(4242);
+
+    UByte stream[8] = {0};
+    DOUSEREALTIME* rt = (DOUSEREALTIME*)stream;
+    rt->birthtimeoffset = 16;
+
+    UByte* ip = stream;
+    shape_douserealtime(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOUSEREALTIME));
+    CHECK_EQ(*(ULong*)(anim + 16), (ULong)4242);
+
+    // already seeded -> not overwritten.
+    *(ULong*)(anim + 20) = 777;
+    rt->birthtimeoffset = 20;
+    ip = stream;
+    shape_douserealtime(ip);
+    CHECK_EQ(*(ULong*)(anim + 20), (ULong)777);
+
+    shape_View_Point = NULL;
+}
+
+//------------------------------------------------------------------------------
+// Advance-only and no-op handlers: empty bodies or dead local writes.
+// dobitsofffx only advances when the effect is not triggered (the launch
+// path needs fprealobject_matrix + Trans_Obj -> integration-only).
+//------------------------------------------------------------------------------
+static void test_advance_only2()
+{
+    UByte stream[16] = {0};
+    static UByte anim[64];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+
+    UByte* ip = stream;
+    shape_doiswitch(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOISWITCH));
+    ip = stream;
+    shape_docopybvert(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOCOPYBVERT));
+    ip = stream;
+    shape_docreateivert(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOCREATEIVERT));
+    ip = stream;
+    shape_dosetglassrange(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSETGLASSRANGE));
+
+    // dead no-ops: pointer must not move.
+    ip = stream;
+    shape_dosetmappingplaner(ip);
+    CHECK_EQ(ip - stream, 0);
+    ip = stream;
+    shape_dosetmappingtan(ip);
+    CHECK_EQ(ip - stream, 0);
+
+    // dobitsofffx: damval <= threshold -> no effect.
+    DOBITSOFFFX* fx = (DOBITSOFFFX*)stream;
+    fx->animoff = 8;
+    fx->threshold = 100;
+    anim[8] = 100;                            // == threshold -> not triggered
+    ip = stream;
+    shape_dobitsofffx(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOBITSOFFFX));
+    anim[8] = 101;                            // triggered but no matrix ->
+    ip = stream;                              // inner block skipped
+    shape_fprealobject_matrix = NULL;
+    shape_dobitsofffx(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOBITSOFFFX));
+    fx->threshold = 0xFFFF;                   // max UWord -> never triggers
+    anim[8] = 255;
+    ip = stream;
+    shape_dobitsofffx(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOBITSOFFFX));
+}
+
 int main()
 {
     test_type_layout();
@@ -2712,6 +2977,10 @@ int main()
     test_donvec();
     test_dondupvec();
     test_dotransformlight();
+    test_dovector();
+    test_anim_conditionals2();
+    test_douserealtime();
+    test_advance_only2();
 
     test_win32_events();
     test_win32_semaphore();
