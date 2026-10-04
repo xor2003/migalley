@@ -8025,7 +8025,7 @@ void shape::docompass(UByte *& instr_ptr)
 		}
 
 		GlobalAdptr[animtimer] = framecounter;
-		if (animtimer == ptr->fadeoffset)
+		if (animtimer == ptr->fadeoffset && themax)			//RERUN div-by-zero on bad file data
 		{
 			GlobalAdptr[ptr->fadedepth] = (framecounter * 254)/themax;
 			GlobalAdptr[ptr->fadedepth]++;

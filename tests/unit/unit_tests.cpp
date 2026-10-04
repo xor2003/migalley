@@ -180,6 +180,13 @@ extern void           shape_dosetmappingplaner(UByte*& ip)
                                              __asm__("_ZN5shape18dosetmappingplanerERPh");
 extern void           shape_dosetmappingtan(UByte*& ip)
                                              __asm__("_ZN5shape15dosetmappingtanERPh");
+extern void           shape_dospin(UByte*& ip)
+                                             __asm__("_ZN5shape6dospinERPh");
+extern void           shape_dolighttimer(UByte*& ip)
+                                             __asm__("_ZN5shape12dolighttimerERPh");
+extern void           shape_doanimation(UByte*& ip)
+                                             __asm__("_ZN5shape11doanimationERPh");
+extern UByte          Three_Dee_bytes[]      __asm__("Three_Dee");
 
 // MODVEC.CPP - FP/FCRD/FORI signatures come from MODVEC.H.
 extern void mv_NullVec(FCRD& v) __asm__("_Z7NullVecR5_fcrd");
@@ -2925,6 +2932,260 @@ static void test_advance_only2()
     CHECK_EQ(ip - stream, (long)sizeof(DOBITSOFFFX));
 }
 
+//------------------------------------------------------------------------------
+// dospin: anim-slot spin speed. Nonzero speed adds speed*FrameTime()/100
+// (FrameTime()=0 on the fake display -> angle frozen). Zero speed re-arms
+// from minspeed + rnd(diff), or pins angle to minspeed when diff==0.
+//------------------------------------------------------------------------------
+static void test_dospin()
+{
+    static UByte anim[64];
+    static UByte fake_screen[16384];
+    static UByte fake_display[16384];
+    std::memset(anim, 0, sizeof(anim));
+    std::memset(fake_display, 0, sizeof(fake_display));
+    for (size_t i = 0; i < sizeof(fake_screen) / sizeof(void*); ++i)
+        ((void**)fake_screen)[i] = fake_display;
+    shape_GlobalAdptr = anim;
+    shape_current_screen = fake_screen;
+
+    UByte stream[8] = {0};
+    DOSPIN* sp = (DOSPIN*)stream;
+    sp->animoff = 10;                          // UWord angle slot
+    sp->speedoff = 12;                         // UWord speed slot
+    sp->minspeed = 100;
+    sp->maxspeed = 300;
+
+    // running spin with FrameTime()==0: angle does not move.
+    *(UWord*)(anim + 10) = 500;
+    *(UWord*)(anim + 12) = 50;
+    UByte* ip = stream;
+    shape_dospin(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSPIN));
+    CHECK_EQ(*(UWord*)(anim + 10), (UWord)500);
+    CHECK_EQ(*(UWord*)(anim + 12), (UWord)50);
+
+    // zero speed + diff!=0: re-arms speed into [minspeed, minspeed+diff),
+    // angle untouched.
+    *(UWord*)(anim + 12) = 0;
+    ip = stream;
+    shape_dospin(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSPIN));
+    UWord armed = *(UWord*)(anim + 12);
+    CHECK(armed >= 100 && armed < 300);
+    CHECK_EQ(*(UWord*)(anim + 10), (UWord)500);
+
+    // zero speed + diff==0: "crap fix" pins angle to minspeed.
+    *(UWord*)(anim + 12) = 0;
+    sp->maxspeed = 100;
+    ip = stream;
+    shape_dospin(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOSPIN));
+    CHECK_EQ(*(UWord*)(anim + 10), (UWord)100);
+    CHECK_EQ(*(UWord*)(anim + 12), (UWord)0);
+}
+
+//------------------------------------------------------------------------------
+// dolighttimer: word/byte anim slots driven by light timer types.
+// Paths that call View_Point->FrameTime (PERIODIC with nonzero frametime)
+// need a real view3dwin -> integration-only; everything else is pinned here.
+// Three_Dee.lightson sits at offset 0x2f0 (per dolighttimer codegen).
+//------------------------------------------------------------------------------
+static void test_dolighttimer()
+{
+    static UByte anim[64];
+    std::memset(anim, 0, sizeof(anim));
+    shape_GlobalAdptr = anim;
+    *(Bool*)(Three_Dee_bytes + 0x2f0) = FALSE; // lightson
+
+    UByte stream[8] = {0};
+    DOLIGHTTIMER* lt = (DOLIGHTTIMER*)stream;
+    lt->animoff = 10;
+    lt->duration = 1000;
+    lt->isword = 0;
+
+    // ONLY_DARK while lights off -> frametime forced to 0, byte slot.
+    lt->timertype = 4;                          // LGT_ONLY_DARK
+    anim[10] = 77;
+    UByte* ip = stream;
+    shape_dolighttimer(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOLIGHTTIMER));
+    CHECK_EQ(anim[10], 0);
+
+    // same in word mode -> writes UWord 0.
+    lt->isword = 1;
+    *(UWord*)(anim + 10) = 77;
+    ip = stream;
+    shape_dolighttimer(ip);
+    CHECK_EQ(*(UWord*)(anim + 10), (UWord)0);
+
+    // USER type (no ONLY_DARK, no PERIODIC): frametime read + written
+    // straight back - value preserved, byte and word modes.
+    lt->timertype = 1;                          // LGT_USER
+    lt->isword = 0;
+    anim[10] = 55;
+    ip = stream;
+    shape_dolighttimer(ip);
+    CHECK_EQ(anim[10], 55);
+    lt->isword = 1;
+    *(UWord*)(anim + 10) = 55;
+    ip = stream;
+    shape_dolighttimer(ip);
+    CHECK_EQ(*(UWord*)(anim + 10), (UWord)55);
+
+    // PERIODIC but frametime==0: the && short-circuit skips
+    // View_Point->FrameTime; still writes 0 back.
+    lt->timertype = 2;                          // LGT_PERIODIC
+    lt->isword = 0;
+    anim[10] = 0;
+    ip = stream;
+    shape_dolighttimer(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOLIGHTTIMER));
+    CHECK_EQ(anim[10], 0);
+
+    // ONLY_DARK with lights ON -> else branch runs: frametime read
+    // (USER-like), non-periodic so value preserved.
+    *(Bool*)(Three_Dee_bytes + 0x2f0) = TRUE;
+    lt->timertype = 4;
+    lt->isword = 0;
+    anim[10] = 33;
+    ip = stream;
+    shape_dolighttimer(ip);
+    CHECK_EQ(anim[10], 33);
+
+    *(Bool*)(Three_Dee_bytes + 0x2f0) = FALSE;
+}
+
+//------------------------------------------------------------------------------
+// doanimation: the anim-slot state machine. On the fake display
+// FrameTime()==0, so cntinc only comes from the timeroffset slot - which
+// makes frame stepping fully deterministic. activatenow is matched
+// against MinAnimData.itemstate (bits 5-6 of GlobalAdptr[0]).
+//------------------------------------------------------------------------------
+static void test_doanimation()
+{
+    static UByte anim[256];
+    static UByte fake_screen[16384];
+    static UByte fake_display[16384];
+    std::memset(anim, 0, sizeof(anim));
+    std::memset(fake_display, 0, sizeof(fake_display));
+    for (size_t i = 0; i < sizeof(fake_screen) / sizeof(void*); ++i)
+        ((void**)fake_screen)[i] = fake_display;
+    shape_GlobalAdptr = anim;
+    shape_current_screen = fake_screen;
+
+    UByte stream[32] = {0};
+    DOANIMATION* an = (DOANIMATION*)stream;
+    an->maxframes = 100;
+    an->flagoffset = 20;                       // animtimer slot
+    an->timeroffset = 40;                      // cntinc injection
+    stream[6] = 0x20;                          // maxaction=STAY, inc=PER_FRAME,
+                                             // activatenow=1
+    anim[0] = 0x20;                            // MinAnimData.itemstate=1
+    anim[40] = 10;
+    anim[20] = 50;
+
+    // basic increment: 50 + 10 = 60.
+    UByte* ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOANIMATION));
+    CHECK_EQ(anim[20], 60);
+
+    // over the max: MAX_STAY clamps to themax.
+    anim[20] = 95;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 100);
+
+    // MAX_RESET_ZERO: non-cheat trigger resets to 0...
+    stream[6] = 0x21;                          // maxaction=RESET_ZERO
+    anim[20] = 95;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 0);
+    // ...but via toggleoffset any nonzero byte is a "cheat" trigger,
+    // which resets to cntinc instead.
+    an->toggleoffset = 30;
+    anim[30] = 1;
+    anim[20] = 95;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 10);
+    CHECK_EQ(anim[30], 1);                     // toggleflag written back
+
+    // negative toggle drives the reverse path: 5 + (10 * -1) = -5
+    // -> MAX_RESET_ZERO on the <0 side writes themax.
+    anim[30] = 0xFF;                           // SByte -1
+    anim[20] = 5;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 100);
+    CHECK_EQ(anim[30], 0xFF);
+    an->toggleoffset = 0;
+
+    // state mismatch but nonzero framecounter -> cheat-resume forces doit;
+    // 250+10 wraps past themax and MAX_STAY clamps to 100.
+    stream[6] = 0x20;                          // STAY
+    anim[0] = 0;                               // itemstate=0 != 1
+    anim[20] = 250;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 100);
+
+    // nonzero framecounter alone re-triggers the anim (cheat resume):
+    // condition fails but framecounter!=0 forces doit.
+    anim[20] = 50;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 60);
+
+    // damagetoggle: ThisState = GlobalAdptr[damageoffset]/96.
+    stream[7] = 8; stream[8] = 0x80;           // damageoffset=8,damagetoggle=1
+    anim[8] = 96;                              // -> state 1 -> activates
+    anim[20] = 50;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 60);
+    anim[8] = 95;                              // -> state 0 -> no activate,
+    anim[20] = 0;                              // framecounter 0 -> frozen
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 0);
+    anim[8] = 192;                             // -> state 2: 2&1 == 0 -> no
+    anim[20] = 0;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[20], 0);
+    stream[7] = 0; stream[8] = 0;              // damagetoggle off
+    anim[8] = 0;
+
+    // fade path: fadeoffset + nonzero fadedepth reroutes animtimer to
+    // the fade slot and writes fadedepth = frame*254/themax + 1.
+    anim[0] = 0x20;
+    an->fadeoffset = 50;
+    an->maxfadeframes = 100;
+    an->fadedepth = 51;
+    anim[51] = 1;
+    anim[50] = 0;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[50], 10);                    // framecounter advanced
+    CHECK_EQ(anim[51], 26);                    // (10*254)/100 + 1
+
+    // maxfadeframes=0 with a live fade -> guarded divide, no SIGFPE.
+    // themax=0 also makes MAX_STAY clamp the counter to 0.
+    an->maxfadeframes = 0;
+    anim[51] = 9;
+    anim[50] = 5;
+    ip = stream;
+    shape_doanimation(ip);
+    CHECK_EQ(anim[50], 0);
+    CHECK_EQ(anim[51], 9);
+
+    // clean up the slots this test shares with nothing else
+    std::memset(anim, 0, sizeof(anim));
+}
+
 int main()
 {
     test_type_layout();
@@ -2981,6 +3242,9 @@ int main()
     test_anim_conditionals2();
     test_douserealtime();
     test_advance_only2();
+    test_dospin();
+    test_dolighttimer();
+    test_doanimation();
 
     test_win32_events();
     test_win32_semaphore();
