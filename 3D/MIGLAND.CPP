@@ -609,9 +609,10 @@ void CDecompressData::UnPack(ULong x,ULong z,UByte*& ip,CDataBlock*& pDataBlk)
 	CCacheBlock* pCacheBlk;
 //RERUN #undef new
 	pCacheBlk = new CCacheBlock(x,z);
+	if (pCacheBlk==NULL) {pDataBlk=NULL; return;}
 	pDataBlk = new(dataLen) CDataBlock(pCacheBlk,dataLen,pDataStart);
 //RERUN #define	new DEBUG_NEW
-	pCacheBlk->Insert();
+	if (pDataBlk!=NULL) pCacheBlk->Insert(); else delete pCacheBlk;
 
 	ip=inptr;
 }
@@ -744,9 +745,10 @@ void CDecompressData::MakeIntData(	ULong x,ULong z,ULong rez,
  	CPrimaryCB*	pCacheBlk;
 //RERUN #undef new
  	pCacheBlk = new CPrimaryCB(x,z,rez);
+ 	if (pCacheBlk==NULL) {pDataBlk=NULL; return;}
  	pDataBlk = new(dataLen) CPrimaryDB(pCacheBlk,dataLen,pDataStart);
 //RERUN #define	new DEBUG_NEW
- 	pCacheBlk->Insert();
+ 	if (pDataBlk!=NULL) pCacheBlk->Insert(); else delete pCacheBlk;
 }
 
 //------------------------------------------------------------------------------
@@ -3394,6 +3396,8 @@ DataRecord CMigLand::GetData(ULong x,ULong z,ULong rez,DataRecord& dr)
 DataRecord CMigLand::GetData(ULong x,ULong z)
 {
 	DataRecord retVal;
+	retVal.pData=NULL;
+	retVal.dataLen=0;
 
 	CCacheBlock* pCache=CCacheBlock::pHead;
 	CDataBlock* pData=NULL;
@@ -3407,8 +3411,11 @@ DataRecord CMigLand::GetData(ULong x,ULong z)
 		if (!ptr) ptr=faketile;
 		pMigLandDecomp->UnPack(x,z,ptr,pData);
 	}
-	retVal.pData=pData->DataStart();
-	retVal.dataLen=pData->DataLen();
+	if (pData!=NULL)
+	{
+		retVal.pData=pData->DataStart();
+		retVal.dataLen=pData->DataLen();
+	}
 
 	return retVal;
 }
@@ -3618,6 +3625,25 @@ SLong CMigLand::GetAltitude(COORDS3D& pos,UByte* pAreaType,bool fReallyGetData)
 		px=pos.X&GMask;
 		pz=pos.Z&GMask;
 		pMigFile->OneShotSeekRequest(px,pz,&ss,&retVal);
+		SLong xPos=(pos.X&0x1FFFF);
+		SLong zPos=0x1FFFF-(pos.Z&0x1FFFF);
+		SLong alt=pos.Y;
+		pMigLandDecomp->FindAltNType(xPos,zPos,retVal,alt,lastGroundHit);
+		if (pAreaType) *pAreaType=lastGroundHit;
+		return alt;
+	}
+	//The primary cache only holds blocks the view cone has visited —
+	//the terrain under an aircraft is usually not among them, so
+	//altitude queries (collision, AI) starved and returned sea level,
+	//letting aircraft fly through the ground. Build the block from the
+	//view-centred streaming buffer via the normal GetData path instead.
+	DataRecord dr=GetData(pos.X&~ULong(131072-1),pos.Z&~ULong(131072-1));
+	if (dr.pData==NULL) return 0;
+	pMigLandDecomp->MakeIntData(pos.X,pos.Z,0,dr.pData,pPrimaryDB);
+	if (pPrimaryDB!=NULL)
+	{
+		retVal.pData=pPrimaryDB->DataStart();
+		retVal.dataLen=pPrimaryDB->DataLen();
 		SLong xPos=(pos.X&0x1FFFF);
 		SLong zPos=0x1FFFF-(pos.Z&0x1FFFF);
 		SLong alt=pos.Y;

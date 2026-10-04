@@ -4346,7 +4346,7 @@ void LandScape::InfiniteStrip()
  *	render the horizon
  */
 
-	Float dummy;
+	Float dummy=0.;
 	Bool oldZState;
 
 	SLong poly_count=(SLong(ptr-SHAPE.newco)-2)>>1;

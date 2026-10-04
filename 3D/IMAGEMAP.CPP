@@ -661,6 +661,16 @@ ImageMapDescPtr ImageMap::GetImageMapPtr(ImageMapNumber imagemap_number,Bool	ski
 	UWord	file_no = real_imagemap_number & 0xFF;
 	UWord	dir_no = real_imagemap_number >> 8;
 
+	if (dir_no >= MaxMapDirs || dir_no >= supercnt
+		|| !superimagemaptable[dir_no].imagemaptable
+		|| file_no >= superimagemaptable[dir_no].nomaps)
+	{
+		fprintf(stderr,"[IMG] GetImageMapPtr: bad imagemap 0x%x (dir=%d file=%d nomaps=%d)\n",
+			imagemap_number,dir_no,file_no,
+			dir_no<MaxMapDirs?superimagemaptable[dir_no].nomaps:-1);
+		return NULL;
+	}
+
 	if(superimagemaptable[dir_no].imagemaptable[file_no]==NULL)	//CSB 10/11/98	FAILS HERE !!!!
 	{
 		Bool				is16 = FALSE;			
@@ -708,6 +718,14 @@ void ImageMap::AddImageMapToGlbList(UWord imageno)
 	UWord	realmapno = imageno & 0x7FFF;
 	UWord	dir_no = realmapno >> 8;
 	UWord	file_no = realmapno & 0xFF;
+
+	if (dir_no >= MaxMapDirs || dir_no >= supercnt)
+	{
+		fprintf(stderr,"[IMG] AddImageMapToGlbList: bad imagemap 0x%x (dir=%d file=%d)\n",
+			imageno,dir_no,file_no);
+		return;
+	}
+
 	UWord	mapoff = superimagemaptable[dir_no].nomaps;
 
 	ImageMapBitField* imagemapfield = &superimagemaptable[dir_no].imbf;
@@ -1182,6 +1200,15 @@ void ImageMap::UnLoadImageMap(ImageMapNumber imagemap_number)
 {
  	UWord	file_no = imagemap_number & 0xFF;
 	UWord	dir_no = imagemap_number >> 8;
+
+	if (dir_no >= MaxMapDirs || dir_no >= supercnt
+		|| !superimagemaptable[dir_no].imagemaptable
+		|| file_no >= superimagemaptable[dir_no].nomaps)
+	{
+		fprintf(stderr,"[IMG] UnLoadImageMap: bad imagemap 0x%x (dir=%d file=%d)\n",
+			imagemap_number,dir_no,file_no);
+		return;
+	}
 
 	if(superimagemaptable[dir_no].imagemaptable[file_no]!=NULL)
 	{
