@@ -146,7 +146,14 @@ jobs:
         run: |
           mapfile -t FILES < /tmp/lint_files.txt
           if [ ${#FILES[@]} -eq 0 ]; then echo "no lintable .cpp changes"; exit 0; fi
-          OUT=$(bash scripts/lint.sh "${FILES[@]}" 2>&1) || true
+          # "all" runs lint.sh bare so it sees the whole compile database
+          # (enables cppcheck's whole-program unusedFunction check);
+          # subsets get explicit files so unusedFunction stays off.
+          if [ "${{ inputs.lint_files }}" = "all" ]; then
+            OUT=$(bash scripts/lint.sh 2>&1) || true
+          else
+            OUT=$(bash scripts/lint.sh "${FILES[@]}" 2>&1) || true
+          fi
           echo "$OUT"
           sed 's|$|:|' /tmp/changed.txt > /tmp/changed_loc.txt
           NEWERR=$(echo "$OUT" | grep "error:" | grep -Ff /tmp/changed_loc.txt || true)
