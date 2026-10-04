@@ -139,6 +139,19 @@ extern void           shape_dowhiteout(UByte*& ip)
                                              __asm__("_ZN5shape10dowhiteoutERPh");
 extern void*          BoxCol_Col_Shooter __asm__("_ZN6BoxCol11Col_ShooterE");
 extern UByte          Manual_Pilot_bytes[] __asm__("Manual_Pilot");
+extern void           shape_donvec(UByte*& ip)
+                                             __asm__("_ZN5shape6donvecERPh");
+extern void           shape_dondupvec(UByte*& ip)
+                                             __asm__("_ZN5shape9dondupvecERPh");
+extern void           shape_dotransformlight(UByte*& ip)
+                                             __asm__("_ZN5shape16dotransformlightERPh");
+extern LightVec       shape_TransLightVector
+                                             __asm__("_ZN5shape16TransLightVectorE");
+extern LightVec       shape_TransViewVector
+                                             __asm__("_ZN5shape15TransViewVectorE");
+extern Bool           shape_specularEnabled
+                                             __asm__("_ZN5shape15specularEnabledE");
+extern Bool           shape_IsSubShape       __asm__("_ZN5shape10IsSubShapeE");
 
 // MODVEC.CPP - FP/FCRD/FORI signatures come from MODVEC.H.
 extern void mv_NullVec(FCRD& v) __asm__("_Z7NullVecR5_fcrd");
@@ -2462,6 +2475,191 @@ static void test_drawstation_whiteout()
     CHECK_EQ(ip - stream, (long)sizeof(DOWHITEOUT));
 }
 
+//------------------------------------------------------------------------------
+// Lighting/vector handlers: donvec and dondupvec gate everything on
+// View_Point->isLightShaded (Bool at ViewPoint+0x222, per dolshadeon's store).
+// Shaded path normalises each NEXTVEC record, dots it with TransLightVector,
+// maps to intensity, and optionally runs calcSpecular against TransViewVector.
+//------------------------------------------------------------------------------
+static void test_donvec()
+{
+    static UByte fake_viewpoint[4096];
+    std::memset(fake_viewpoint, 0, sizeof(fake_viewpoint));
+    shape_View_Point = fake_viewpoint;
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    // not light-shaded: header + count*NEXTVEC skipped, nothing written.
+    UByte stream[16] = {0};
+    DONVEC* hdr = (DONVEC*)stream;
+    hdr->vertex = 2;
+    hdr->count = 2;
+    NEXTVEC* v0 = (NEXTVEC*)(stream + sizeof(DONVEC));
+    v0[0].an = 127; v0[0].bn = 0; v0[0].cn = 0;
+    v0[1].an = -128; v0[1].bn = 0; v0[1].cn = 0;
+
+    shape_shpco[2].intensity = 0x7777;
+    shape_shpco[2].specular = 0x7777;
+    shape_shpco[2].specFlip = 0x7777;
+    UByte* ip = stream;
+    shape_donvec(ip);
+    CHECK_EQ(ip - stream, (long)(sizeof(DONVEC) + 2 * sizeof(NEXTVEC)));
+    CHECK_EQ(shape_shpco[2].intensity, 0x7777);
+
+    // light-shaded: light = +X. Facing normal -> lit (intensity 1);
+    // back-facing -> clamps at 256.
+    *(int*)(fake_viewpoint + 0x222) = 1;   // isLightShaded = TRUE
+    shape_TransLightVector.ni.f = 1.0;
+    shape_TransLightVector.nj.f = 0.0;
+    shape_TransLightVector.nk.f = 0.0;
+    shape_specularEnabled = FALSE;
+
+    ip = stream;
+    shape_donvec(ip);
+    CHECK_EQ(ip - stream, (long)(sizeof(DONVEC) + 2 * sizeof(NEXTVEC)));
+    // an=(1,0,0): lightDot=1 -> (32385+32385)/232=279 -> 280-279=1
+    CHECK_EQ(shape_shpco[2].intensity, 1);
+    CHECK_EQ(shape_shpco[2].specular, -1);
+    CHECK_EQ(shape_shpco[2].specFlip, -1);
+    // an=(-1,0,0): lightDot=-1 -> 0/232=0 -> 280 -> clamp 256
+    CHECK_EQ(shape_shpco[3].intensity, 256);
+    CHECK_EQ(shape_shpco[3].specular, -1);
+    CHECK_EQ(shape_shpco[3].specFlip, -1);
+
+    // specular path: view = +X as well -> specDot=lightDot=1 -> delta 0
+    // -> specFlip=specMax(95); the +pi-folded block then yields specular=0.
+    shape_TransViewVector.ni.f = 1.0;
+    shape_TransViewVector.nj.f = 0.0;
+    shape_TransViewVector.nk.f = 0.0;
+    shape_specularEnabled = TRUE;
+    hdr->count = 1;
+    ip = stream;
+    shape_donvec(ip);
+    CHECK_EQ(shape_shpco[2].intensity, 1);
+    CHECK_EQ(shape_shpco[2].specular, 0);
+    CHECK_EQ(shape_shpco[2].specFlip, 95);
+
+    // specular glow needs the normal facing AWAY from both vectors:
+    // light = view = -X, normal +X -> folded angles 0 -> specular=95,
+    // specFlip=0; intensity = the 256-clamped back-face value.
+    shape_TransLightVector.ni.f = -1.0;
+    shape_TransViewVector.ni.f = -1.0;
+    ip = stream;
+    shape_donvec(ip);
+    CHECK_EQ(shape_shpco[2].intensity, 256);
+    // x87 80-bit acos(-1) vs the 64-bit pi literal leaves a tiny positive
+    // delta, so specMax*(1-eps) truncates to 94 rather than 95.
+    CHECK_EQ(shape_shpco[2].specular, 94);
+    CHECK_EQ(shape_shpco[2].specFlip, 0);
+
+    // count = 0: advances past the header only, writes nothing.
+    shape_specularEnabled = FALSE;
+    shape_shpco[2].intensity = 0x7777;
+    hdr->count = 0;
+    ip = stream;
+    shape_donvec(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONVEC));
+    CHECK_EQ(shape_shpco[2].intensity, 0x7777);
+
+    *(int*)(fake_viewpoint + 0x222) = 0;
+    shape_specularEnabled = FALSE;
+}
+
+static void test_dondupvec()
+{
+    static UByte fake_viewpoint[4096];
+    std::memset(fake_viewpoint, 0, sizeof(fake_viewpoint));
+    shape_View_Point = fake_viewpoint;
+    shape_newco = shape_shpco;
+    for (int i = 0; i < 16; ++i) shape_shpco[i] = DoPointStruc();
+
+    // not light-shaded: sizeof(DONDUPVEC)=5, nothing written.
+    UByte stream[16] = {0};
+    DONDUPVEC* hdr = (DONDUPVEC*)stream;
+    hdr->vertex = 2;
+    hdr->count = 3;
+    hdr->ambientfiddle = 0;
+    hdr->an = 127; hdr->bn = 0; hdr->cn = 0;
+
+    shape_shpco[2].intensity = 0x7777;
+    UByte* ip = stream;
+    shape_dondupvec(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONDUPVEC));
+    CHECK_EQ(shape_shpco[2].intensity, 0x7777);
+
+    *(int*)(fake_viewpoint + 0x222) = 1;   // isLightShaded = TRUE
+    shape_TransLightVector.ni.f = 1.0;
+    shape_TransLightVector.nj.f = 0.0;
+    shape_TransLightVector.nk.f = 0.0;
+    shape_specularEnabled = FALSE;
+
+    // ambientfiddle=0: intensity = (64770 >> 8)=253 -> 256-253=3, written
+    // to count consecutive vertices.
+    ip = stream;
+    shape_dondupvec(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONDUPVEC));
+    CHECK_EQ(shape_shpco[2].intensity, 3);
+    CHECK_EQ(shape_shpco[3].intensity, 3);
+    CHECK_EQ(shape_shpco[4].intensity, 3);
+    CHECK_EQ(shape_shpco[2].specular, -1);
+    CHECK_EQ(shape_shpco[2].specFlip, -1);
+    // vertex 5 is outside the count range - untouched.
+    CHECK_EQ(shape_shpco[5].intensity, 0);
+
+    // ambientfiddle=1: (64770 / 232)=279 -> 280-279=1.
+    hdr->count = 2;
+    hdr->ambientfiddle = 1;
+    ip = stream;
+    shape_dondupvec(ip);
+    CHECK_EQ(shape_shpco[2].intensity, 1);
+    CHECK_EQ(shape_shpco[3].intensity, 1);
+    CHECK_EQ(shape_shpco[4].intensity, 3);   // outside new count range
+
+    // back-facing normal + ambientfiddle=0: intensity base 0 -> 256-0=256.
+    hdr->count = 1;
+    hdr->ambientfiddle = 0;
+    hdr->an = -128;
+    ip = stream;
+    shape_dondupvec(ip);
+    CHECK_EQ(shape_shpco[2].intensity, 256);
+
+    // count = 0 with shading on: header advance only, nothing written.
+    shape_shpco[2].intensity = 0x7777;
+    hdr->count = 0;
+    ip = stream;
+    shape_dondupvec(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONDUPVEC));
+    CHECK_EQ(shape_shpco[2].intensity, 0x7777);
+
+    *(int*)(fake_viewpoint + 0x222) = 0;
+    shape_specularEnabled = FALSE;
+}
+
+//------------------------------------------------------------------------------
+// dotransformlight: the IsSubShape guard must return before touching any
+// lighting state (the outer path needs ItemPtr/Three_Dee/Land_Scape and is
+// integration-only).
+//------------------------------------------------------------------------------
+static void test_dotransformlight()
+{
+    shape_IsSubShape = TRUE;
+    shape_specularEnabled = FALSE;
+    shape_TransLightVector.ni.f = 0.0;
+    shape_TransLightVector.nj.f = 0.0;
+    shape_TransLightVector.nk.f = 0.0;
+
+    UByte stream[8] = {0};
+    UByte* ip = stream;
+    shape_dotransformlight(ip);
+
+    CHECK_EQ(shape_specularEnabled, FALSE);
+    CHECK_EQ(shape_TransLightVector.ni.f, 0.0);
+    CHECK_EQ(shape_TransLightVector.nj.f, 0.0);
+    CHECK_EQ(shape_TransLightVector.nk.f, 0.0);
+
+    shape_IsSubShape = FALSE;
+}
+
 int main()
 {
     test_type_layout();
@@ -2511,6 +2709,9 @@ int main()
     test_donsubs();
     test_doifpiloted();
     test_drawstation_whiteout();
+    test_donvec();
+    test_dondupvec();
+    test_dotransformlight();
 
     test_win32_events();
     test_win32_semaphore();
