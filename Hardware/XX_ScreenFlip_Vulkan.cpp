@@ -794,16 +794,28 @@ void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
         const size_t dstRowBytes = static_cast<size_t>(vkExtent.width) * dstBpp;
 
         // --- Fast RGB565 → BGRA8888 conversion for framebuffer ---
-        // TODO for better way: 
-        // Create an offscreen 16‑bit VkImage (not presentable) and sample from it in 
+        // TODO for better way:
+        // Create an offscreen 16‑bit VkImage (not presentable) and sample from it in
         // a shader that writes to the presentable 32‑bit swapchain image.
+        // The game surface (ddsBack) is the engine's chosen 3D resolution and is
+        // generally NOT the same size as the swapchain (window) extent — scale
+        // nearest-neighbour instead of assuming a 1:1 copy, or the image lands
+        // top-left with the rest of the frame reading out of bounds.
         const uint16_t* srcBase = reinterpret_cast<const uint16_t*>(ddsBack->pixels);
+        const int srcW = ddsBack->w;
+        const int srcH = ddsBack->h;
         int srcPitch = ddsBack->pitch / 2; // pitch in pixels for 16bpp
         for (uint32_t y = 0; y < vkExtent.height; ++y) {
-            const uint16_t* srcRow = srcBase + y * srcPitch;
+            int sy = (vkExtent.height > 0 && srcH > 0)
+                ? (int)((uint64_t)y * (uint64_t)srcH / vkExtent.height) : 0;
+            if (sy >= srcH) sy = srcH - 1;
+            const uint16_t* srcRow = srcBase + sy * srcPitch;
             uint8_t* dstRow = mapped + y * dstRowBytes;
             for (uint32_t x = 0; x < vkExtent.width; ++x) {
-                uint16_t pixel = srcRow[x];
+                int sx = (vkExtent.width > 0 && srcW > 0)
+                    ? (int)((uint64_t)x * (uint64_t)srcW / vkExtent.width) : 0;
+                if (sx >= srcW) sx = srcW - 1;
+                uint16_t pixel = srcRow[sx];
                 uint8_t r = ((pixel >> 11) & 0x1F) << 3;
                 uint8_t g = ((pixel >> 5) & 0x3F) << 2;
                 uint8_t b = (pixel & 0x1F) << 3;

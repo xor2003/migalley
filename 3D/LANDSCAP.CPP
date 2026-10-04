@@ -2140,7 +2140,7 @@ void LandScape::PerspectivePoly(SWord pc,DoPointStruc* pdp,const HTEXT& hT)
 			_matrix.transform(fpviewer_matrix,dp[2]);
 			if ((	dp[0].clipFlags&
 					dp[1].clipFlags&
-					dp[3].clipFlags)==CF3D_NULL)
+					dp[2].clipFlags)==CF3D_NULL)
 			{
 				Land_Obj *loptr=
 					(Land_Obj*)Three_Dee.bt->Get3DArea(SPECIAL_TILE_OBJECT);

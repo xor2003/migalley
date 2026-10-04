@@ -589,7 +589,12 @@ inline void* ASM_GetHorizonFadeTable()
 }
 
 inline void ASM_SelectPalette(SWord palNum) {
-    std::memcpy(palette_table, &palette_buffer[palNum * 256], 512);
+    //RERUN: palNum<0 selects the landscape palette; MASM read the table
+    //immediately preceding palette_buffer, which no longer maps here.
+    const uint16_t* src = (palNum < 0)
+        ? landscape_palette
+        : &palette_buffer[palNum * 256];
+    std::memcpy(palette_table, src, 512);
 }
 
 inline UWord ASM_GetPaletteEntry(UWord c) {
