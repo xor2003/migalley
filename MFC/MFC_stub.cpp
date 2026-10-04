@@ -709,15 +709,27 @@ void PumpSDL()
             {
                 SDL_Window* sdlWin = SDL_GetWindowFromID(e.window.windowID);
                 CWnd* wnd = AfxGetWndFromSDLWindow(sdlWin);
-                if (wnd)
+                if (e.window.event == SDL_WINDOWEVENT_CLOSE)
                 {
-                    msg.hwnd = wnd->GetSafeHwnd();
-                    if (e.window.event == SDL_WINDOWEVENT_CLOSE)
+                    // The X button on the application's real OS window must
+                    // reach the main frame: many virtual CWnds can share one
+                    // SDL window and AfxGetWndFromSDLWindow picks an
+                    // arbitrary owner, so WM_CLOSE could otherwise die on a
+                    // child/dialog and leave the app running windowless.
+                    CWnd* main = AfxGetMainWnd();
+                    WindowBackend* mbe = main ? backend_from_hwnd(main->GetSafeHwnd()) : nullptr;
+                    CWnd* target = (mbe && mbe->window == sdlWin) ? main : wnd;
+                    if (target)
                     {
+                        msg.hwnd = target->GetSafeHwnd();
                         msg.message = WM_CLOSE;
                         g_msgQueue.push_back(msg);
                     }
-                    else if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
+                }
+                else if (wnd)
+                {
+                    msg.hwnd = wnd->GetSafeHwnd();
+                    if (e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
                     {
                         // RERUN: If the main window gets focus while on the campaign map,
                         // push it to the bottom so dialogs stay visible.
