@@ -5,6 +5,45 @@
 // tests readable next to the 1998 code they pin down).
 //
 // Run via ctest or directly: ./unit_tests
+//
+// Shape-interpreter coverage boundary
+// -----------------------------------
+// Every handler that can run on synthetic streams + fake display/window
+// chains is pinned below. The rest split into three buckets:
+//
+//   ERROR-EXIT - the body is _Error.EmitSysErr -> SayAndQuit -> exit(0).
+//     They exist only as malformed-shape traps and would kill the runner:
+//     do3dbreak, dodepthcolour, dodepthpoly, doend, dogroup, domappoly,
+//     donextvec, dorepos, dosetcolourall, dosetcolourh, dosetmapmap,
+//     dotrifan, dotrizag, dotrizagflat.
+//
+//   INTEGRATION-ONLY - need a live rasterizer (POLYGON/current_screen->Do*),
+//     Image_Map data, the full item/Trans_Obj world, or recursive
+//     SHAPE.draw_shape. Unit-faking these would test the fakes, not the
+//     code; they are exercised by smoke_xvfb instead:
+//     all do*poly render ops (dopolygon, dorelpoly, doquikpoly,
+//     doquikrelpoly, doquiksmoothpoly, dosmoothpoly, dosmthrelpoly,
+//     dodrawipoly, dodrawipolys, dodrawopoly, dodrawrpoly,
+//     dodrawreflectpoly, dotrifanflat), doline, doblobline, doincln,
+//     doheathaze, dodrawsun, dotransparenton, dosetmipmap (SetMipMap is
+//     hardware), dosetcolour, dosphere/doisphere/doosphere, docylinder,
+//     doicylinder, docreateipoly, docreaterpoly, dodigitdial, dodial,
+//     dowindowdial, dogunsight, doattitude, dolight,
+//     dodot, domorphsphere*, domorphnsphrs*, dosmokepnt, dosmktrail,
+//     dowheelspray, doeffect, docollision, docallshape (DrawSubShape ->
+//     SHAPE.draw_shape), dodamage, dowheeldamage, and the launch path of
+//     dobitsofffx.
+//
+//   PARTIALLY COVERED - safe paths pinned, heavy paths noted at the test:
+//     dotransformlight (!IsSubShape path needs ItemPtr/Three_Dee/
+//     Land_Scape), dolighttimer (PERIODIC+nonzero needs view3dwin),
+//     dodrawstation (station>0 needs station shape data),
+//     dobitsofffx (triggered+matrix path needs Trans_Obj).
+//
+// Note: SHPINSTR structs are compiled under DOSDEFS.H #pragma pack(1) -
+// the on-disk layout differs from the natural C layout. Tests write
+// named struct fields (compiler applies packing); raw stream[] offsets
+// must use the packed offsets (see test_doanimation).
 //------------------------------------------------------------------------------
 #include <cstdio>
 #include <cstring>
@@ -186,6 +225,20 @@ extern void           shape_dolighttimer(UByte*& ip)
                                              __asm__("_ZN5shape12dolighttimerERPh");
 extern void           shape_doanimation(UByte*& ip)
                                              __asm__("_ZN5shape11doanimationERPh");
+extern void           shape_docompass(UByte*& ip)
+                                             __asm__("_ZN5shape9docompassERPh");
+extern void           shape_docreatebpoly(UByte*& ip)
+                                             __asm__("_ZN5shape13docreatebpolyERPh");
+extern void           shape_dodrawbpoly(UByte*& ip)
+                                             __asm__("_ZN5shape11dodrawbpolyERPh");
+extern void           shape_doimagemap(UByte*& ip)
+                                             __asm__("_ZN5shape10doimagemapERPh");
+extern void           shape_dolauncher(UByte*& ip)
+                                             __asm__("_ZN5shape10dolauncherERPh");
+extern void           shape_donspheres(UByte*& ip)
+                                             __asm__("_ZN5shape10donspheresERPh");
+extern void           shape_donspheresimapd(UByte*& ip)
+                                             __asm__("_ZN5shape15donspheresimapdERPh");
 extern UByte          Three_Dee_bytes[]      __asm__("Three_Dee");
 
 // MODVEC.CPP - FP/FCRD/FORI signatures come from MODVEC.H.
@@ -2911,6 +2964,29 @@ static void test_advance_only2()
     ip = stream;
     shape_dosetmappingtan(ip);
     CHECK_EQ(ip - stream, 0);
+    ip = stream;
+    shape_dodrawbpoly(ip);
+    CHECK_EQ(ip - stream, 0);
+    ip = stream;
+    shape_doimagemap(ip);
+    CHECK_EQ(ip - stream, 0);
+
+    // advance-only stubs (declared locals are dead).
+    ip = stream;
+    shape_docompass(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOCOMPASS));
+    ip = stream;
+    shape_docreatebpoly(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOCREATEBUMPPOLY));
+    ip = stream;
+    shape_dolauncher(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DOLAUNCHER));
+    ip = stream;
+    shape_donspheres(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONSPHERES));
+    ip = stream;
+    shape_donspheresimapd(ip);
+    CHECK_EQ(ip - stream, (long)sizeof(DONSPHERESIMAPD));
 
     // dobitsofffx: damval <= threshold -> no effect.
     DOBITSOFFFX* fx = (DOBITSOFFFX*)stream;
