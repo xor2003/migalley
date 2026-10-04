@@ -69,7 +69,7 @@ run_tool() {
     if [ $rc -ne 0 ]; then
         echo "lint: $label exited $rc"
         FAILED=1
-    elif printf '%s\n' "$out" | grep -q 'error:'; then
+    elif grep -q 'error:' <<<"$out"; then
         FAILED=1
     fi
 }
@@ -97,12 +97,13 @@ if [ "$MODE" = cpp ] || [ "$MODE" = all ]; then
     [ "$WHOLE" = 1 ] && ENABLE="$ENABLE,unusedFunction"
     # unknownMacro: cppcheck can't expand the generated names in legacy
     # headers (ITEM_STATUS in WORLDINC.H etc.) - a config diagnostic,
-    # not a code finding. cppcheckError on SAVEGAME.H is cppcheck's own
-    # analysis crashing on the MAKEFIELD macro block; still reported as
-    # error: severity and would gate whole-tree audits forever.
+    # not a code finding. cppcheckError is cppcheck's own analysis
+    # crashing (e.g. the SAVEGAME.H MAKEFIELD macro block); it reports
+    # error: severity against absolute paths so a file-pattern suppress
+    # can't match - suppress globally or whole-tree audits gate forever.
     run_tool cppcheck cppcheck --enable="$ENABLE" \
         --suppress=unknownMacro \
-        --suppress=cppcheckError:H/SAVEGAME.H \
+        --suppress=cppcheckError \
         --inline-suppr -q $INC $DEF "${REAL_FILES[@]}"
 fi
 exit "$FAILED"
