@@ -563,9 +563,69 @@ static int SDLScancodeToDIK(SDL_Scancode sc) {
     return 0; // Unmapped
 }
 
+// The one real OS window — set when the first non-child backend is
+// created. The liveness watchdog probes this directly instead of the
+// CWnd registry, which may have no window-bearing entry at menu stages.
+static SDL_Window* g_migOSWindow = nullptr;
+
+// Throttled window-liveness watchdog (called from PumpSDL): an X window
+// destroyed outside the WM_DELETE handshake — hard-kill via
+// XDestroyWindow/xkill, or a compositor failure on a real desktop —
+// delivers no close event at all, so nothing posts the quit and the app
+// keeps looping invisibly (menu spins idle, 3D spins rasterizing). A dead
+// window is terminal, so post the quit ourselves. XGetWindowAttributes is
+// a synchronous roundtrip, so the probe is rate-limited.
+static void MigCheckMainWindowAlive()
+{
+    if (g_shouldQuit) return;                   // quit already in flight
+    static auto nextCheck = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    if (now < nextCheck) return;
+    nextCheck = now + std::chrono::milliseconds(250);
+
+    static Display* dpy = nullptr;
+    static ::Window xwin = 0;
+    static bool probed = false;
+    if (!probed) {
+        // The one real OS window is captured at creation — m_pMainWnd can
+        // be null or a backend-less CWnd at menu/dialog stages, and the
+        // owning registry entry may already be gone.
+        SDL_Window* sdlWin = g_migOSWindow;
+        if (!sdlWin) return;                    // no OS window yet — retry next tick
+        // NB: WIN32_COMPAT headers leave #pragma pack(1) active in this TU,
+        // which shifts SDL_SysWMinfo.subsystem one byte early — a local
+        // padded struct mirrors the ABI instead (same pattern as
+        // MigX11WMInfo in XX_ScreenFlip_Vulkan.cpp).
+#pragma pack(push, 4)
+        struct {
+            SDL_version version;
+            int subsystem;
+            union { struct { Display* display; ::Window window; } x11; char _pad[256]; } info;
+        } wmi;
+#pragma pack(pop)
+        SDL_VERSION(&wmi.version);
+        if (!SDL_GetWindowWMInfo(sdlWin, (SDL_SysWMinfo*)&wmi) || wmi.subsystem != SDL_SYSWM_X11)
+            return;                             // not X11 — nothing to probe
+        dpy = wmi.info.x11.display;
+        xwin = wmi.info.x11.window;
+        probed = true;
+        fprintf(stderr, "[MFC_stub] window watchdog armed on X window 0x%lx\n",
+                (unsigned long)xwin);
+    }
+    if (dpy && xwin) {
+        XWindowAttributes attr;
+        if (XGetWindowAttributes(dpy, xwin, &attr) == 0) {
+            fprintf(stderr, "[MFC_stub] OS window 0x%lx dead outside close handshake — quitting\n",
+                    (unsigned long)xwin);
+            AfxPostQuitMessage(0);
+        }
+    }
+}
+
 // Helper to convert SDL events to Win32 MSG
 void PumpSDL()
 {
+    MigCheckMainWindowAlive();
     SDL_Event e;
     while (SDL_PollEvent(&e))
     {
@@ -1164,6 +1224,8 @@ BOOL CWnd::Create(
             rect.right - rect.left, rect.bottom - rect.top,
         SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_VULKAN
     );
+    if (backend.window && !g_migOSWindow)
+        g_migOSWindow = backend.window;
 
     //SDL_Renderer* ren = SDL_CreateRenderer(win, -1, 0);
     //WindowBackend backend =  WindowBackend{win, ren, this};
@@ -4041,6 +4103,8 @@ BOOL CFrameWnd::LoadFrame(UINT nIDResource, DWORD dwDefaultStyle, CWnd* pParentW
         1280, 960,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN
     );
+    if (backend.window && !g_migOSWindow)
+        g_migOSWindow = backend.window;
 
     if (!backend.window)
         return FALSE;
