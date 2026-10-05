@@ -140,8 +140,8 @@ int _findclose(long handle) {
 // names come back as e.g. "imagemap/PILOT1.x8". On failure we walk each
 // path component and match it case-insensitively in its directory.
 FILE* fopen_ci(const char* path, const char* mode) {
-    if (!path) {
-        return nullptr;
+    if (!path || !*path) {
+        return nullptr; // fopen("") fails; an empty path must not resolve to "."
     }
     FILE* f = fopen(path, mode);
     if (f || !strchr(mode, 'r')) {
