@@ -452,8 +452,11 @@ void fileman::pingCD()
 			{
 				pingcount=0;
 				cdfile->actualindex += Save_Data.PingStep;
-				char buffer[10];
-				void*	retval = buffer;
+				//RERUN was `char buffer[10]` — the read is sector-rounded
+				//to 2048 bytes, so this "buffer" was a stack smash waiting
+				//for CDseekreadfilepos to honour its arg. Use the real
+				//2048-aligned scratch like every other caller.
+				void*	retval = readblockbuffer;
 
 				LARGE_INTEGER	t1;
 				QueryPerformanceCounter(&t1);
@@ -485,15 +488,13 @@ void fileman::pingCD()
 //------------------------------------------------------------------------------
 void	fileman::CDseekreadfilepos(HANDLE winhandle,int index,void* buffer,int sizecopy)
 {
-	static UWord	pos=0;
-
+	//RERUN the buffer parameter was ignored — reads always landed in
+	//readblockbuffer (every caller passed it, so latent). Honour the arg.
 	int	size=(sizecopy+2047)&-2048;
 
 	DWORD retsize=0;
-	SetFilePointer(winhandle,index,(SLongP)&retsize,FILE_BEGIN);
-	retsize=GetLastError();
-	ReadFile(winhandle,readblockbuffer,size,&retsize,NULL);
-	retsize=GetLastError();
+	SetFilePointer(winhandle,index,NULL,FILE_BEGIN);
+	ReadFile(winhandle,buffer,size,&retsize,NULL);
 }
 
 //------------------------------------------------------------------------------

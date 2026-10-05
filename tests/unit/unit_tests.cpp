@@ -4600,6 +4600,150 @@ static void test_lbm()
     }
 }
 
+//-------------------- CD-file seek state machine (Files/WINFILE.CPP) ----------
+// loadCDfile emulates CD-ROM seek latency: a request first posts a seek
+// (seekingtoposition countdown), then a pending-read flag on currindex,
+// then advances the head in SeekStep-sized skip reads until
+// deltaseekpos <= SeekStep, finally returning the sector-rounded block.
+// readblockbuffer is the global landing zone (read itself is sector-
+// rounded to 2048).
+extern char readblockbufferbase[65536];
+extern char* readblockbuffer;
+
+static void test_cdfile()
+{
+    // A real 16 KB payload file standing in for the .dat image.
+    mkdir("/tmp/migfmtest", 0755);
+    static char cfn[] = "/tmp/migfmtest/cd0.dat";
+    FILE* mk = fopen(cfn, "wb");
+    CHECK(mk != nullptr);
+    if (!mk) return;
+    for (int i = 0; i < 16384; i++) fputc(i & 0xFF, mk);
+    fclose(mk);
+
+    int fd = open(cfn, O_RDONLY);
+    CHECK(fd >= 0);
+    if (fd < 0) return;
+    HANDLE wh = (HANDLE)(intptr_t)fd;
+
+    // Wire the cd table: entry 0 = our file, entry 1 unused.
+    FileNum F = (FileNum)0x600;
+    File_Man.cdfiles[0].number = F;
+    File_Man.cdfiles[0].winhandle = wh;
+    File_Man.cdfiles[0].maxfilesize = 16384;
+    File_Man.cdfiles[0].handle = nullptr;
+    File_Man.cdfiles[1].number = INVALIDFILENUM;
+    File_Man.cdfiles[1].winhandle = INVALID_HANDLE_VALUE;
+    File_Man.cdfile->number = INVALIDFILENUM;
+    File_Man.cdfile->winhandle = INVALID_HANDLE_VALUE;
+    File_Man.cdfile->currindex = 0;
+    File_Man.cdfile->actualindex = -1;
+    File_Man.cdfile->seekingtoposition = 0;
+    File_Man.driveletter = 'C';                 // nonzero: resetCDfile path
+    SWord sav_delay = Save_Data.SeekingDelay, sav_step = Save_Data.SeekStep;
+    Save_Data.SeekingDelay = 2;
+    Save_Data.SeekStep = 2048;
+
+    // --- forward seek, from a cold table ---------------------------------
+    CHECK(File_Man.loadCDfile(F, 100, 0x400, TRUE) == nullptr);
+    CHECK_EQ(File_Man.cdfile->seekingtoposition, 2);      // seek posted
+    CHECK_EQ(File_Man.cdfile->currindex, 0x400);
+    CHECK_EQ(File_Man.cdfile->actualindex, 0x400);
+    CHECK_EQ(File_Man.cdfile->number, F);                 // adopted entry
+
+    CHECK(File_Man.loadCDfile(F, 100, 0x400, TRUE) == nullptr);
+    CHECK_EQ(File_Man.cdfile->seekingtoposition, 1);      // countdown
+    CHECK(File_Man.loadCDfile(F, 100, 0x400, TRUE) == nullptr);
+    CHECK_EQ(File_Man.cdfile->seekingtoposition, 0);
+
+    // Delay over -> posts the pending-read flag on currindex.
+    CHECK(File_Man.loadCDfile(F, 100, 0x400, TRUE) == nullptr);
+    CHECK(File_Man.cdfile->currindex & 0x80000000);
+    CHECK_EQ(File_Man.cdfile->currindex & 0x7FFFFFFF, 0x400);
+
+    // deltaseekpos == 0 <= SeekStep -> completes immediately.
+    UByte* got = (UByte*)File_Man.loadCDfile(F, 100, 0x400, TRUE);
+    CHECK(got == (UByte*)readblockbuffer);
+    CHECK_EQ(got[0], (UByte)0x00);                        // file[0x400] = 0
+    CHECK_EQ(got[4], (UByte)0x04);
+    CHECK_EQ(got[255], (UByte)0xFF);
+    // "nobody cares" quirk: head stays at the block start, not +length.
+    CHECK_EQ(File_Man.cdfile->currindex, 0x400);
+    CHECK_EQ(File_Man.cdfile->actualindex, 0x400);
+
+    // --- stepped skip-read seek ------------------------------------------
+    // offset 0x2400: delta 0x2000 > SeekStep -> skip reads until within
+    // one step, then complete at the requested index.
+    CHECK(File_Man.loadCDfile(F, 50, 0x2400, TRUE) == nullptr);
+    CHECK(File_Man.cdfile->currindex & 0x80000000);
+    int polls = 0;
+    UByte* g2 = nullptr;
+    for (; polls < 32; polls++) {
+        g2 = (UByte*)File_Man.loadCDfile(F, 50, 0x2400, TRUE);
+        if (g2) break;
+    }
+    CHECK(g2 == (UByte*)readblockbuffer);
+    CHECK(polls > 0);                                    // needed skip steps
+    CHECK(polls <= 16);                                  // bounded walk
+    CHECK_EQ(g2[0], (UByte)0x00);                        // file[0x2400]
+    CHECK_EQ(File_Man.cdfile->currindex, 0x2400);        // completes AT index
+
+    // --- backward seek re-arms the whole machine --------------------------
+    CHECK(File_Man.loadCDfile(F, 20, 0x100, TRUE) == nullptr);
+    CHECK_EQ(File_Man.cdfile->seekingtoposition, 2);      // fresh seek
+    CHECK_EQ(File_Man.cdfile->actualindex, 0x100);
+    File_Man.cdfile->seekingtoposition = 0;               // fast-forward delay
+    CHECK(File_Man.loadCDfile(F, 20, 0x100, TRUE) == nullptr);
+    UByte* g3 = (UByte*)File_Man.loadCDfile(F, 20, 0x100, TRUE);
+    CHECK(g3 == (UByte*)readblockbuffer);
+    CHECK_EQ(g3[0], (UByte)0x00);                        // file[0x100]
+
+    // --- pingCD: housekeeping honours seekingtoposition + PingStep ------
+    SWord sav_pingd = Save_Data.PingDelay, sav_pingstep = Save_Data.PingStep;
+    Save_Data.PingDelay = 0;                   // pingcount++ always passes
+    Save_Data.PingStep = 2048;
+    File_Man.cdfile->seekingtoposition = 1;
+    File_Man.cdfile->actualindex = 0;
+    File_Man.cdfile->maxfilesize = 16384;
+    File_Man.cdfile->winhandle = wh;
+    File_Man.cdfile->number = F;
+
+    File_Man.pingCD();
+    CHECK_EQ(File_Man.cdfile->seekingtoposition, 0);   // countdown wins
+    CHECK_EQ(File_Man.cdfile->actualindex, 0);         // no read yet
+    File_Man.pingCD();
+    CHECK_EQ(File_Man.cdfile->actualindex, 2048);      // += PingStep per ping
+    File_Man.pingCD();
+    CHECK_EQ(File_Man.cdfile->actualindex, 4096);
+
+    // Past maxfilesize -> wraps the head back ~1 MB and re-arms the seek.
+    File_Man.cdfile->actualindex = 16384;
+    File_Man.pingCD();
+    CHECK_EQ(File_Man.cdfile->actualindex, 16384 - 1024 * 1024);
+    CHECK_EQ(File_Man.cdfile->seekingtoposition, Save_Data.SeekingDelay);
+
+    Save_Data.PingDelay = sav_pingd;
+    Save_Data.PingStep = sav_pingstep;
+
+    // --- skipread=FALSE: immediate synchronous read -----------------------
+    // (the seekingtoposition countdown still gates this path — drain it)
+    File_Man.cdfile->seekingtoposition = 0;
+    UByte* g4 = (UByte*)File_Man.loadCDfile(F, 20, 0x800, FALSE);
+    CHECK(g4 == (UByte*)readblockbuffer);
+    CHECK_EQ(g4[0], (UByte)0x00);                        // file[0x800]
+    // synchronous path advances the head past the block (unlike quirk).
+    CHECK_EQ(File_Man.cdfile->currindex, 0x800 + 20);
+    CHECK_EQ(File_Man.cdfile->actualindex, 0x800 + 20);
+
+    close(fd);
+    Save_Data.SeekingDelay = sav_delay;
+    Save_Data.SeekStep = sav_step;
+    File_Man.driveletter = 0;
+    File_Man.cdfile->number = INVALIDFILENUM;
+    File_Man.cdfiles[0].number = INVALIDFILENUM;
+    File_Man.cdfiles[0].winhandle = INVALID_HANDLE_VALUE;
+}
+
 // Graphic::CompOutCode / Comp3DOutCode - Cohen-Sutherland region codes
 // against the Physical* clip rect. CompOutCode keys on Min/Max fields;
 // Comp3DOutCode uses 0..PhysicalWidth/Height. Edge values count as
@@ -4706,6 +4850,7 @@ int main()
     test_doanimation();
     test_deadstream_iterator();
     test_lbm();
+    test_cdfile();
     test_compoutcode();
 
     test_mathlib_trig();
