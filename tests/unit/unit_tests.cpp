@@ -328,6 +328,7 @@ void test_win32_events();
 void test_win32_semaphore();
 void test_win32_mutex();
 void test_win32_timing();
+void test_win32_files();
 
 //------------------------------------------------------------------------------
 // Type + union layout invariants the instruction stream and fixed-point
@@ -4680,6 +4681,7 @@ int main()
     test_win32_semaphore();
     test_win32_mutex();
     test_win32_timing();
+    test_win32_files();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

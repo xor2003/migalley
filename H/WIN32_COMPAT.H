@@ -479,8 +479,12 @@ static inline HANDLE CreateFileA(LPCSTR lpFileName,
    ------------------------------------------------------------------ */
 static inline DWORD GetFileSize(HANDLE hFile, DWORD* lpFileSizeHigh)
 {
-    off_t size = lseek((int)(intptr_t)hFile, 0, SEEK_END);
-    lseek((int)(intptr_t)hFile, 0, SEEK_SET); // reset position
+    int fd = (int)(intptr_t)hFile;
+    // Win32 leaves the file pointer untouched — save/restore, not
+    // reset-to-start (callers stream reads between size queries).
+    off_t save = lseek(fd, 0, SEEK_CUR);
+    off_t size = lseek(fd, 0, SEEK_END);
+    lseek(fd, save, SEEK_SET);
     if (size == (off_t)-1) return (DWORD)-1;
 
     if (lpFileSizeHigh) {
@@ -558,10 +562,13 @@ static inline DWORD SetFilePointer(HANDLE hFile,
 {
     int fd = (int)(intptr_t)hFile;
 
-    // Always do math in 64 bits
+    // Always do math in 64 bits. With a high half present the low
+    // parameter is the *unsigned* low 32 of the pair — sign-extending
+    // it first then |= corrupts negative-low/nonzero-high pairs.
     int64_t offset = (int64_t)lDistanceToMove;
     if (lpDistanceToMoveHigh) {
-        offset |= ((int64_t)(*lpDistanceToMoveHigh) << 32);
+        offset = ((int64_t)(*lpDistanceToMoveHigh) << 32)
+                 | (int64_t)(uint32_t)lDistanceToMove;
     }
 
     off_t pos = lseek(fd, (off_t)offset, (int)dwMoveMethod);

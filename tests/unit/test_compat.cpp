@@ -138,3 +138,93 @@ void test_win32_timing()
     CHECK(elapsed_ms >= 40);                            // waited, not poll
     CHECK(elapsed_ms < 5000);                           // and not forever
 }
+
+//------------------------------------------------------------------------------
+// File shim: CreateFileA/ReadFile/WriteFile/SetFilePointer/GetFileSize/
+// SetEndOfFile/CloseHandle over real fds via /tmp.
+void test_win32_files()
+{
+    static char fn[] = "/tmp/migw32files.bin";
+    unlink(fn);
+
+    // OPEN_EXISTING on a missing file must fail (no O_CREAT).
+    HANDLE h = CreateFileA(fn, GENERIC_READ, 0, nullptr,
+                           OPEN_EXISTING, 0, nullptr);
+    CHECK_EQ((uintptr_t)h, (uintptr_t)INVALID_HANDLE_VALUE);
+    CHECK(GetLastError() != 0);                          // errno surfaced
+
+    // CREATE_ALWAYS makes a fresh file; CREATE_NEW then refuses (O_EXCL).
+    h = CreateFileA(fn, GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                    CREATE_ALWAYS, 0, nullptr);
+    CHECK(h != INVALID_HANDLE_VALUE);
+
+    const char payload[] = "0123456789";
+    DWORD wrote = 0;
+    CHECK(WriteFile(h, payload, 10, &wrote, nullptr));
+    CHECK_EQ(wrote, 10u);
+
+    // GetFileSize sees the size WITHOUT moving the file position
+    // (position stays at 10 where the write left it).
+    DWORD hi = 0xdead;
+    CHECK_EQ(GetFileSize(h, &hi), 10u);
+    CHECK_EQ(hi, 0u);
+    DWORD back = 0;
+    char tail[4] = {};
+    CHECK(ReadFile(h, tail, 1, &back, nullptr));         // at EOF: 0 bytes
+    CHECK_EQ(back, 0u);
+
+    // SetFilePointer: all three anchors.
+    CHECK_EQ(SetFilePointer(h, 4, nullptr, FILE_BEGIN), 4u);
+    CHECK_EQ(SetFilePointer(h, 2, nullptr, FILE_CURRENT), 6u);
+    CHECK_EQ(SetFilePointer(h, -3, nullptr, FILE_END), 7u);
+
+    // high-dword path: (0, pos) behaves like the low-only call.
+    LONG hihi = 0;
+    CHECK_EQ(SetFilePointer(h, 5, &hihi, FILE_BEGIN), 5u);
+    CHECK_EQ(hihi, 0);
+
+    // Read back from position 5: "56789".
+    char buf[8] = {};
+    CHECK(ReadFile(h, buf, 5, &back, nullptr));
+    CHECK_EQ(back, 5u);
+    CHECK(memcmp(buf, "56789", 5) == 0);
+
+    // SetEndOfFile truncates at the current position.
+    CHECK_EQ(SetFilePointer(h, 4, nullptr, FILE_BEGIN), 4u);
+    CHECK(SetEndOfFile(h));
+    CHECK_EQ(GetFileSize(h, nullptr), 4u);
+
+    // Extending: seek beyond EOF then SetEndOfFile zero-fills (POSIX
+    // ftruncate semantics; Win32 also zero-fills on extend).
+    CHECK_EQ(SetFilePointer(h, 8, nullptr, FILE_BEGIN), 8u);
+    CHECK(SetEndOfFile(h));
+    CHECK_EQ(GetFileSize(h, nullptr), 8u);
+    CHECK_EQ(SetFilePointer(h, 6, nullptr, FILE_BEGIN), 6u);
+    memset(buf, 0xAA, sizeof buf);
+    CHECK(ReadFile(h, buf, 2, &back, nullptr));
+    CHECK_EQ(buf[0], '\0');
+    CHECK_EQ(buf[1], '\0');
+
+    CloseHandle(h);
+
+    // CREATE_NEW on the existing file must fail (O_EXCL).
+    h = CreateFileA(fn, GENERIC_WRITE, 0, nullptr, CREATE_NEW, 0, nullptr);
+    CHECK_EQ((uintptr_t)h, (uintptr_t)INVALID_HANDLE_VALUE);
+
+    // OPEN_ALWAYS opens the existing file in place (no truncation).
+    h = CreateFileA(fn, GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                    OPEN_ALWAYS, 0, nullptr);
+    CHECK(h != INVALID_HANDLE_VALUE);
+    CHECK_EQ(GetFileSize(h, nullptr), 8u);
+    CloseHandle(h);
+
+    // Read-only handle rejects writes at the syscall level.
+    h = CreateFileA(fn, GENERIC_READ, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+    CHECK(h != INVALID_HANDLE_VALUE);
+    CHECK(!WriteFile(h, "x", 1, &wrote, nullptr));
+    CloseHandle(h);
+
+    // DeleteFile + gone.
+    CHECK(DeleteFile(fn));
+    CHECK(!DeleteFile(fn));
+}
