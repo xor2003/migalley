@@ -125,6 +125,8 @@ class direct_draw
 	void createPipelineLayout();
 	SDL_bool Vulkan_CreateSDLSurface(SDL_Window *theWin);
 	void Vulkan_Shutdown();
+	void Vulkan_ShutdownGuarded();	// bounded variant, safe at teardown
+	static void* Vulkan_ShutdownWorker(void*);	// helper for Guarded
 
 	bool Vulkan_CreatePipeline();
 	//////////////////////// VULKAN

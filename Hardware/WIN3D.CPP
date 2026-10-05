@@ -833,8 +833,8 @@ DES direct_draw::~direct_draw()
 	//RELEASE_RENDERER(lpDD, dderrval);
 	lpDD = lpDD2 = NULL; //RERUN
 #ifndef USE_SDL_PRESENTATION_PATH
-	Vulkan_Shutdown(); // RERUN
-#endif
+	Vulkan_ShutdownGuarded(); // RERUN - bounded: a wedged WSI worker
+#endif                          // holding the driver mutex must not hang exit
 }
 
 //------------------------------------------------------------------------------

@@ -138,16 +138,32 @@ bool g_shouldQuit = false;
 // queued X requests (e.g. XInput select) are still in flight; the async
 // BadWindow/BadDrawable they produce would fire the default handler's
 // exit(1) inside __run_exit_handlers, making static destructors race
-// live worker threads. Swallow just those two, and only once quitting
-// is underway — real X errors during play keep the default behaviour.
+// live worker threads. Swallow just those two unconditionally — they
+// are teardown noise on this single-window app — real X errors still
+// defer to the default handler (and flag teardown-unsafe first).
 // (Xlib.h comes in transitively here; XX_ScreenFlip_Vulkan.cpp avoids it
 // because of Bool/Status clashes, but this TU already has it.)
 static XErrorHandler g_prevXErrorHandler = nullptr;
 
+// Set when an X error is about to reach _XDefaultError -> exit(1):
+// exit handlers then run destructors while driver threads are parked
+// on the dead X connection, so graceful Vulkan teardown deadlocks.
+// Vulkan_Shutdown checks this and skips.
+volatile bool g_migFatalXError = false;
+
 static int MigXErrorHandler(Display* display, XErrorEvent* ev)
 {
-    if (g_shouldQuit && (ev->error_code == BadWindow || ev->error_code == BadDrawable))
+    // BadWindow/BadDrawable on our window is never actionable — if the X
+    // window is gone the app is finished anyway. Swallowing regardless of
+    // quit state keeps an async error racing the close (dispatched inside
+    // an SDL XSync before the quit path arms) from firing _XDefaultError
+    // -> exit(1) mid-teardown. Other codes defer to the default.
+    if (ev->error_code == BadWindow || ev->error_code == BadDrawable) {
+        fprintf(stderr, "[MFC_stub] X error %u (req %u.%u res 0x%lx) ignored\n",
+                ev->error_code, ev->request_code, ev->minor_code, ev->resourceid);
         return 0;
+    }
+    g_migFatalXError = true;
     if (g_prevXErrorHandler)
         return g_prevXErrorHandler(display, ev);
     return 0;
@@ -748,6 +764,9 @@ void PumpSDL()
                     CWnd* main = AfxGetMainWnd();
                     WindowBackend* mbe = main ? backend_from_hwnd(main->GetSafeHwnd()) : nullptr;
                     CWnd* target = (mbe && mbe->window == sdlWin) ? main : wnd;
+                    fprintf(stderr, "[MFC_stub] SDL_WINDOWEVENT_CLOSE sdlWin=%p wnd=%p main=%p mbe->window=%p target=%p\n",
+                            (void*)sdlWin, (void*)wnd, (void*)main,
+                            mbe ? (void*)mbe->window : nullptr, (void*)target);
                     if (target)
                     {
                         msg.hwnd = target->GetSafeHwnd();
@@ -924,6 +943,7 @@ BOOL DispatchMessage(const MSG* msg)
 
 void AfxPostQuitMessage(int /*nExitCode*/)
 {
+    fprintf(stderr, "[MFC_stub] AfxPostQuitMessage -> WM_QUIT queued\n");
     MigArmQuitTeardown();
     MSG msg = {};
     msg.message = WM_QUIT;

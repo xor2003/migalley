@@ -785,10 +785,38 @@ static void blitSurfaceToStaging(SDL_Surface* src, int dstX, int dstY, uint8_t* 
 // no present/acquire may run against the dead surface afterwards.
 volatile bool g_migVulkanWindowGone = false;
 
+// RERUN: a dead surface is terminal — the OS window is gone, so there is
+// nothing left to present into (the flag is never cleared; the surface is
+// never rebuilt). Spinning frames on it kept the game running invisibly at
+// full CPU when the X window was killed outside the WM_DELETE handshake —
+// e.g. xdotool windowclose hard-destroys the window and xkill/compositor
+// failures do the same — so latch the flag and post the quit ourselves.
+static void MigVulkan_MarkGone()
+{
+    if (!g_migVulkanWindowGone) {
+        g_migVulkanWindowGone = true;
+        AfxPostQuitMessage(0);
+    }
+}
+
 void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
 {
     if (g_migVulkanWindowGone)
         return;
+
+    // RERUN: dead-surface preflight. If the X window underneath the
+    // surface is gone, vkQueuePresentKHR parks forever in the driver's
+    // present-idle wait (no timeout exists for present) and the game
+    // loop never reaches the queued WM_QUIT. The capabilities call is
+    // the cheap way to detect it — SURFACE_LOST latches the gone flag.
+    if (vkSurface != VK_NULL_HANDLE && vkPhys != VK_NULL_HANDLE) {
+        VkSurfaceCapabilitiesKHR caps;
+        if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(vkPhys, vkSurface, &caps)
+                == VK_ERROR_SURFACE_LOST_KHR) {
+            MigVulkan_MarkGone();
+            return;
+        }
+    }
 
     // RERUN: bounded waits — a lost submit or a dead surface would otherwise
     // block the game loop forever on an unsignalled fence.
@@ -855,6 +883,10 @@ void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
     // VK_SUBOPTIMAL_KHR still acquired a usable image; it must be presented
     // or the swapchain slowly starves — proceed and let present cope.
     VkResult acq = vkAcquireNextImageKHR(vkDevice, vkSwapchain, 500000000, semAcquire, VK_NULL_HANDLE, &img);
+    if (acq == VK_ERROR_SURFACE_LOST_KHR || acq == VK_ERROR_OUT_OF_DATE_KHR) {
+        MigVulkan_MarkGone();
+        return;
+    }
     if (acq != VK_SUCCESS && acq != VK_SUBOPTIMAL_KHR)
         return;
     vkResetCommandBuffer(cmd, 0);
@@ -961,7 +993,14 @@ void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
     pi.waitSemaphoreCount = 1;
     pi.pWaitSemaphores = &semPresent;
 
-    vkQueuePresentKHR(vkPresentQueue, &pi);
+    // RERUN: check present — a dead surface latches the gone flag so the
+    // loop stops paying the (potentially wedging) present path. Note the
+    // call itself can still park inside the driver if the window died
+    // between acquire and present; the per-flip preflight shrinks that
+    // window to the narrow race.
+    VkResult pres = vkQueuePresentKHR(vkPresentQueue, &pi);
+    if (pres == VK_ERROR_SURFACE_LOST_KHR || pres == VK_ERROR_OUT_OF_DATE_KHR)
+        MigVulkan_MarkGone();
 }
 
 bool direct_draw::CreateRenderPass()
@@ -1262,10 +1301,56 @@ bool direct_draw::Vulkan_CreatePipeline()
     return true;
 }
 
+// Defined in MFC_stub.cpp: set when an X error is about to fire
+// _XDefaultError -> exit(1). Exit handlers then run ~Mast3d on the main
+// thread while the WSI swapchain threads are parked on the dead X
+// connection holding the driver mutex — vkDeviceWaitIdle/vkDestroy*
+// would deadlock. The dying process reaps the device anyway, so skip.
+extern volatile bool g_migFatalXError;
+
+// RERUN: bounded entry point — see ~direct_draw. The graceful path can
+// deadlock whenever a WSI present/acquire worker is wedged inside the
+// driver (dead window, parked on a never-signalled present event),
+// because every vk call below serializes on the same device mutex.
+// Run it on a helper and give up after 3s: the leaked objects die with
+// the process, a wedged main thread does not. (sem_timedwait — no
+// _GNU_SOURCE for pthread_timedjoin_np in this build.)
+static sem_t s_vkShutdownDone;
+static volatile bool s_vkShutdownSemInit = false;
+
+void* direct_draw::Vulkan_ShutdownWorker(void* p)
+{
+    ((direct_draw*)p)->Vulkan_Shutdown();
+    sem_post(&s_vkShutdownDone);
+    return nullptr;
+}
+
+void direct_draw::Vulkan_ShutdownGuarded()
+{
+    if (g_migFatalXError)
+        return;
+    if (!s_vkShutdownSemInit) {
+        sem_init(&s_vkShutdownDone, 0, 0);
+        s_vkShutdownSemInit = true;
+    }
+    pthread_t th;
+    if (pthread_create(&th, nullptr, Vulkan_ShutdownWorker, this) != 0) {
+        Vulkan_Shutdown();          // no thread — take the direct path
+        return;
+    }
+    timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);
+    ts.tv_sec += 3;
+    if (sem_timedwait(&s_vkShutdownDone, &ts) != 0)
+        pthread_detach(th);         // wedged — abandon, exit reaps it
+}
+
 void direct_draw::Vulkan_Shutdown()
 {
     // Best-effort tear-down of Vulkan resources in reverse order of creation.
     // Many variables (vkDevice, vkInstance, vkSurface, etc.) are globals used in this file.
+    if (g_migFatalXError)
+        return;
     if (vkDevice != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(vkDevice);
     }
