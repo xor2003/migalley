@@ -4982,6 +4982,104 @@ static void test_cdfile()
     File_Man.cdfiles[0].winhandle = INVALID_HANDLE_VALUE;
 }
 
+//---------------- GLOBREFS bitfield access (Bfields/GLOBREFS.CPP) ----------
+// Persons2::SetLoc/GetLoc read and write masked bitfields inside the ULongs
+// that BFieldGlobalTable references. The table's fieldsize/fieldshift are
+// filled by the generated pass, so the test injects its own entry (the
+// struct is mirrored - MAKEBF.H pulls in FLYINIT.H, too heavy here; both
+// TUs are under DOSDEFS pack(1) so the layout is identical).
+struct MirrorGlobalRef { void* ref; UWord fsize:5, fshift:5, pindx:5, spare:1; };
+extern MirrorGlobalRef bf_globtable[] __asm__("BFieldGlobalTable");
+extern void globref_SetLoc(int,int) __asm__("_ZN8Persons26SetLocEii");
+extern int& globref_GetLoc(int)     __asm__("_ZN8Persons26GetLocEi");
+
+static void test_globrefs()
+{
+    ULong target = 0;
+    MirrorGlobalRef saved = bf_globtable[0];
+    bf_globtable[0].ref = &target;
+
+    // fieldsize N exposes N-1 value bits: imask = ((1<<N)>>1)-1.
+    bf_globtable[0].fsize = 16; bf_globtable[0].fshift = 0;
+    globref_SetLoc(0, 0x1234);
+    CHECK_EQ(target, 0x1234UL);
+    CHECK_EQ(globref_GetLoc(0), 0x1234);
+    // Values truncate to the field width (15 bits for size 16).
+    globref_SetLoc(0, 0x1FFFF);
+    CHECK_EQ(target, 0x7FFFUL);
+    CHECK_EQ(globref_GetLoc(0), 0x7FFF);
+    // Bits outside the field are preserved.
+    target = 0xFFFF0000;
+    globref_SetLoc(0, 5);
+    CHECK_EQ(target, 0xFFFF0005UL);
+
+    // Shifted field: fsize 8 at bit 8 occupies bits 8..14.
+    bf_globtable[0].fsize = 8; bf_globtable[0].fshift = 8;
+    target = 0xFFFF00FF;
+    globref_SetLoc(0, 0x55);
+    CHECK_EQ(target, 0xFFFF55FFUL);
+    CHECK_EQ(globref_GetLoc(0), 0x55);
+    // Signed stores mask to the raw field: -5 in 7 bits reads back 123,
+    // GetLoc does NOT sign-extend.
+    globref_SetLoc(0, -5);
+    CHECK_EQ(globref_GetLoc(0), 123);
+    CHECK_EQ((target >> 8) & 0x7F, 123UL);
+
+    // fsize 0 degenerates to a full 32-bit field (imask = 0xFFFFFFFF).
+    bf_globtable[0].fsize = 0; bf_globtable[0].fshift = 0;
+    globref_SetLoc(0, (int)0x89ABCDEF);
+    CHECK_EQ(target, 0x89ABCDEFUL);
+    CHECK_EQ((ULong)globref_GetLoc(0), 0x89ABCDEFUL);
+
+    // fsize 1 -> imask 0 -> the write is a no-op, the read is always 0.
+    bf_globtable[0].fsize = 1;
+    target = 0xFFFFFFFF;
+    globref_SetLoc(0, 99);
+    CHECK_EQ(target, 0xFFFFFFFFUL);               // field width 0
+    CHECK_EQ(globref_GetLoc(0), 0);
+
+    // NULL reference -> GetLoc returns BAD_RV (0x80000000). SetLoc would
+    // write through NULL - not exercised.
+    bf_globtable[0].ref = NULL;
+    CHECK_EQ(globref_GetLoc(0), (int)INT32_MIN);
+
+    bf_globtable[0] = saved;
+}
+
+//---------------- FILEMAN residuals: dupandrepointtxt + retranslatedirlist -
+// dupandrepointtxt strdup's into the caller's own variable (leak-by-
+// contract: callers never free). retranslatedirlist re-parses the same
+// "dirnum [parentnum] name" lines and compacts the name text to the
+// buffer front without touching direntries.
+extern string dupandrepointtxt(string&);
+void       retranslatedirlist(void*&, ULong&);   // friend decl'd in FILEMAN.H
+
+static void test_files_misc()
+{
+    char* p = (char*)"hello";
+    char* orig = p;
+    char* q = dupandrepointtxt(p);
+    CHECK(q == p);                          // returns repointed src
+    CHECK(p != orig);                       // caller var now owns a copy
+    CHECK_EQ(strcmp(p, "hello"), 0);
+    delete[] p;
+
+    // Retranslate: names compacted to the buffer start, quoted names
+    // lose their quotes.
+    static char rbuf[128];
+    strcpy(rbuf, "8 8 /tmp/tdir\n9 8 \"sub dir\"\n");
+    void* rp = rbuf; ULong rl = strlen(rbuf);
+    retranslatedirlist(rp, rl);
+    CHECK_EQ(strcmp(rbuf, "/tmp/tdir"), 0);
+    CHECK_EQ(strcmp(rbuf + strlen("/tmp/tdir") + 1, "sub dir"), 0);
+
+    // Single field (no parentnum) and leading garbage skip.
+    strcpy(rbuf, "junk\n8 sub\n");
+    rp = rbuf; rl = strlen(rbuf);
+    retranslatedirlist(rp, rl);
+    CHECK_EQ(strcmp(rbuf, "sub"), 0);
+}
+
 // Graphic::CompOutCode / Comp3DOutCode - Cohen-Sutherland region codes
 // against the Physical* clip rect. CompOutCode keys on Min/Max fields;
 // Comp3DOutCode uses 0..PhysicalWidth/Height. Edge values count as
@@ -5091,6 +5189,8 @@ int main()
     test_deadstream_iterator();
     test_lbm();
     test_cdfile();
+    test_globrefs();
+    test_files_misc();
     test_compoutcode();
 
     test_mathlib_trig();
