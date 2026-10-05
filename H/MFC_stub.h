@@ -644,6 +644,10 @@ public:
         return *this;
     }
 
+    // MFC conversion operators — CRect IS-A RECT
+    operator LPRECT() { return this; }
+    operator LPCRECT() const { return this; }
+
     // Overloads
     CRect& operator+=(const CPoint& p)
     {
@@ -1624,6 +1628,32 @@ public:
     BOOL GetBitmap(BITMAP* pBM) const;
     BOOL DeleteObject();
     SDL_Texture* GetTexture(SDL_Renderer* renderer);
+};
+
+
+// -----------------------------------------------------------------------------
+// CRgn — polygon region (artwork hit-testing; BoB polylist + mapdlg paths)
+// -----------------------------------------------------------------------------
+#ifndef HGDIOBJ
+typedef void* HGDIOBJ;
+#endif
+
+// Raw-handle GDI forms (BoB rdialog.cpp stores bare HRGN in PolyOutLine)
+HRGN CreatePolygonRgn(const POINT* pts, int count, int fillMode);
+HRGN CreateRectRgn(int x1, int y1, int x2, int y2);
+BOOL PtInRegion(HRGN hrgn, int x, int y);
+BOOL DeleteObject(HGDIOBJ obj);
+
+class CRgn : public CGdiObject {
+public:
+    CRgn() = default;
+    ~CRgn() { DeleteObject(); }
+
+    BOOL CreatePolygonRgn(const POINT* pts, int count, int fillMode);
+    BOOL CreateRectRgn(int x1, int y1, int x2, int y2);
+    BOOL PtInRegion(int x, int y) const;
+    BOOL PtInRegion(POINT pt) const { return PtInRegion(pt.x, pt.y); }
+    BOOL DeleteObject();
 };
 
 

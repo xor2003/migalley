@@ -2833,7 +2833,11 @@ void CWnd::FireEvent(int eventID, ...)
     for (; pMap->idFirst != 0; ++pMap) {
         if (m_nID >= pMap->idFirst && m_nID <= pMap->idLast && pMap->eventid == eventID) {
             // Found the handler. Dispatch based on param string from ON_EVENT macro.
-            if (strcmp(pMap->params, VTS_BSTR) == 0) {
+            if (strcmp(pMap->params, VTS_NONE) == 0) {
+                typedef void (CCmdTarget::*Func)();
+                Func f = (Func)pMap->pfn;
+                (pParent->*f)();
+            } else if (strcmp(pMap->params, VTS_BSTR) == 0) {
                 LPCTSTR text = va_arg(args, LPCTSTR);
                 typedef void (CCmdTarget::*Func)(LPCTSTR);
                 Func f = (Func)pMap->pfn;
@@ -4657,6 +4661,115 @@ SDL_Texture* CBitmap::GetTexture(SDL_Renderer* renderer)
     m_texture = SDL_CreateTextureFromSurface(renderer, (SDL_Surface*)m_hObject);
     m_pRenderer = renderer;
     return m_texture;
+}
+
+
+// -----------------------------------------------------------------------------
+// Polygon regions — artwork hit-testing (BoB polylist path, mapdlg).
+// Regions are plain heap objects; the magic tag lets global DeleteObject
+// verify the handle without colliding with other GDI object kinds.
+// -----------------------------------------------------------------------------
+namespace {
+struct WinRgnImpl {
+    uint32_t magic;
+    int fillMode;
+    std::vector<POINT> pts;
+};
+constexpr uint32_t kRgnMagic = 0x4E475257; // 'WRGN'
+
+inline long is_left(const POINT& a, const POINT& b, int x, int y)
+{
+    return (long)(b.x - a.x) * (y - a.y) - (long)(x - a.x) * (b.y - a.y);
+}
+
+bool rgn_contains(const WinRgnImpl* r, int x, int y)
+{
+    const std::vector<POINT>& p = r->pts;
+    const size_t n = p.size();
+    if (n < 3) return false;
+
+    if (r->fillMode == WINDING) {
+        int wn = 0;
+        for (size_t i = 0, j = n - 1; i < n; j = i++) {
+            if (p[j].y <= y) {
+                if (p[i].y > y && is_left(p[j], p[i], x, y) > 0) ++wn;
+            } else {
+                if (p[i].y <= y && is_left(p[j], p[i], x, y) < 0) --wn;
+            }
+        }
+        return wn != 0;
+    }
+    // ALTERNATE — even-odd raycast
+    bool inside = false;
+    for (size_t i = 0, j = n - 1; i < n; j = i++) {
+        if (((p[i].y > y) != (p[j].y > y)) &&
+            (x < (double)(p[j].x - p[i].x) * (y - p[i].y) / (p[j].y - p[i].y) + p[i].x))
+            inside = !inside;
+    }
+    return inside;
+}
+} // namespace
+
+HRGN CreatePolygonRgn(const POINT* pts, int count, int fillMode)
+{
+    if (!pts || count < 3) return nullptr;
+    WinRgnImpl* r = new WinRgnImpl;
+    r->magic = kRgnMagic;
+    r->fillMode = fillMode;
+    r->pts.assign(pts, pts + count);
+    return (HRGN)r;
+}
+
+HRGN CreateRectRgn(int x1, int y1, int x2, int y2)
+{
+    POINT pts[4] = { {x1,y1}, {x2,y1}, {x2,y2}, {x1,y2} };
+    return CreatePolygonRgn(pts, 4, ALTERNATE);
+}
+
+BOOL PtInRegion(HRGN hrgn, int x, int y)
+{
+    if (!hrgn) return FALSE;
+    const WinRgnImpl* r = (const WinRgnImpl*)hrgn;
+    if (r->magic != kRgnMagic) return FALSE;
+    return rgn_contains(r, x, y) ? TRUE : FALSE;
+}
+
+BOOL DeleteObject(HGDIOBJ obj)
+{
+    if (!obj) return FALSE;
+    WinRgnImpl* r = (WinRgnImpl*)obj;
+    if (r->magic != kRgnMagic) return FALSE;
+    r->magic = 0;
+    delete r;
+    return TRUE;
+}
+
+BOOL CRgn::CreatePolygonRgn(const POINT* pts, int count, int fillMode)
+{
+    DeleteObject();
+    m_hObject = ::CreatePolygonRgn(pts, count, fillMode);
+    return m_hObject != nullptr;
+}
+
+BOOL CRgn::CreateRectRgn(int x1, int y1, int x2, int y2)
+{
+    DeleteObject();
+    m_hObject = ::CreateRectRgn(x1, y1, x2, y2);
+    return m_hObject != nullptr;
+}
+
+BOOL CRgn::PtInRegion(int x, int y) const
+{
+    return ::PtInRegion((HRGN)m_hObject, x, y);
+}
+
+BOOL CRgn::DeleteObject()
+{
+    if (!m_hObject) return FALSE;
+    ::DeleteObject((HGDIOBJ)m_hObject);
+    m_hObject = nullptr;
+    m_bOwner = false;   // keep ~CGdiObject from touching the freed handle
+    return TRUE;
 }
 
 int AfxLoadString(unsigned int id, char* buffer, unsigned int maxLen)

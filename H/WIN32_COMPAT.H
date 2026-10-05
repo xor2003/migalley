@@ -1674,14 +1674,44 @@ typedef struct IUnknownVtbl {
     ULONG   (*Release)(IUnknown* This);
 } IUnknownVtbl;
 
-/* The IUnknown struct itself just holds a vtable pointer */
+/* The IUnknown struct itself just holds a vtable pointer.
+   Non-virtual forwarding methods give C++ call syntax (obj->Release())
+   without changing the C-compatible layout. */
 struct IUnknown {
     const IUnknownVtbl* lpVtbl;
+    HRESULT QueryInterface(const void* riid, void** ppvObject) {
+        return lpVtbl->QueryInterface(this, riid, ppvObject);
+    }
+    ULONG AddRef()  { return lpVtbl->AddRef(const_cast<IUnknown*>(this)); }
+    ULONG Release() { return lpVtbl->Release(const_cast<IUnknown*>(this)); }
 };
 
 typedef IUnknown *LPUNKNOWN;
 
 #endif /* __IUnknown_INTERFACE_DEFINED__ */
+
+/* MSVC spellings used by BoB headers; harmless no-ops under GCC */
+#ifndef __declspec
+#define __declspec(x)
+#endif
+#ifndef __int16
+#define __int16 short
+#endif
+#ifndef __int32
+#define __int32 int
+#endif
+typedef struct HMONITOR__* HMONITOR;
+
+#ifndef DEFINE_GUID
+#define DEFINE_GUID(name,l,w1,w2,b1,b2,b3,b4,b5,b6,b7,b8) \
+    static const GUID name = { l, w1, w2, { b1,b2,b3,b4,b5,b6,b7,b8 } }
+#endif
+
+/* Polygon region fill modes */
+#ifndef ALTERNATE
+#define ALTERNATE 1
+#define WINDING   2
+#endif
 
 #define MF_GRAYED     0x00000001
 #define MF_BYCOMMAND  0x00000000

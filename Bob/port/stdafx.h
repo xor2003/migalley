@@ -13,6 +13,8 @@
 
 #include "WIN32_COMPAT.H"
 #include "MFC_stub.h"
+#include <climits>
+#include <cstring>
 // BoB's h/mig.h PCH-checks this macro that real afxwin.h defined.
 #ifndef __AFXWIN_H__
 #define __AFXWIN_H__
