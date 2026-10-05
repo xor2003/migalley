@@ -76,9 +76,11 @@
 // Graphic's static IFF readers (SkipRow/SearchIFFHunk*/Read*) and
 // LBM's hdr/body/pal members.
 #define private public
+#define protected public
 #include "FILEMAN.H"
 #include "DISPLAY.H"
 #include "LBM.H"
+#undef protected
 #undef private
 #include "BITCOUNT.H"
 #include "ANIMDATA.H"
@@ -4598,6 +4600,51 @@ static void test_lbm()
     }
 }
 
+// Graphic::CompOutCode / Comp3DOutCode - Cohen-Sutherland region codes
+// against the Physical* clip rect. CompOutCode keys on Min/Max fields;
+// Comp3DOutCode uses 0..PhysicalWidth/Height. Edge values count as
+// inside; the bit layout is top=8 bottom=4 right=2 left=1.
+static void test_compoutcode()
+{
+    Bool unp = FALSE;
+    static IntensityIndex ii;
+    void* pal = nullptr;
+    FontPtr fp = nullptr, mp = nullptr;
+    Graphic g(unp, &ii, pal, fp, mp);
+
+    g.PhysicalMinX = 10; g.PhysicalMaxX = 100;
+    g.PhysicalMinY = 20; g.PhysicalMaxY = 200;
+
+    OutCode c = g.CompOutCode(50, 50);           // interior
+    CHECK_EQ(c.all, 0u);
+    c = g.CompOutCode(50, 201);                  // below -> top=8
+    CHECK_EQ(c.top, 8u); CHECK_EQ(c.all, 8u);
+    c = g.CompOutCode(50, 19);                   // above -> bottom=4
+    CHECK_EQ(c.bottom, 4u); CHECK_EQ(c.all, 4u);
+    c = g.CompOutCode(101, 50);                  // right=2
+    CHECK_EQ(c.right, 2u); CHECK_EQ(c.all, 2u);
+    c = g.CompOutCode(9, 50);                    // left=1
+    CHECK_EQ(c.left, 1u); CHECK_EQ(c.all, 1u);
+    c = g.CompOutCode(9, 201);                   // corner left+top = 9
+    CHECK_EQ(c.all, 9u);
+    c = g.CompOutCode(101, 19);                  // corner right+bottom = 6
+    CHECK_EQ(c.all, 6u);
+    // Edges are inside.
+    c = g.CompOutCode(10, 20);  CHECK_EQ(c.all, 0u);
+    c = g.CompOutCode(100, 200); CHECK_EQ(c.all, 0u);
+    c = g.CompOutCode(10, 200); CHECK_EQ(c.all, 0u);
+
+    // 3D variant: 0..PhysicalWidth/Height.
+    g.PhysicalWidth = 640; g.PhysicalHeight = 480;
+    c = g.Comp3DOutCode(320, 240); CHECK_EQ(c.all, 0u);
+    c = g.Comp3DOutCode(641, 240); CHECK_EQ(c.right, 2u);
+    c = g.Comp3DOutCode(-1, 240);  CHECK_EQ(c.left, 1u);
+    c = g.Comp3DOutCode(320, 481); CHECK_EQ(c.top, 8u);
+    c = g.Comp3DOutCode(320, -1);  CHECK_EQ(c.bottom, 4u);
+    c = g.Comp3DOutCode(-1, -1);   CHECK_EQ(c.all, 5u);
+    c = g.Comp3DOutCode(640, 480); CHECK_EQ(c.all, 0u);   // corner edge in
+}
+
 int main()
 {
     test_type_layout();
@@ -4659,6 +4706,7 @@ int main()
     test_doanimation();
     test_deadstream_iterator();
     test_lbm();
+    test_compoutcode();
 
     test_mathlib_trig();
     test_mathlib_distance();
