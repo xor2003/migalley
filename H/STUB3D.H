@@ -259,6 +259,7 @@ public:
 	HANDLE			semaphore;
 	HANDLE			mutex;
 #endif
+	volatile bool	moveThreadGone;	//RERUN: set by moveloop just before it returns; at end to keep tod/etc offsets stable
 
 	Inst3d();
 	Inst3d(bool);

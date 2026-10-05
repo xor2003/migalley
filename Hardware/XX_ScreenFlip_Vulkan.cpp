@@ -781,8 +781,15 @@ static void blitSurfaceToStaging(SDL_Surface* src, int dstX, int dstY, uint8_t* 
     if (conv != src) SDL_FreeSurface(conv);
 }
 
+// Set by the windowing layer just before the real SDL window is destroyed:
+// no present/acquire may run against the dead surface afterwards.
+volatile bool g_migVulkanWindowGone = false;
+
 void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
 {
+    if (g_migVulkanWindowGone)
+        return;
+
     vkWaitForFences(vkDevice, 1, &fence, VK_TRUE, UINT64_MAX);
     vkResetFences(vkDevice, 1, &fence);
 

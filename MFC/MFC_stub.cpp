@@ -134,6 +134,35 @@ IMPLEMENT_DYNAMIC(DlgItem, CWnd)
 
 bool g_shouldQuit = false;
 
+// RERUN: SDL destroys the game window during process teardown while
+// queued X requests (e.g. XInput select) are still in flight; the async
+// BadWindow/BadDrawable they produce would fire the default handler's
+// exit(1) inside __run_exit_handlers, making static destructors race
+// live worker threads. Swallow just those two, and only once quitting
+// is underway — real X errors during play keep the default behaviour.
+// (Xlib.h comes in transitively here; XX_ScreenFlip_Vulkan.cpp avoids it
+// because of Bool/Status clashes, but this TU already has it.)
+static XErrorHandler g_prevXErrorHandler = nullptr;
+
+static int MigXErrorHandler(Display* display, XErrorEvent* ev)
+{
+    if (g_shouldQuit && (ev->error_code == BadWindow || ev->error_code == BadDrawable))
+        return 0;
+    if (g_prevXErrorHandler)
+        return g_prevXErrorHandler(display, ev);
+    return 0;
+}
+
+// SDL may have swapped the X error handler since init — reinstall ours
+// at every point where quitting begins so teardown-only BadWindow /
+// BadDrawable can't fire the default handler's exit(1) inside
+// __run_exit_handlers.
+static void MigArmQuitTeardown()
+{
+    g_shouldQuit = true;
+    g_prevXErrorHandler = XSetErrorHandler(MigXErrorHandler);
+}
+
 // Helper to find a system font
 static std::string GetSystemFontPath(const char* faceName = nullptr)
 {
@@ -532,7 +561,7 @@ void PumpSDL()
             case SDL_QUIT:
                 msg.message = WM_QUIT;
                 g_msgQueue.push_back(msg);
-                g_shouldQuit = true;
+                MigArmQuitTeardown();
                 break;
 
             case SDL_MOUSEBUTTONDOWN:
@@ -846,6 +875,21 @@ BOOL PeekMessage(MSG* msg, HWND hwnd, UINT min, UINT max, UINT remove)
 
     if (g_msgQueue.empty())
     {
+        // RERUN: Win32 keeps the quit state once PostQuitMessage fires —
+        // every later GetMessage/PeekMessage returns WM_QUIT until the
+        // thread exits. Nested pumps (CDialog::DoModal) can consume the
+        // queued WM_QUIT and swallow PumpMessage's FALSE; re-synthesizing
+        // here lets the unwind reach CMIGApp::Run instead of leaving the
+        // app running with the main window already gone.
+        if (g_shouldQuit && !hwnd && min <= WM_QUIT && (max == 0 || WM_QUIT <= max))
+        {
+            msg->hwnd = NULL;
+            msg->message = WM_QUIT;
+            msg->wParam = 0;
+            msg->lParam = 0;
+            msg->time = SDL_GetTicks();
+            return TRUE;
+        }
         //std::cout << "PeekMessage: No messages in queue." << std::endl;
         return FALSE;
     }
@@ -878,6 +922,15 @@ BOOL DispatchMessage(const MSG* msg)
     return FALSE;
 }
 
+void AfxPostQuitMessage(int /*nExitCode*/)
+{
+    MigArmQuitTeardown();
+    MSG msg = {};
+    msg.message = WM_QUIT;
+    msg.time = SDL_GetTicks();
+    g_msgQueue.push_back(msg);
+}
+
 BOOL PumpMessage()
 {
     MSG msg;
@@ -886,7 +939,7 @@ BOOL PumpMessage()
 
     if (msg.message == WM_QUIT)
     {
-        g_shouldQuit = true;
+        MigArmQuitTeardown();
         return FALSE;
     }
 
@@ -923,7 +976,9 @@ DWORD MsgWaitForMultipleObjects(
     {
         PumpSDL();
         PumpTimers();
-        if (!g_msgQueue.empty())
+        // RERUN: a pending quit must also wake the caller — WM_QUIT is
+        // re-synthesized by PeekMessage once the queue has drained.
+        if (!g_msgQueue.empty() || g_shouldQuit)
         {
             // Return index equal to nCount to indicate input is available
             return WAIT_OBJECT_0 + nCount;
@@ -960,7 +1015,7 @@ DWORD MsgWaitForMultipleObjects(
         {
             PumpSDL();
             PumpTimers();
-            if (!g_msgQueue.empty())
+            if (!g_msgQueue.empty() || g_shouldQuit)
                 return WAIT_OBJECT_0 + nCount;
         }
 
@@ -1855,7 +1910,17 @@ BOOL CWnd::DestroyWindow()
             }
 
             if (be->window && !be->isChild) {
-                SDL_DestroyWindow(be->window);
+                // RERUN: never destroy the shared SDL window mid-app.
+                // Dozens of virtual CWnd backends reference this one OS
+                // window — destroying it here orphans them all (the old
+                // black-window-keeps-running bug) and its async BadWindow
+                // errors fire _XDefaultError -> exit(1) while static
+                // destructors race live worker threads. SDL_Quit reaps the
+                // window at process exit.
+                if (AfxGetMainWnd() == this) {
+                    extern volatile bool g_migVulkanWindowGone;
+                    g_migVulkanWindowGone = true;
+                }
             }
             g_hwndRegistry.erase(m_hWnd);
         }
@@ -4250,6 +4315,15 @@ BOOL CWinApp::InitInstance()
 		return FALSE;
 	}
 
+	// Swallow teardown-only BadWindow/BadDrawable (see MigXErrorHandler).
+	// atexit is LIFO: this runs before SDL_Quit's own teardown, re-arming
+	// the handler after anything (SDL, Mesa) has swapped it out.
+	g_prevXErrorHandler = XSetErrorHandler(MigXErrorHandler);
+	atexit(+[]{
+		g_shouldQuit = true;
+		g_prevXErrorHandler = XSetErrorHandler(MigXErrorHandler);
+	});
+
     // After SDL_Init and TTF_Init
     if (!m_docTemplates.empty())
     {
@@ -4346,7 +4420,8 @@ CSingleDocTemplate::CSingleDocTemplate(UINT nIDResource,
     : m_nIDResource(nIDResource),
       m_pDocClass(pDocClass),
       m_pFrameClass(pFrameClass),
-      m_pViewClass(pViewClass)
+      m_pViewClass(pViewClass),
+      m_pFrame(nullptr)
 {
 }
 // Called by InitInstance() to register the template
@@ -4374,7 +4449,12 @@ CDocument* CSingleDocTemplate::OpenDocumentFile(LPCTSTR /*lpszPathName*/)
 
     // 3. Create the actual SDL window
     if (!pFrame->LoadFrame(m_nIDResource))
+    {
+        std::cout << "OpenDocumentFile: LoadFrame failed: " << SDL_GetError() << std::endl;
+        delete pFrame;
+        delete pDoc;
         return nullptr;
+    }
 
     // 4. Create the view
     CView* pView = (CView*)m_pViewClass->m_pfnCreateObject();

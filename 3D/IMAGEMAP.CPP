@@ -613,10 +613,13 @@ ImageMap::~ImageMap()
 		fclose(dfp);
 	}
 
-  	UWord			index,j,max;							
-	ImageMapDescPtr imgp;						
+  	UWord			index,j,max;
+	ImageMapDescPtr imgp;
 
-	for (j=0; j < supercnt; j++)
+	//RERUN: mark empty up front so a concurrent/late UnLoadImageMaps sees nothing
+	SWord savedcnt=supercnt;
+	supercnt = 0;
+	for (j=0; j < savedcnt; j++)
 	{
 		max = superimagemaptable[j].nomaps;
 		for(index=0;index<max;index++)
@@ -638,9 +641,9 @@ ImageMap::~ImageMap()
 		}
 
 	   	delete [] superimagemaptable[j].imagemaptable;				//RJS 19Oct98
+	   	superimagemaptable[j].imagemaptable=NULL;					//RERUN
+	   	superimagemaptable[j].nomaps=0;								//RERUN
 	}
-
-	supercnt = 0;
 }
 
 //------------------------------------------------------------------------------
@@ -1260,7 +1263,7 @@ void ImageMap::UnLoadImageMapPtrs()
 				*imagemapfield%=(ImageMapBit)index_list;
 
 				file_no = index_list;
-				if (index_list > mapoff)
+				if (index_list >= mapoff)
 					file_no -= mapoff;
 
 				UnLoadImageMapPtr(&superimagemaptable[i],file_no);
@@ -1298,6 +1301,9 @@ void ImageMap::UnLoadImageMapPtrs()
 //------------------------------------------------------------------------------
 void ImageMap::UnLoadImageMapPtr(SuperMap*	supermap, UWord	file_no)
 {
+	if (!supermap->imagemaptable || file_no >= (UWord)supermap->nomaps)
+		return;
+
 	ImageMapDescPtr imgp = supermap->imagemaptable[file_no];
  	if (imgp)													
 	{

@@ -398,6 +398,11 @@ BOOL CMIGApp::InitInstance()
 
 	gameSettings=cmdInfo.m_gameSettings;
 
+	// RERUN: if the frame window failed to create (e.g. SDL_CreateWindow
+	// failed), m_pMainWnd is garbage — bail instead of dereferencing it.
+	if (!m_pMainWnd)
+		return FALSE;
+
 	// The one and only window has been initialized, so show and update it.
 	m_pMainWnd->ModifyStyle(m_pMainWnd->GetStyle(),WS_THICKFRAME); // Bye bye title bar
 //	m_pMainWnd->ModifyStyle(m_pMainWnd->GetStyle(),NULL); // Bye bye title bar and edges

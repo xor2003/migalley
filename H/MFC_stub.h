@@ -2194,10 +2194,9 @@ CWinApp* AfxGetApp();
 CWnd* AfxGetMainWnd();
 
 extern bool g_shouldQuit;
-inline void AfxPostQuitMessage(int /*nExitCode*/)
-{
-    g_shouldQuit = true;
-}
+//RERUN: real MFC PostQuitMessage queues WM_QUIT; just setting the flag leaves
+//CMIGApp::Run's message pump looping forever (it only exits on PumpMessage()==FALSE).
+void AfxPostQuitMessage(int nExitCode);
 
 inline BOOL AfxOleGetUserCtrl()
 {

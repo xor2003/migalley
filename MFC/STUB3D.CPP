@@ -312,8 +312,9 @@ Inst3d::Inst3d(bool flag)
 	if (!mutex)
 		_Error.EmitSysErr("Mutex creation failed");
 
+	moveThreadGone=FALSE;	//RERUN: must precede AfxBeginThread so a fast exit can't be clobbered
 #if 1 //RERUN lets hide the SDL code in the else block defined (__MSVC__) //RERUN
-	movethread=AfxBeginThread(moveloop,this,THREAD_PRIORITY_ABOVE_NORMAL,50000,0); 
+	movethread=AfxBeginThread(moveloop,this,THREAD_PRIORITY_ABOVE_NORMAL,50000,0);
 #else
 	movethread = CreateThread(NULL, 50000, (LPTHREAD_START_ROUTINE)Inst3d::moveloop, this, 0, NULL);
 	SetThreadPriority(movethread,THREAD_PRIORITY_ABOVE_NORMAL);
@@ -405,10 +406,11 @@ Inst3d::Inst3d()
 	int oldprec=GETPREC();
 	SETPREC(3);
 
+	moveThreadGone=FALSE;	//RERUN: must precede AfxBeginThread so a fast exit can't be clobbered
 #if 1 //RERUN let's hide the SDL code in the else block defined (__MSVC__) //RERUN
 	CWinThread* mainthread=AfxGetThread();
 	mainthread->SetThreadPriority(THREAD_PRIORITY_ABOVE_NORMAL);
-	movethread=AfxBeginThread(moveloop,this,THREAD_PRIORITY_ABOVE_NORMAL,50000,0); 
+	movethread=AfxBeginThread(moveloop,this,THREAD_PRIORITY_ABOVE_NORMAL,50000,0);
 #else
 	movethread = CreateThread(NULL, 50000, (LPTHREAD_START_ROUTINE)Inst3d::moveloop, this, 0, NULL);
 	SetThreadPriority(movethread, THREAD_PRIORITY_ABOVE_NORMAL); // RERUN no effect in userspace linux.
@@ -559,6 +561,14 @@ Inst3d::~Inst3d()
 	Paused(TRUE);
 	//RERUN CWinThread*	oldmovethread=movethread;
 	movethread=0;
+	//RERUN: moveloop exits on next cycle once movethread is NULL - wake it so a
+	//thread parked in WaitForSingleObject(semaphore) can actually leave, then
+	//wait for it to finish its final cycle before freeing shared state.
+	if (semaphore)
+		ReleaseSemaphore(semaphore,1,NULL);
+	if (!moveThreadGone)
+		for (int wt=0; wt<4000 && !moveThreadGone; wt++)
+			Sleep(1);
 	{
 		View3d* sptr=viewedwin;
 		while (sptr)
@@ -1332,7 +1342,10 @@ UINT AFX_CDECL Inst3d::moveloop(LPVOID x)
 			inst->framecount++;
 
 			if (!inst->movethread)	//immediately after resume...
+			{
+				inst->moveThreadGone=TRUE;	//RERUN
 				return 0;
+			}
 
 			if (!inst->mutex)	_Error.EmitSysErr("mutex null");
 			ReleaseMutex(inst->mutex);								//AMM 13Jan00

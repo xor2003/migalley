@@ -61,6 +61,8 @@ target_include_directories(ProjectDefaults INTERFACE
     ${SDL2TTF_INCLUDE_DIRS}
     ${SDL2_MIXER_INCLUDE_DIRS}
     ${VULKAN_INCLUDE_DIRS}
+    # i386 multiarch headers (SDL2/_real_SDL_config.h lives here)
+    ${CMAKE_SOURCE_DIR}/../../sysroot-i386/usr/include/i386-linux-gnu
 )
 
 # gcc's multilib config finds the 32-bit sysroot libs implicitly, but clang
@@ -77,6 +79,8 @@ target_link_libraries(ProjectDefaults INTERFACE
     ${SDL2TTF_LIBRARIES}
     ${SDL2_MIXER_LIBRARIES}
     ${VULKAN_LIBRARIES}
+    # XSetErrorHandler — only the versioned runtime lib exists (no -dev pkg)
+    -l:libX11.so.6
 )
 
 target_compile_definitions(ProjectDefaults INTERFACE
