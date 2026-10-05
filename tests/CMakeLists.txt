@@ -19,3 +19,15 @@ set_tests_properties(smoke_xvfb PROPERTIES
     TIMEOUT 240
     SKIP_RETURN_CODE 77
 )
+
+# lifecycle_xvfb: REQ-LIFE-01 — repeated gated launches on a private Xvfb,
+# per-cycle fd/RSS/maps sampling; fails on survivors or post-warm-up growth.
+add_test(
+    NAME lifecycle_xvfb
+    COMMAND ${BASH_EXE} ${CMAKE_CURRENT_SOURCE_DIR}/lifecycle_xvfb.sh $<TARGET_FILE:MigAlley>
+)
+
+set_tests_properties(lifecycle_xvfb PROPERTIES
+    TIMEOUT 600
+    SKIP_RETURN_CODE 77
+)
