@@ -547,6 +547,11 @@ bool	DeadStream::DeadBlockItterator::SkipToSGT(UniqueID sgt)
 
 bool	DeadStream::DeadBlockItterator::PutInfo(void* src,int count)
 {
+	//RERUN: a count that cannot fit inside one block would overflow
+	//data[maxblocksize] — happens when serializing a partially-torn-down
+	//world (diplc derived from garbage anim fields). Skip the payload.
+	if (count<0 || count>maxblocksize)
+		return false;
 	if (count+off>maxblocksize)
 	{
 		off=count;
@@ -632,7 +637,11 @@ void	DeadStream::DeadBlockItterator::NextEltClearDamage()
 
 void	DeadStream::DeadBlockItterator::SetNextDeadElt(char di1b,int diplc,char* dipld)
 {
-	if (diplc)
+	//RERUN: diplc comes from PostLauncherDataSize() over the element's anim
+	//data — on a partially-built/torn-down world it can be negative or past
+	//block size. Serialize the flag-less byte only; readers key off
+	//IsInvisible so the stream stays consistent.
+	if (diplc>0 && diplc<=maxblocksize-4)
 	{
 		((MinAnimData&)di1b).IsInvisible=TRUE;
 		PutByte(di1b);

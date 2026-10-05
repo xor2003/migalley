@@ -78,6 +78,8 @@
 #include "FILEMAN.H"
 #undef private
 #include "BITCOUNT.H"
+#include "ANIMDATA.H"
+#include "SAVEGAME.H"
 
 // shape:: statics + instruction handlers live in libMy3D but the class needs
 // the whole world include chain. Access control is compile-time only, so the
@@ -3281,6 +3283,75 @@ static void test_doanimation()
 }
 
 //------------------------------------------------------------------------------
+// DeadStream::DeadBlockItterator packs dead-element records into 1KB
+// blocks. SetWorldDead runs inside ~Inst3d — on a partially torn-down
+// world the anim-derived payload size (diplc) can be garbage: a negative
+// count used to become a wild memcpy and an oversized count overflowed
+// data[maxblocksize]. Pin the guard behaviour plus the normal paths.
+//------------------------------------------------------------------------------
+static void test_deadstream_iterator()
+{
+    char payload[2048];
+    std::memset(payload, 0x7E, sizeof payload);
+
+    DeadStream::DeadBlockPtr base = NULL;
+    {
+        DeadStream::DeadBlockItterator it(base);
+        CHECK(base != NULL);
+
+        // Ordinary writes land inside the block.
+        CHECK_EQ(it.PutInfo(payload, 16), false);
+        CHECK_EQ(base->dataused, 16);
+        CHECK(std::memcmp(base->data, payload, 16) == 0);
+
+        // count+off over the block -> spill into a fresh block.
+        CHECK_EQ(it.PutInfo(payload, 1024), true);
+        CHECK(base->nextblock != NULL);
+        CHECK_EQ(base->nextblock->dataused, 1024);
+
+        // Impossible counts are skipped, not written (pre-fix the oversize
+        // one overflowed the block, the negative one crashed memcpy).
+        CHECK_EQ(it.PutInfo(payload, 2048), false);
+        CHECK_EQ(it.PutInfo(payload, -9), false);
+        CHECK(base->nextblock->nextblock == NULL);
+    }
+    while (base) { DeadStream::DeadBlockPtr n = base->nextblock; delete base; base = n; }
+
+    // SetNextDeadElt with a sane payload: flag set, then word count + data.
+    base = NULL;
+    {
+        DeadStream::DeadBlockItterator it(base);
+        char elt[10];
+        std::memset(elt, 0x11, sizeof elt);
+        it.SetNextDeadElt((char)0x01, 10, elt);
+        CHECK(((MinAnimData&)base->data[0]).IsInvisible);
+        CHECK_EQ(base->dataused, 1 + 2 + 10);
+        CHECK_EQ(*(UWord*)(base->data + 1), 10);
+        CHECK(std::memcmp(base->data + 3, elt, 10) == 0);
+    }
+    while (base) { DeadStream::DeadBlockPtr n = base->nextblock; delete base; base = n; }
+
+    // Garbage diplc (torn-down world anim): flag-less byte only — the
+    // reader keys payload presence off IsInvisible so the stream stays
+    // consistent.
+    base = NULL;
+    {
+        DeadStream::DeadBlockItterator it(base);
+        it.SetNextDeadElt((char)0xFF, -3, payload);
+        CHECK(!((MinAnimData&)base->data[0]).IsInvisible);
+        CHECK_EQ(base->dataused, 1);
+        it.SetNextDeadElt((char)0xFF, 5000, payload);
+        CHECK_EQ(base->dataused, 2);
+        CHECK(!((MinAnimData&)base->data[1]).IsInvisible);
+        // diplc == 0 behaves exactly like a bad count.
+        it.SetNextDeadElt((char)0xFF, 0, payload);
+        CHECK_EQ(base->dataused, 3);
+        CHECK(!((MinAnimData&)base->data[2]).IsInvisible);
+    }
+    while (base) { DeadStream::DeadBlockPtr n = base->nextblock; delete base; base = n; }
+}
+
+//------------------------------------------------------------------------------
 // MathLib trigonometry - pins the 10-bit sincos_table (scale 32767, not
 // 32768) and 8.8-fixed tan_table. high_sin_cos interpolates within each
 // 64-angle step; sin_cos truncates.
@@ -3954,6 +4025,7 @@ int main()
     test_dospin();
     test_dolighttimer();
     test_doanimation();
+    test_deadstream_iterator();
 
     test_mathlib_trig();
     test_mathlib_distance();

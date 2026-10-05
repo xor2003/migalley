@@ -790,7 +790,10 @@ void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
     if (g_migVulkanWindowGone)
         return;
 
-    vkWaitForFences(vkDevice, 1, &fence, VK_TRUE, UINT64_MAX);
+    // RERUN: bounded waits — a lost submit or a dead surface would otherwise
+    // block the game loop forever on an unsignalled fence.
+    if (vkWaitForFences(vkDevice, 1, &fence, VK_TRUE, 500000000) == VK_TIMEOUT)
+        return;
     vkResetFences(vkDevice, 1, &fence);
 
     if (stagingPtr) {
@@ -847,7 +850,13 @@ void direct_draw::XX_ScreenFlip_Vulkan(SDL_Surface* ddsBack)
 
     // --- Vulkan present logic (unchanged) ---
     uint32_t img;
-    vkAcquireNextImageKHR(vkDevice, vkSwapchain, UINT64_MAX, semAcquire, VK_NULL_HANDLE, &img);
+    // RERUN: bounded acquire + checked result — an out-of-date or dead
+    // surface must not hang the loop or feed a garbage image index below.
+    // VK_SUBOPTIMAL_KHR still acquired a usable image; it must be presented
+    // or the swapchain slowly starves — proceed and let present cope.
+    VkResult acq = vkAcquireNextImageKHR(vkDevice, vkSwapchain, 500000000, semAcquire, VK_NULL_HANDLE, &img);
+    if (acq != VK_SUCCESS && acq != VK_SUBOPTIMAL_KHR)
+        return;
     vkResetCommandBuffer(cmd, 0);
     VkCommandBufferBeginInfo bi{};
     bi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
