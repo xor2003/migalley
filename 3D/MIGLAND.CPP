@@ -2341,7 +2341,7 @@ void CDecompressData::GenerateEdges()
 
 	pointCount=0;
 
-	UByte initialRouteType;
+	UByte initialRouteType = 0;		//RERUN: uninit if LineStream leads with points (IsValidRoute(0)=false)
 
 	while ((code=*pData++)!=JOIN_POLY_NEXT)
 	{
@@ -2811,7 +2811,7 @@ void* CCacheBlock::operator new(size_t)
 void CCacheBlock::operator delete(void* pDMe)
 {
  	CCacheBlock* pDelMe=(CCacheBlock*)pDMe;
-	pAlloc->Free(pDelMe);
+	if (pAlloc) pAlloc->Free(pDelMe);	//RERUN: static can outlive allocator teardown
 	pDelMe->pParent=pDelMe->pNorth=pDelMe->pEast=(CCacheBlock*)0xCDCDCDCD;
 }
 
@@ -3045,7 +3045,7 @@ void* CPrimaryCB::operator new(size_t)
 void CPrimaryCB::operator delete(void* pDMe)
 {
  	CPrimaryCB* pDelMe=(CPrimaryCB*)pDMe;
- 	pAlloc->Free(pDelMe);
+ 	if (pAlloc) pAlloc->Free(pDelMe);	//RERUN: static can outlive allocator teardown
  	pDelMe->pParent=pDelMe->pNorth=pDelMe->pEast=(CPrimaryCB*)0xCDCDCDCD;
 }
 

@@ -13228,6 +13228,8 @@ SLong	TransObj::GetGroundLevel(ItemBase*	itm,UByte&	theArea)
 		height = Land_Scape.GetGroundLevel(itm->World,&theArea);//DAW 04May99
 		theArea &= AT_MASK;
 	}
+	else
+		theArea = DEFAULT_AREATYPE;	//RERUN: uninit read by callers when above HIGHESTGROUND
 
 //DeadCode DAW 01Jul99 	lastsector=newsect;
 //DeadCode DAW 01Jul99 	lastheight=height;

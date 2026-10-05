@@ -1187,7 +1187,7 @@ inline SLong vector::magnitude()
 
 	if (max < min)
 	{
-		temp = max; max = min; min = max;
+		temp = max; max = min; min = temp;		//RERUN: was min=max - dropped old max, inflated magnitude for z-dominant vectors (same bug as BoB FT042)
 	}
 
 	if (med < min)

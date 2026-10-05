@@ -655,7 +655,7 @@ struct IDirectInputDeviceA {
             if (isMouse) {
                 SDL_PumpEvents();
                 int x, y;
-                Uint32 buttons = SDL_GetMouseState(&x, &y);
+                (void)SDL_GetMouseState(&x, &y);
 
                 // Example: report X axis movement
                 rgdod[0].dwOfs      = 0;          // offset for X axis

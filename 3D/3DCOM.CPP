@@ -13402,9 +13402,9 @@ void	shape::LauncherToWorld(	itemptr	itm,
 			
 			scaleback = _matrix.transform(obj_matrix,tmpx,tmpy,tmpz);
 
- 			tmpx >>= (16-scaleback);
- 			tmpy >>= (16-scaleback);
- 			tmpz >>= (16-scaleback);
+ 			tmpx >>= ((16-scaleback)&31);
+ 			tmpy >>= ((16-scaleback)&31);
+ 			tmpz >>= ((16-scaleback)&31);
 		}
 	}
 	else
@@ -14644,9 +14644,9 @@ Bool	shape::SampleSmokePnt(	UByteP		smkinfo,
 								obj_matrix);
 
 			scaleback = _matrix.transform(obj_matrix,wx,wy,wz);
-			wx >>= (16-scaleback);
-			wy >>= (16-scaleback);
-			wz >>= (16-scaleback);
+			wx >>= ((16-scaleback)&31);
+			wy >>= ((16-scaleback)&31);
+			wz >>= ((16-scaleback)&31);
 
 			wx += trailptr->lastwx;
 			wy += trailptr->lastwy;
@@ -18993,9 +18993,9 @@ Bool	shape::SampleDustPnt(	UByteP		smkinfo,
 							obj_matrix);
 
 		scaleback = _matrix.transform(obj_matrix,wx,wy,wz);
-		wx >>= (16-scaleback);
-		wy >>= (16-scaleback);
-		wz >>= (16-scaleback);
+		wx >>= ((16-scaleback)&31);
+		wy >>= ((16-scaleback)&31);
+		wz >>= ((16-scaleback)&31);
 
 		wx += trailptr->lastwx;
 		wy += trailptr->lastwy;
@@ -22154,9 +22154,9 @@ Bool	shape::ReplaySampleSmokePnt(	UByteP		smkinfo,
 								obj_matrix);
 
 			scaleback = _matrix.transform(obj_matrix,wx,wy,wz);
-			wx >>= (16-scaleback);
-			wy >>= (16-scaleback);
-			wz >>= (16-scaleback);
+			wx >>= ((16-scaleback)&31);
+			wy >>= ((16-scaleback)&31);
+			wz >>= ((16-scaleback)&31);
 
 			wx += trailptr->lastwx;
 			wy += trailptr->lastwy;
