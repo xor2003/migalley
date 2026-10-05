@@ -1,3 +1,5 @@
+#include "DLGITEM.H" // RERUN: DlgItem base used below
+#include "FILES.H" // RERUN: FileNum used below
 #if !defined(AFX_RSCRLBAR_H__9AF635E2_8AE0_11D2_9684_0000476073D8__INCLUDED_)
 #define AFX_RSCRLBAR_H__9AF635E2_8AE0_11D2_9684_0000476073D8__INCLUDED_
 

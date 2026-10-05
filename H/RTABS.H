@@ -1,6 +1,7 @@
 #ifndef RTABS_H
 #define RTABS_H
 
+#include "DLGITEM.H" // RERUN: DlgItem base used below
 #include "MFC_stub.h"
 
 class CRTabs : public CWnd

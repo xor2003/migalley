@@ -9,6 +9,7 @@
 #define spinbut_included_ksjfhskghsdkhgala
 
 //RERUN class CRSpinBut : public CWnd
+#include "DLGITEM.H" // RERUN: DlgItem base used below
 class CRSpinBut : public DlgItem //RERUN
 {
 protected:

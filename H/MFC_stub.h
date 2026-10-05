@@ -26,6 +26,12 @@ typedef void* HICON;
 #ifndef HCURSOR
 typedef void* HCURSOR;
 #endif
+#ifndef HRGN
+typedef void* HRGN;   // RERUN: BoB rdialog.h regionid; opaque GDI handle
+#endif
+#ifndef HTASK
+typedef DWORD HTASK;  // RERUN: Win16-era task handle (BoB mainfrm.h OnActivateApp)
+#endif
 #ifndef CB_ERR
 #define CB_ERR (-1)
 #endif
@@ -304,6 +310,7 @@ protected: \
 #define CBRS_ALIGN_RIGHT    0x4000L
 #define CBRS_ALIGN_BOTTOM   0x8000L
 #define CBRS_ALIGN_ANY      (CBRS_ALIGN_LEFT | CBRS_ALIGN_TOP | CBRS_ALIGN_RIGHT | CBRS_ALIGN_BOTTOM)
+#define CBRS_GRIPPER        0x40000000L  // RERUN: MFC afxext value; BoB rtoolbar.h uses it
 
 #ifndef HELP_CONTEXT
 #define HELP_CONTEXT        0x0001

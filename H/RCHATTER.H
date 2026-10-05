@@ -12,6 +12,7 @@
 
 #include "WIN32_COMPAT.H" // RERUN
 #include "MATHASM.H" // RERUN
+#include "FILES.H" // RERUN: FileNum used below
 #include	"RCHATXTR.H"
 #include	"RADIO.G"
 

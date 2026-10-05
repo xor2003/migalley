@@ -10,6 +10,7 @@
 // CRListBox wrapper class
 
 // RERUN class CRListBox : public CWnd
+#include "DLGITEM.H" // RERUN: DlgItem base used below
 class CRListBox : public DlgItem // RERUN DlgItem is the real base class for all Rowan controls
 {
 protected:

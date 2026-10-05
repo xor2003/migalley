@@ -1,3 +1,5 @@
+#include "DLGITEM.H" // RERUN: DlgItem base used below
+#include "FILES.H" // RERUN: FileNum used below
 #if !defined(AFX_RRADIO_H__73CBE701_2DE1_11D2_83A5_00004760763D__INCLUDED_)
 #define AFX_RRADIO_H__73CBE701_2DE1_11D2_83A5_00004760763D__INCLUDED_
 

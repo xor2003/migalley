@@ -9,6 +9,8 @@
 // CRStatic wrapper class
 
 // RERUN class CRStatic : public CWnd
+#include "DLGITEM.H" // RERUN: DlgItem base used below
+#include "FILES.H" // RERUN: FileNum used below
 class CRStatic : public DlgItem // RERUN DlgItem is the real base class for all Rowan controls
 {
 protected:
