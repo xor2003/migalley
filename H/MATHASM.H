@@ -676,8 +676,11 @@ inline ULong SHDIVSIN (SLong num1,UByte num2,ULong num3)
 #elif defined(__GNUC__)
 inline SLong SHDIVSIN(SLong value, UByte shift, ULong divisor)
 {
-    const int64_t extended = (int64_t)value << (shift & 31);
-    return divisor ? static_cast<SLong>(extended / (int32_t)divisor) : 0;
+    // RERUN: shipped asm truncates value<<shift to 32 bits before
+    // sign-extending into edx — the 64-bit shift kept high bits that
+    // the shipped code lost (|value|>=0x8000 at shift 16 diverged).
+    const int32_t lo = (int32_t)((uint32_t)value << (shift & 31));
+    return divisor ? static_cast<SLong>((int64_t)lo / (int32_t)divisor) : 0;
 }
 
 #else
