@@ -18,6 +18,8 @@ CMIGApp theApp;
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+#include "detect.h"   // RERUN: rowan shared shell — install detection gate
 //RERUN debug: last GetShapePtr call state
 int		g_shp_last_num = -1;
 void*	g_shp_last_fb = 0;
@@ -46,6 +48,24 @@ int main(int argc, char** argv)
 	sa.sa_flags = SA_RESETHAND;
 	sigaction(SIGSEGV, &sa, NULL);
 	sigaction(SIGBUS, &sa, NULL);
+
+	// RERUN: rowan shared shell gate — validate the install dir before any
+	// game code runs (REQ-DETECT-01/02/03). No flag bypasses validation;
+	// argv[1] optionally selects the dir (default: CWD, as run-migalley.sh).
+	const char* dir = (argc > 1 && argv[1][0] != '-') ? argv[1] : ".";
+	rowan_shell::Report rep = rowan_shell::detect_install(dir, "mig");
+	if (rep.verdict != rowan_shell::Verdict::OK)
+	{
+		fprintf(stderr, "migalley: %s\n", rep.detail.c_str());
+		fprintf(stderr, "usage: MigAlley [install-dir]  (default: .)\n");
+		return 2;
+	}
+	if (chdir(dir) != 0)
+	{
+		fprintf(stderr, "migalley: cannot enter %s: %s\n",
+				dir, strerror(errno));
+		return 2;
+	}
 #endif
 
     if (!theApp.InitInstance())

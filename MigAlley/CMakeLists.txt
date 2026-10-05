@@ -5,10 +5,20 @@ if (WIN32)
     target_sources(MigAlley PRIVATE MIG.RC)
 endif()
 
+# RERUN: rowan shared shell — install detection gate embedded in the exe
+# (REQ-DETECT/LAUNCH). Sources live in rowan-engine/shell; compiled directly
+# into this target so the exe is self-contained (REQ-LAUNCH-02).
+get_filename_component(ROWAN_ENGINE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../rowan-engine" ABSOLUTE)
+
 add_executable(MigAlley
     MigCString.cpp
     MigAlley.cpp
+    ${ROWAN_ENGINE}/shell/detect.cpp
+    ${ROWAN_ENGINE}/shell/manifests.cpp
 )
+
+target_include_directories(MigAlley PRIVATE ${ROWAN_ENGINE}/shell)
 
 target_precompile_headers(MigAlley PRIVATE stdafx.h)
 
