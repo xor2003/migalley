@@ -80,6 +80,12 @@
 #include "BITCOUNT.H"
 #include "ANIMDATA.H"
 #include "SAVEGAME.H"
+#include "CBUFFER.H"
+#include "BSTREAM.H"
+#include "MigCstring.h"
+// Last: BITFIELD.H defines assert() away (legacy choice, errorcheck is a
+// no-op here as in the game build).
+#include "BITFIELD.H"
 
 // shape:: statics + instruction handlers live in libMy3D but the class needs
 // the whole world include chain. Access control is compile-time only, so the
@@ -3966,6 +3972,433 @@ static void test_malloc_wrappers()
     }
 }
 
+//------------------------------------------------------------------------------
+// CBuffer<T,size> - comms circular buffer. curr is the consume cursor,
+// next the write cursor, temp a scratch walker. All three wrap at
+// maxentries; entries counts unread records.
+//------------------------------------------------------------------------------
+static void test_cbuffer()
+{
+    CBuffer<int, 4> b;
+    CHECK_EQ(b.NumEntries(), 0);
+    CHECK(b.GetCurr() == b.GetNext());          // both at slot 0
+
+    // Fill all four slots; next wraps back to slot 0.
+    *b.GetNext() = 10; b.AddEntryAndUpdateNext();
+    *b.GetNext() = 20; b.AddEntryAndUpdateNext();
+    *b.GetNext() = 30; b.AddEntryAndUpdateNext();
+    *b.GetNext() = 40; b.AddEntryAndUpdateNext();
+    CHECK_EQ(b.NumEntries(), 4);
+    CHECK(b.GetNext() == b.GetCurr());          // next wrapped to slot 0
+
+    // Consume in FIFO order.
+    CHECK_EQ(*b.GetCurr(), 10);
+    b.UpdateCurr();
+    CHECK_EQ(b.NumEntries(), 3);
+    CHECK_EQ(*b.GetCurr(), 20);
+
+    // Wrapped next overwrites the consumed slot.
+    *b.GetNext() = 50; b.AddEntryAndUpdateNext();
+    CHECK_EQ(b.NumEntries(), 4);
+    b.UpdateCurr();                             // 20
+    b.UpdateCurr();                             // 30
+    b.UpdateCurr();                             // 40
+    CHECK_EQ(*b.GetCurr(), 50);
+    b.UpdateCurr();
+    CHECK_EQ(b.NumEntries(), 0);
+
+    // InitBuffer: drops pending entries, next re-joins curr.
+    *b.GetNext() = 99; b.AddEntryAndUpdateNext();
+    b.InitBuffer();
+    CHECK_EQ(b.NumEntries(), 0);
+    CHECK(b.GetNext() == b.GetCurr());
+
+    // temp walker: forward wrap and TempPrev under-wrap.
+    CBuffer<int, 4> w;
+    w.AddEntryAndUpdateNext();                  // next=1
+    w.AddEntryAndUpdateNext();                  // next=2
+    w.AddEntryAndUpdateNext();                  // next=3
+    int* slot3 = w.GetNext();
+    w.AddEntryAndUpdateNext();                  // next wraps -> slot 0
+    CHECK(w.GetNext() == w.GetCurr());
+
+    w.SetTempCurr();                            // temp at slot 0
+    w.TempPrev();                               // under-wrap -> slot 3
+    CHECK(w.GetTemp() == slot3);
+    w.UpdateTemp();                             // back to slot 0
+    CHECK(w.GetTemp() == w.GetCurr());
+
+    // SetTempNext follows the write cursor.
+    w.SetTempNext();
+    CHECK(w.GetTemp() == w.GetNext());
+}
+
+//------------------------------------------------------------------------------
+// Angles fixed-point ops: (i + ANGLES_FRACT/2) >> ANGLES_SHIFT, i.e.
+// round-to-nearest division by 32768. int/SLong/ULong overloads share
+// the shift semantics; negative results rely on arithmetic >>.
+//------------------------------------------------------------------------------
+static void test_angles()
+{
+    CHECK_EQ(ANGLES_FRACT, 32768);
+    CHECK_EQ(ANGLES_SHIFT, 15);
+    CHECK_EQ(ANGLES_SHIFT_TWICE, 30);
+    CHECK_EQ((int)ANGLES_90Deg, 0x4000);
+    CHECK_EQ((int)ANGLES_180Deg, 0x8000);
+
+    CHECK_EQ(32768 >> ANGLES_SHIFT, 1);         // 49152>>15 = 1
+    CHECK_EQ(49152 / ANGLES_FRACT, 2);
+    CHECK_EQ(16383 / ANGLES_FRACT, 0);          // .4999 -> 0
+    CHECK_EQ(16385 / ANGLES_FRACT, 1);          // .5000x rounds up
+    CHECK_EQ(16384 / ANGLES_FRACT, 1);          // exactly .5 -> 1
+
+    // Negatives: the +16384 bias means -16384 is the round-to-zero
+    // crossover; below it arithmetic >> goes to -1.
+    CHECK_EQ(-16384 / ANGLES_FRACT, 0);
+    CHECK_EQ(-16385 / ANGLES_FRACT, -1);
+    CHECK_EQ(-32768 / ANGLES_FRACT, -1);        // (-16384)>>15
+    CHECK_EQ(-32769 / ANGLES_FRACT, -1);        // (-16385)>>15 -> -1
+    CHECK_EQ(-49153 / ANGLES_FRACT, -2);        // (-32769)>>15 -> -2
+
+    // SLong / ULong variants apply the same bias+shift.
+    SLong sl = 100000;
+    ULong ul = 100000;
+    CHECK_EQ(sl / ANGLES_FRACT, (100000 + 16384) >> 15);
+    CHECK_EQ(sl >> ANGLES_SHIFT, (100000 + 16384) >> 15);
+    CHECK_EQ(ul / ANGLES_FRACT, (ULong)((100000 + 16384) >> 15));
+}
+
+//------------------------------------------------------------------------------
+// MAKEFIELD bitfield classes - used by SAVEGAME/IMAGEMAP/SHAPES for
+// compact flag sets. |= set, %= clear, ^= toggle, [] test, unary +
+// "any set", field |=/&=/^=/-= bulk ops, >= containment, =(0|-1) fill.
+// Indices are offset by MIN; errorcheck is a compiled-out assert.
+//------------------------------------------------------------------------------
+enum TstBit16 { TB_MIN = 0, TB_MAX = 15 };
+MAKEFIELD(TstBit16, TB_MIN, TB_MAX);
+enum TstOff { TO_MIN = 5, TO_MAX = 20 };
+MAKEFIELD(TstOff, TO_MIN, TO_MAX);
+
+static void test_bitfield()
+{
+    TstBit16Field f;
+    CHECK(!+f);                                 // empty: no bits set
+
+    f |= TB_MIN;
+    f |= TB_MAX;                                // bit 15 - second byte
+    CHECK(+f);
+    CHECK(f[TB_MIN]);
+    CHECK(f[TB_MAX]);
+    CHECK(!f[(TstBit16)1]);
+
+    f ^= TB_MIN;                                // toggle set -> clear
+    CHECK(!f[TB_MIN]);
+    f ^= TB_MIN;                                // toggle clear -> set
+    CHECK(f[TB_MIN]);
+    f %= TB_MIN;                                // clear
+    CHECK(!f[TB_MIN]);
+    f %= TB_MIN;                                // clear again - no-op
+    CHECK(!f[TB_MIN]);
+
+    // Field-vs-field ops.
+    TstBit16Field g;
+    g |= TB_MAX;
+    CHECK(f >= g);                              // f contains g's bits
+    CHECK(g >= f);                              // equal sets contain each other
+    g |= (TstBit16)3;
+    CHECK(!(f >= g));                           // g now has a bit f lacks
+    CHECK(g >= f);                              // ...while still containing f
+
+    TstBit16Field h = f;                        // raw-copy copy ctor
+    h &= g;                                     // {15} & {15,3} = {15}
+    CHECK(h[TB_MAX]);
+    CHECK(!h[(TstBit16)3]);
+    h -= g;                                     // {15} - {15,3} = {}
+    CHECK(!+h);
+
+    // Fill via =(SLong): only 0 and -1 are legal.
+    f = -1;
+    CHECK(f[TB_MIN]);
+    CHECK(f[(TstBit16)8]);
+    CHECK(f[TB_MAX]);
+    f = 0;
+    CHECK(!+f);
+
+    // Range ctor sets minset..maxset inclusive.
+    TstBit16Field rf((TstBit16)3, (TstBit16)5);
+    CHECK(!rf[(TstBit16)2]);
+    CHECK(rf[(TstBit16)3]);
+    CHECK(rf[(TstBit16)4]);
+    CHECK(rf[(TstBit16)5]);
+    CHECK(!rf[(TstBit16)6]);
+
+    // Equality and <=.
+    TstBit16Field e1; e1 |= (TstBit16)9;
+    TstBit16Field e2; e2 |= (TstBit16)9;
+    CHECK(e1 == e2);
+    e2 |= (TstBit16)10;
+    CHECK(!(e1 == e2));
+    CHECK(e1 <= e2);                            // e2 contains e1
+    CHECK(!(e2 <= e1));
+
+    // MIN-offset field: index s-MIN maps onto bit 0.
+    TstOffField of;
+    of |= TO_MIN;                               // bit 0
+    of |= TO_MAX;                               // bit 15
+    CHECK(of[TO_MIN]);
+    CHECK(of[TO_MAX]);
+    CHECK(!of[(TstOff)(TO_MIN + 1)]);
+    CHECK_EQ((int)TstOffField::RANGE, 16);
+    CHECK_EQ((int)TstOffField::BYTES, 2);
+}
+
+//------------------------------------------------------------------------------
+// CString shim (MigCstring.h) - single char* payload standing in for
+// MFC CString. Covers construction, concat (incl. self-append), Mid/
+// Left/Right edge counts, case/trim/replace/find, GetBuffer, Part-*
+// splitting, Escape/UnEscape round-trip + malformed input, CSprintf.
+//------------------------------------------------------------------------------
+static void test_cstring()
+{
+    // Construction / assignment.
+    CString s("Hello");
+    CHECK_EQ(s.GetLength(), 5);
+    CHECK(!s.IsEmpty());
+    CString e;
+    CHECK(e.IsEmpty());
+    CHECK_EQ(strcmp(e.c_str(), ""), 0);
+    CString r('x', 4);
+    CHECK_EQ(strcmp(r.c_str(), "xxxx"), 0);
+    CString r0('x', 0);
+    CHECK(r0.IsEmpty());
+    CString si(42);
+    CHECK(si == "42");
+    CString sn(-7);
+    CHECK(sn == "-7");
+    CString nul((const char*)NULL);             // NULL -> empty
+    CHECK(nul.IsEmpty());
+    s = s;                                      // self-assign safe
+    CHECK(s == "Hello");
+
+    // Concatenation.
+    s += " World";
+    CHECK(s == "Hello World");
+    s += '!';
+    CHECK_EQ(s.GetLength(), 12);
+    s += s;                                     // self-append doubles
+    CHECK(s == "Hello World!Hello World!");
+    CString t = CString("a") + "b" + 'c';
+    CHECK(t == "abc");
+    CString t2 = "x" + CString("y");
+    CHECK(t2 == "xy");
+    CString nn("a"); nn += (const char*)NULL;   // NULL += no-op
+    CHECK(nn == "a");
+
+    // Comparison.
+    CHECK(CString("abc") < CString("abd"));
+    CHECK_EQ(CString("AbC").CompareNoCase("ABC"), 0);
+    CHECK(CString("abc") == "abc");
+    CHECK(CString("abc") != "abd");
+    CHECK_EQ(CString("x").Compare("x"), 0);
+
+    // GetAt/SetAt.
+    CString ga("ab");
+    CHECK_EQ(ga.GetAt(0), 'a');
+    CHECK_EQ(ga.GetAt(1), 'b');
+    ga.SetAt(1, 'Z');
+    CHECK(ga == "aZ");
+
+    // Mid/Left/Right - normal and edge counts.
+    CString m("HelloWorld");
+    CHECK(m.Mid(0, 5) == "Hello");
+    CHECK(m.Mid(5) == "World");
+    CHECK(m.Mid(2, 3) == "llo");
+    CHECK(m.Mid(5, 0) == "");
+    CHECK(m.Mid(50) == "");                     // first past end
+    CHECK(m.Mid(-3, 4) == "Hell");              // first<0 clamps to 0
+    CHECK(m.Mid(0, -1) == "HelloWorld");        // count<0 -> rest
+    CHECK(m.Mid(7, -1) == "rld");
+    CHECK(m.Mid(0, 99) == "HelloWorld");        // count clamps to len
+    CHECK(m.Left(4) == "Hell");
+    CHECK(m.Left(50) == "HelloWorld");
+    CHECK(m.Left(-2) == "");                    // MFC: negative -> empty
+    CHECK(m.Left(0) == "");
+    CHECK(m.Right(5) == "World");
+    CHECK(m.Right(50) == "HelloWorld");
+    CHECK(m.Right(-2) == "");                   // MFC: negative -> empty
+    CHECK(m.Right(0) == "");
+
+    // Case / reverse.
+    CString u("aBc");
+    u.MakeUpper();  CHECK(u == "ABC");
+    u.MakeLower();  CHECK(u == "abc");
+    CString rv("abc");
+    rv.MakeReverse(); CHECK(rv == "cba");
+    CString rv0;
+    rv0.MakeReverse(); CHECK(rv0.IsEmpty());    // empty-safe
+
+    // Trim.
+    CString tr("  hi \t\n");  tr.Trim();       CHECK(tr == "hi");
+    CString trl("   x");      trl.TrimLeft();  CHECK(trl == "x");
+    CString trr("x   ");      trr.TrimRight(); CHECK(trr == "x");
+    CString tall("   \t");    tall.Trim();     CHECK(tall.IsEmpty());
+    CString tempty;           tempty.Trim();   CHECK(tempty.IsEmpty());
+    CString tmid("a b");      tmid.Trim();     CHECK(tmid == "a b");
+
+    // Replace / Remove.
+    CString rp("a-b-a");
+    CHECK_EQ(rp.Replace('a', 'X'), 2);
+    CHECK(rp == "X-b-X");
+    CHECK_EQ(rp.Replace('q', 'z'), 0);
+    CString rp2("aa.bb.aa");
+    CHECK_EQ(rp2.Replace("aa", "c"), 2);
+    CHECK(rp2 == "c.bb.c");
+    CHECK_EQ(rp2.Replace("zz", "q"), 0);
+    CString rp3("aaa");
+    CHECK_EQ(rp3.Replace("aa", "b"), 1);        // non-overlapping
+    CHECK(rp3 == "ba");
+    CString rm("a.b.c");
+    CHECK_EQ(rm.Remove('.'), 2);
+    CHECK(rm == "abc");
+    CHECK_EQ(rm.Remove('x'), 0);
+
+    // Find / ReverseFind.
+    CString fnd("a.b.c.b");
+    CHECK_EQ(fnd.Find('.'), 1);
+    CHECK_EQ(fnd.Find('.', 2), 3);
+    CHECK_EQ(fnd.Find('.', 4), 5);
+    CHECK_EQ(fnd.Find('.', 6), -1);             // past last
+    CHECK_EQ(fnd.Find('z'), -1);
+    CHECK_EQ(fnd.ReverseFind('.'), 5);
+    CHECK_EQ(fnd.ReverseFind('z'), -1);
+    CHECK_EQ(fnd.Find("b.c"), 2);               // "a.b.c.b": match at 2
+    CHECK_EQ(fnd.Find("b.c", 4), -1);
+    CHECK_EQ(fnd.Find("zz"), -1);
+    CHECK_EQ(CString("").Find('x'), -1);
+
+    // GetBuffer/ReleaseBuffer - grow then publish.
+    CString gb("hi");
+    char* bp = gb.GetBuffer(16);
+    strcpy(bp, "changed");
+    gb.ReleaseBuffer();
+    CHECK(gb == "changed");
+    CString gb2("hi");
+    gb2.GetBuffer();                            // no-grow path
+    CHECK(gb2 == "hi");
+    CString gb3("abc");
+    char* bp3 = gb3.GetBuffer(8);
+    bp3[0] = 'Z';
+    gb3.ReleaseBuffer(1);                       // explicit new length
+    CHECK(gb3 == "Z");
+
+    // Part/PartCount/PartBegin - comma-split helpers.
+    CString p1("a,b,c");
+    CHECK_EQ(p1.PartCount(','), 3);
+    CHECK(p1.Part(',', 0) == "a");
+    CHECK(p1.Part(',', 1) == "b");
+    CHECK(p1.Part(',', 2) == "c");
+    CHECK(p1.Part(',', 3).IsEmpty());           // out of range
+    CHECK_EQ(p1.PartBegin(',', 0), 0);
+    CHECK_EQ(p1.PartBegin(',', 1), 2);
+    CHECK_EQ(p1.PartBegin(',', 2), 4);
+    CHECK_EQ(p1.PartBegin(',', 3), -1);
+    CHECK_EQ(CString("").PartCount(','), 0);
+    CHECK_EQ(CString("abc").PartCount(','), 1); // no delimiter
+    CString p2("a,");
+    CHECK_EQ(p2.PartCount(','), 2);
+    CHECK(p2.Part(',', 1).IsEmpty());           // trailing empty part
+    CString p3(",a");
+    CHECK(p3.Part(',', 0).IsEmpty());           // leading empty part
+    CHECK(p3.Part(',', 1) == "a");
+
+    // Escape/UnEscape round-trip + malformed input passes through.
+    CString es("a b&c~d");
+    es.Escape();
+    CHECK(es == "a%20b%26c~d");
+    es.UnEscape();
+    CHECK(es == "a b&c~d");
+    CString e41("%41");   e41.UnEscape();   CHECK(e41 == "A");
+    CString e25("100%25"); e25.UnEscape();  CHECK(e25 == "100%");
+    CString b1("%2G");    b1.UnEscape();    CHECK(b1 == "%2G");
+    CString b2("%zz");    b2.UnEscape();    CHECK(b2 == "%zz");
+    CString b3("%");      b3.UnEscape();    CHECK(b3 == "%");
+    CString b4("%4");     b4.UnEscape();    CHECK(b4 == "%4");
+    CString b5("%%41");   b5.UnEscape();    CHECK(b5 == "%A");
+    CString b6("a%b");    b6.UnEscape();    CHECK(b6 == "a%b");
+
+    // Format + CSprintf (CString args are unwrapped to const char*).
+    CString fm;
+    fm.Format("%d-%s", 7, "x");
+    CHECK(fm == "7-x");
+    CString sp = CSprintf("%s-%d", CString("x"), 5);
+    CHECK(sp == "x-5");
+    CString sp2 = CSprintf("%03d|%s", 7, "ab");
+    CHECK(sp2 == "007|ab");
+}
+
+//------------------------------------------------------------------------------
+// BIStream/BOStream - binary file streams where << and >> are remapped
+// to raw read/write (used by the savegame formats). char* transfers use
+// strlen, so a read needs a preloaded buffer of the right length.
+//------------------------------------------------------------------------------
+static void test_bstream()
+{
+    static char fn[] = "/tmp/migbstream.bin";
+
+    {
+        BOStream o(fn);
+        SLong a = -12345;
+        UWord w = 0xBEEF;
+        char c = 'Q';
+        o << a << w << c;
+        o << "PAYLOAD";                          // strlen bytes, no NUL
+        short arr[3] = {1, -2, 3};
+        o.write(arr, 3);                         // element count
+        UByte ub[4] = {9, 8, 7, 6};
+        o.write(ub, 4);
+    }
+
+    {
+        BIStream i(fn);
+        CHECK(i.is_open());
+        SLong a = 0; UWord w = 0; char c = 0;
+        i >> a >> w >> c;
+        CHECK_EQ(a, -12345);
+        CHECK_EQ(w, 0xBEEF);
+        CHECK_EQ(c, 'Q');
+
+        // >> (char*) reads strlen(preloaded) bytes.
+        char buf[8] = "1234567";                 // 7-char preload
+        i >> buf;
+        CHECK_EQ(strcmp(buf, "PAYLOAD"), 0);
+
+        short arr[3] = {0, 0, 0};
+        i.read(arr, 3);                          // reads 3*sizeof(short)
+        CHECK_EQ(arr[0], 1);
+        CHECK_EQ(arr[1], -2);
+        CHECK_EQ(arr[2], 3);
+
+        UByte ub[4] = {0, 0, 0, 0};
+        i.read(ub, 4);                           // raw byte count
+        CHECK(ub[0] == 9 && ub[3] == 6);
+
+        // Reading past EOF sets fail.
+        char extra = 0;
+        i >> extra;
+        CHECK(i.fail());
+    }
+
+    // Missing file -> stream not open.
+    {
+        BIStream missing("/tmp/migbstream-absent.bin");
+        CHECK(!missing.is_open());
+    }
+
+    // BSTREAM's own DeleteFile(char*) -> Bool TRUE on success.
+    CHECK(DeleteFile(fn) == TRUE);
+    CHECK(DeleteFile(fn) == FALSE);              // already gone
+}
+
 int main()
 {
     test_type_layout();
@@ -4038,6 +4471,11 @@ int main()
     test_bitcount_macros();
     test_matrix_int();
     test_malloc_wrappers();
+    test_cbuffer();
+    test_angles();
+    test_bitfield();
+    test_cstring();
+    test_bstream();
 
     test_win32_events();
     test_win32_semaphore();

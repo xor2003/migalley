@@ -139,7 +139,14 @@ public:
         return CString(s.c_str());
     }
     CString Mid(int first) const { return Mid(first, GetLength() - first); }
-    CString Left(int count) const { return Mid(0, count); }
+    CString Left(int count) const {
+        // MFC clamps nCount to [0,len]; the Mid() fallback treated a
+        // negative count as "rest of string", returning the whole thing.
+        int len = GetLength();
+        if (count < 0) count = 0;
+        if (count > len) count = len;
+        return Mid(0, count);
+    }
     CString Right(int count) const {
         int len = GetLength();
         if (count > len) count = len;
@@ -165,8 +172,8 @@ public:
     }
     void TrimRight() {
         int len = GetLength();
-        char* p = m_pchData + len - 1;
-        while (p >= m_pchData && isspace((unsigned char)*p)) *p-- = '\0';
+        while (len > 0 && isspace((unsigned char)m_pchData[len - 1]))
+            m_pchData[--len] = '\0';
     }
     void Trim() { TrimLeft(); TrimRight(); }
 
@@ -303,8 +310,13 @@ public:
         std::string out;
         std::string in = m_pchData;
         for (size_t i = 0; i < in.size(); ++i) {
-            if (in[i] == '%' && i + 2 < in.size()) {
-                unsigned int val;
+            // Both chars after % must be hex. "%x" sscanf alone would
+            // parse "%4G" as 4 (eating the G) and "%GG" left val
+            // uninitialised — a garbage byte. Non-escapes pass through.
+            if (in[i] == '%' && i + 2 < in.size()
+                    && isxdigit((unsigned char)in[i + 1])
+                    && isxdigit((unsigned char)in[i + 2])) {
+                unsigned int val = 0;
                 sscanf(in.substr(i+1, 2).c_str(), "%x", &val);
                 out.push_back(static_cast<char>(val));
                 i += 2;
