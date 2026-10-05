@@ -253,7 +253,7 @@ Curve::Curve (const char* aircraftname,
 Curve::~Curve ()
 {
 	if (CurveData != NULL)
-		delete CurveData;
+		delete[] CurveData;
 
 	List.Detach (this);
 
@@ -304,7 +304,7 @@ FP Curve::GetValue (FP index)
 			i2 = CurveData[c2].index;
 			if( (index < i2) || (index >= i1) )
 			{
-				if(index > i1) index -= DeltaIndex;
+				if(index >= i1) index -= DeltaIndex;
 				i1 -= DeltaIndex;
 				break;
 			}
@@ -314,24 +314,20 @@ FP Curve::GetValue (FP index)
 		{
 			for(c2 = 1; c2 < cPoints; c2++)
 				if(index < CurveData[c2].index)
-				{
-					c1 = c2 - 1;
-					i1 = CurveData[c1].index;
-					i2 = CurveData[c2].index;
 					break;
-				}
+			if (c2 >= cPoints) c2 = cPoints - 1;
+			c1 = c2 - 1;
 		}
 		else
 		{
 			for(c1 = cPoints - 2; c1 >= 0; c1--)
 				if(index > CurveData[c1].index)
-				{
-					c2 = c1 + 1;
-					i1 = CurveData[c1].index;
-					i2 = CurveData[c2].index;
 					break;
-				}
+			if (c1 < 0) c1 = 0;
+			c2 = c1 + 1;
 		}
+		i1 = CurveData[c1].index;
+		i2 = CurveData[c2].index;
 		break;
 	}	
 	FP v1 = CurveData[c1].value;
@@ -447,23 +443,26 @@ Bool Curve::GetClIndex (FP value, FP& result)
 	{
 		if (pPoint->value > OldValue) break;
 		OldValue = pPoint->value;
+		if (pPoint == CurveData) break;
 		pPoint--;
 	}
 
 	PCURVEPNT Pnt0, Pnt1;
 	Pnt0 = pPoint + 1;
 
-	for(;;)
+	ULong steps;
+	for(steps=0; steps<=cPoints; steps++)
 	{
 		if(Pnt0 >= (CurveData + cPoints - 1) ) Pnt0 = CurveData;
 		Pnt1 = Pnt0 + 1;
 		if(Pnt1 >= (CurveData + cPoints - 1) ) Pnt1 = CurveData;
-	
+
 		if(Pnt1->value < Pnt0->value) return FALSE;	//Stalls before reaching desired CL
 		if( (value > Pnt0->value) && (value < Pnt1->value) ) break;
 
 		Pnt0++;
 	}
+	if (steps > cPoints) return FALSE;	//cycled all points, no rising fit
 
 	FP Index0 = Pnt0->index;
 	FP Index1 = Pnt1->index;

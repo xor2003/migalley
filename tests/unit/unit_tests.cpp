@@ -67,6 +67,7 @@
 #include "ANIMPTR.H"
 #include "FTOI.H"
 #include "MODVEC.H"
+#include "CURVES.H"
 #include "MYMATH.H"
 #include "WIN32_COMPAT.H"
 #include "FILES.H"
@@ -2296,6 +2297,243 @@ static void test_modvec_full()
     CHECK_FEQ(mv_CalcAngle(-1, 0), (FP)3.1415927);
     CHECK_FEQ(mv_CalcAngle(0, -1), (FP)4.7123890);
     CHECK_FEQ(mv_CalcAngle(1, 1), (FP)0.7853982);
+}
+
+//------------------------------------------------------------------------------
+// MODVEC residual coverage: orientation helpers (NullOri/CopyOri, CPrdX/Y/Z
+// basis completion, RotOri*Vec in-place axis rotation), TnsAxs (the
+// transpose of TnsPnt), the FCRDlong overloads, the rotational-rate
+// conversions, and CalcAngle's eight interior octants.
+//------------------------------------------------------------------------------
+static void test_modvec2()
+{
+    // NullOri/CopyOri: all nine fields.
+    FORI ori;
+    NullOri(ori);
+    CHECK_FEQ(ori.x.x, 0.0); CHECK_FEQ(ori.y.y, 0.0); CHECK_FEQ(ori.z.z, 0.0);
+    FORI ident;
+    mv_SetOri(ident, 0.0, 0.0, 0.0);
+    CopyOri(ident, ori);
+    CHECK_FEQ(ori.x.x, 1.0); CHECK_FEQ(ori.y.y, 1.0); CHECK_FEQ(ori.z.z, 1.0);
+    CHECK_FEQ(ori.x.y, 0.0); CHECK_FEQ(ori.y.z, 0.0); CHECK_FEQ(ori.z.x, 0.0);
+
+    // CPrdX/Y/Z complete the third basis vector from the other two:
+    // x = y x z, y = z x x, z = x x y. On identity each must rebuild the
+    // missing axis.
+    NullOri(ori); ori.y.y = 1; ori.z.z = 1;
+    CPrdX(ori);
+    CHECK_FEQ(ori.x.x, 1.0); CHECK_FEQ(ori.x.y, 0.0); CHECK_FEQ(ori.x.z, 0.0);
+    NullOri(ori); ori.x.x = 1; ori.z.z = 1;
+    CPrdY(ori);
+    CHECK_FEQ(ori.y.x, 0.0); CHECK_FEQ(ori.y.y, 1.0); CHECK_FEQ(ori.y.z, 0.0);
+    NullOri(ori); ori.x.x = 1; ori.y.y = 1;
+    CPrdZ(ori);
+    CHECK_FEQ(ori.z.x, 0.0); CHECK_FEQ(ori.z.y, 0.0); CHECK_FEQ(ori.z.z, 1.0);
+
+    // RotOri*Vec rotate the two non-named columns: X->(z'=y, y'=-z),
+    // Y->(x'=z, z'=-x), Z->(y'=x, x'=-y) at +90deg on identity. The named
+    // column is untouched. ang==0 early-returns without change.
+    CopyOri(ident, ori);
+    RotOriXVec(ori, 0.0f);
+    CHECK_FEQ(ori.y.y, 1.0); CHECK_FEQ(ori.z.z, 1.0);   // unchanged
+    RotOriXVec(ori, (FP)F1PIE2);
+    CHECK_NEAR(ori.z.y, 1.0, 1e-4); CHECK_NEAR(ori.y.z, -1.0, 1e-4);
+    CHECK_NEAR(ori.x.x, 1.0, 1e-4);
+    CopyOri(ident, ori);
+    RotOriYVec(ori, (FP)F1PIE2);
+    CHECK_NEAR(ori.x.z, 1.0, 1e-4); CHECK_NEAR(ori.z.x, -1.0, 1e-4);
+    CHECK_NEAR(ori.y.y, 1.0, 1e-4);
+    CopyOri(ident, ori);
+    RotOriZVec(ori, (FP)F1PIE2);
+    CHECK_NEAR(ori.y.x, 1.0, 1e-4); CHECK_NEAR(ori.x.y, -1.0, 1e-4);
+    CHECK_NEAR(ori.z.z, 1.0, 1e-4);
+
+    // SetOri heading-only quarter turn: forward axis x -> +z.
+    FORI hdg;
+    mv_SetOri(hdg, 0.0, (FP)F1PIE2, 0.0);
+    CHECK_NEAR(hdg.x.x, 0.0, 1e-4); CHECK_NEAR(hdg.x.z, 1.0, 1e-4);
+    CHECK_NEAR(hdg.y.y, 1.0, 1e-4); CHECK_NEAR(hdg.z.x, -1.0, 1e-4);
+
+    // TnsAxs is the transpose of TnsPnt; for an orthonormal orientation
+    // they are inverses, so TnsPnt . TnsAxs is identity on any vector.
+    FORI o2;
+    mv_SetOri(o2, 0.3f, 0.7f, -0.2f);
+    FCRD v = {5.0f, -3.0f, 2.0f}, t1, t2;
+    TnsAxs(v, t1, o2);
+    mv_TnsPnt(t1, t2, o2);
+    CHECK_NEAR(t2.x, 5.0, 1e-4); CHECK_NEAR(t2.y, -3.0, 1e-4);
+    CHECK_NEAR(t2.z, 2.0, 1e-4);
+    // And through the identity orientation TnsAxs passes the vector.
+    TnsAxs(v, t1, ident);
+    CHECK_NEAR(t1.x, 5.0, 1e-6); CHECK_NEAR(t1.y, -3.0, 1e-6);
+    CHECK_NEAR(t1.z, 2.0, 1e-6);
+
+    // FCRDlong (double) overloads.
+    FCRDlong la = {1.0, 2.0, 3.0}, lb = {4.0, 5.0, 6.0}, lc = {9.9, 9.9, 9.9};
+    NullVec(lc);
+    CHECK(lc.x == 0.0 && lc.y == 0.0 && lc.z == 0.0);
+    AddVec(lc, la, lb);
+    CHECK(lc.x == 5.0 && lc.y == 7.0 && lc.z == 9.0);
+    SubVec(lc, lb, la);
+    CHECK(lc.x == 3.0 && lc.y == 3.0 && lc.z == 3.0);
+
+    // Rotational-rate conversions. 6000rpm = 2pi rad/s (the scale factor
+    // is rpm * 2pi / 6000). RadPerCSec2RowanPerMin(1.0) = 955*65536 ->
+    // lands exactly on the 16-bit wrap boundary and yields 0.
+    CHECK_NEAR(Rpm2RadsPerCSec(6000.0f), 6.283185307, 1e-4);
+    CHECK_NEAR(Rpm2RadsPerCSec(0.0f), 0.0, 1e-9);
+    CHECK_EQ(RadPerCSec2RowanPerMin(1.0f), 0);
+    CHECK_EQ(RadPerCSec2DegsPerMin(1.0f), 16120);   // 343800 & 0xFFFF
+    CHECK_EQ(RadPerCSec2DegsPerMin(0.0f), 0);
+
+    // CalcAngle interior octants: atan(0.5) = 0.4636476 swept through all
+    // eight branches plus the (0,0) edge which collapses into octant 8.
+    const FP a5 = 0.4636476f;
+    CHECK_NEAR(mv_CalcAngle(1.0f, 0.5f), a5, 1e-5);             // oct 8
+    CHECK_NEAR(mv_CalcAngle(0.5f, 1.0f), F1PIE2 - a5, 1e-5);    // oct 7
+    CHECK_NEAR(mv_CalcAngle(-0.5f, 1.0f), F1PIE2 + a5, 1e-5);   // oct 6
+    CHECK_NEAR(mv_CalcAngle(-1.0f, 0.5f), FPIE - a5, 1e-5);     // oct 5
+    CHECK_NEAR(mv_CalcAngle(-1.0f, -0.5f), FPIE + a5, 1e-5);    // oct 4
+    CHECK_NEAR(mv_CalcAngle(-0.5f, -1.0f), F3PIE2 - a5, 1e-5);  // oct 3
+    CHECK_NEAR(mv_CalcAngle(0.5f, -1.0f), F3PIE2 + a5, 1e-5);   // oct 2
+    CHECK_NEAR(mv_CalcAngle(1.0f, -0.5f), F2PIE - a5, 1e-5);    // oct 1
+    CHECK_NEAR(mv_CalcAngle(0.0f, 0.0f), 0.0, 1e-9);            // (0,0) edge
+}
+
+//------------------------------------------------------------------------------
+// CURVES.CPP piecewise-linear curve lookups. GetValue interpolates with
+// IDT_LIMIT clamp or IDT_WRAP modular indices; GetIndex inverts (with a
+// >PI index normalisation quirk); GetClIndex walks back past the stall
+// peak then scans rising segments; GetMaxValue picks the last maximum.
+//------------------------------------------------------------------------------
+static void test_curves()
+{
+    // --- GetValue / GetIndex on an IDT_LIMIT ramp ---
+    CURVEPNT ramp[3] = {{0, 0}, {5, 50}, {10, 100}};
+    {
+        Curve lim("TESTAC", "LIMC", 3, 0.0f, 10.0f, IDT_LIMIT, ramp);
+        CHECK_FEQ(lim.GetValue(0), 0.0f);
+        CHECK_FEQ(lim.GetValue(5), 50.0f);
+        CHECK_FEQ(lim.GetValue(10), 100.0f);
+        CHECK_FEQ(lim.GetValue(2.5f), 25.0f);
+        CHECK_FEQ(lim.GetValue(7.5f), 75.0f);
+        CHECK_FEQ(lim.GetValue(-3.0f), 0.0f);        // clamps to MinIndex
+        CHECK_FEQ(lim.GetValue(13.0f), 100.0f);      // clamps to MaxIndex
+
+        FP r = -99;
+        // Quirk pinned: EVERY bracket index > PI is normalised by -2PI
+        // before interpolating (written for angle-domain curves, but it
+        // fires on these degree-range indices too: 5 -> -1.2832,
+        // 10 -> +3.7168). Results land in -PI..PI units, not the
+        // original index domain.
+        CHECK(lim.GetIndex(25.0f, r) != BOOL_FALSE);
+        CHECK_NEAR(r, -0.641593, 1e-4);              // 2.5-domain shifted
+        CHECK(lim.GetIndex(50.0f, r) != BOOL_FALSE);
+        CHECK_NEAR(r, -1.28319, 1e-4);               // 5 - 2PI
+        CHECK(lim.GetIndex(0.0f, r) != BOOL_FALSE);  // exact min value fits
+        CHECK_NEAR(r, 0.0, 1e-6);
+        // Pinned: value exactly AT the max never fits (p2->value > value
+        // is strict) -> FALSE; below min or above max also FALSE.
+        CHECK(lim.GetIndex(100.0f, r) == BOOL_FALSE);
+        CHECK(lim.GetIndex(-1.0f, r) == BOOL_FALSE);
+        CHECK(lim.GetIndex(150.0f, r) == BOOL_FALSE);
+
+        // FindCurve hits by exact name, and by prefix (strncmp is bounded
+        // by the QUERY length - "LI" matches "LIMC").
+        CHECK(_CurveRsc.FindCurve("TESTAC", "LIMC") == &lim);
+        CHECK(_CurveRsc.FindCurve("TESTAC", "LI") == &lim);
+
+        // GetMaxValue returns the LAST knot on ties.
+        FP mv = -1, mi = -1;
+        lim.GetMaxValue(mv, mi);
+        CHECK_FEQ(mv, 100.0f); CHECK_FEQ(mi, 10.0f);
+
+        // Inactive curve: GetValue 0, the index lookups FALSE.
+        lim.Active = FALSE;
+        CHECK_FEQ(lim.GetValue(5.0f), 0.0f);
+        CHECK(lim.GetIndex(50.0f, r) == BOOL_FALSE);
+        CHECK(lim.GetClIndex(50.0f, r) == BOOL_FALSE);
+        lim.Active = TRUE;
+    }
+    // lim detached at scope end - a later FindCurve must not see it.
+
+    // --- GetValue sparse-knot bracket boundaries (previously read
+    // uninitialised c1/c2/i1/i2; now clamped to the boundary segment) ---
+    {
+        // Knots end before HalfIndex: query below Half but above the last
+        // knot extrapolates the final segment.
+        CURVEPNT lo[3] = {{0, 0}, {2, 2}, {4, 4}};
+        Curve loEnd("T2", "LO", 3, 0.0f, 10.0f, IDT_LIMIT, lo);
+        CHECK_NEAR(loEnd.GetValue(4.5f), 4.5, 1e-5);
+        // Knots start after HalfIndex: query at/above Half but below the
+        // first knot extrapolates the first segment.
+        CURVEPNT hi[3] = {{6, 60}, {8, 80}, {10, 100}};
+        Curve hiStart("T2", "HI", 3, 0.0f, 10.0f, IDT_LIMIT, hi);
+        CHECK_NEAR(hiStart.GetValue(5.0f), 50.0, 1e-5);
+    }
+
+    // --- GetValue IDT_WRAP: modular index + wrap segment ---
+    {
+        // Knots {0->0, 180->1, 340->0.5} over [0,360): the wrap segment
+        // interpolates 340 -> (360+)0 between the last and first knots.
+        CURVEPNT w[3] = {{0, 0}, {180, 1}, {340, 0.5f}};
+        Curve wrp("T3", "W", 3, 0.0f, 360.0f, IDT_WRAP, w);
+        CHECK_FEQ(wrp.GetValue(0.0f), 0.0f);
+        CHECK_NEAR(wrp.GetValue(90.0f), 0.5, 1e-5);
+        CHECK_NEAR(wrp.GetValue(180.0f), 1.0, 1e-5);
+        CHECK_NEAR(wrp.GetValue(260.0f), 0.75, 1e-5);
+        // Wrap segment 340..360(+0): midpoint of the 20-index span.
+        CHECK_NEAR(wrp.GetValue(350.0f), 0.25, 1e-5);
+        // Index exactly ON the last knot returns that knot's value -
+        // the >= fix (a raw > extrapolated ~18x the segment).
+        CHECK_NEAR(wrp.GetValue(340.0f), 0.5, 1e-5);
+        // Out-of-range indices wrap into the domain.
+        CHECK_NEAR(wrp.GetValue(-10.0f), 0.25, 1e-5);   // = 350
+        CHECK_NEAR(wrp.GetValue(370.0f), 10.0f / 180.0f, 1e-5);
+        // MaxIndex itself lands back on knot 0.
+        CHECK_NEAR(wrp.GetValue(360.0f), wrp.GetValue(0.0f), 1e-6);
+    }
+
+    // --- GetIndex radian normalisation: indices > PI are shifted by -2PI
+    // before interpolating (angle-domain curves store 0..2PI) ---
+    {
+        CURVEPNT rad[2] = {{4, 0}, {5, 10}};
+        Curve rc("T4", "RAD", 2, 4.0f, 5.0f, IDT_LIMIT, rad);
+        FP r = 0;
+        CHECK(rc.GetIndex(5.0f, r) != BOOL_FALSE);
+        CHECK_NEAR(r, 4.0 - 6.283185307 + 0.5, 1e-4);   // -1.7832
+    }
+
+    // --- GetClIndex: scans rising segments only, stops at the stall ---
+    {
+        CURVEPNT cl[4] = {{0, 0}, {5, 10}, {10, 15}, {15, 8}};
+        Curve clc("T5", "CL", 4, 0.0f, 15.0f, IDT_LIMIT, cl);
+        FP r = -99;
+        // Same >PI index normalisation as GetIndex: results are in the
+        // shifted domain (5 -> -1.2832, 10 -> +3.7168).
+        CHECK(clc.GetClIndex(5.0f, r) != BOOL_FALSE);    // seg (0,5)
+        CHECK_NEAR(r, -0.641593, 1e-4);
+        CHECK(clc.GetClIndex(12.0f, r) != BOOL_FALSE);   // seg (5,10)
+        CHECK_NEAR(r, 0.716815, 1e-4);
+        // Value in the stalled tail / above the peak -> FALSE.
+        CHECK(clc.GetClIndex(20.0f, r) == BOOL_FALSE);
+        // Exactly the peak value is not "<" any bracket -> FALSE.
+        CHECK(clc.GetClIndex(15.0f, r) == BOOL_FALSE);
+        // Flat curve: backward walk hits the base, forward scan cycles
+        // without a rising fit -> bounded FALSE (used to read OOB/loop).
+        CURVEPNT flat[3] = {{0, 5}, {5, 5}, {10, 5}};
+        Curve flc("T6", "FL", 3, 0.0f, 10.0f, IDT_LIMIT, flat);
+        CHECK(flc.GetClIndex(5.0f, r) == BOOL_FALSE);
+    }
+
+    // --- GetMaxValue: >= comparison keeps the LAST maximum ---
+    {
+        CURVEPNT mx[3] = {{0, 10}, {5, 30}, {10, 30}};
+        Curve mxc("T7", "MX", 3, 0.0f, 10.0f, IDT_LIMIT, mx);
+        FP mv = 0, mi = 0;
+        mxc.GetMaxValue(mv, mi);
+        CHECK_FEQ(mv, 30.0f); CHECK_FEQ(mi, 10.0f);
+    }
 }
 
 //------------------------------------------------------------------------------
@@ -4832,6 +5070,8 @@ int main()
     test_stretch_writers();
     test_delta_mirror_writers();
     test_modvec_full();
+    test_modvec2();
+    test_curves();
     test_dotimerphase();
     test_dofadeenvelope();
     test_donianimverts();
