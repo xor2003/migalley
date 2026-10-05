@@ -67,15 +67,18 @@
 #include "ANIMPTR.H"
 #include "FTOI.H"
 #include "MODVEC.H"
-#include "DISPLAY.H"
 #include "MYMATH.H"
 #include "WIN32_COMPAT.H"
 #include "FILES.H"
 #include <sys/stat.h>
 // dirfakeblock/direntries are fileman-private; access control is
-// compile-time only, so expose them for this TU alone.
+// compile-time only, so expose them for this TU alone. Same for
+// Graphic's static IFF readers (SkipRow/SearchIFFHunk*/Read*) and
+// LBM's hdr/body/pal members.
 #define private public
 #include "FILEMAN.H"
+#include "DISPLAY.H"
+#include "LBM.H"
 #undef private
 #include "BITCOUNT.H"
 #include "ANIMDATA.H"
@@ -4399,6 +4402,201 @@ static void test_bstream()
     CHECK(DeleteFile(fn) == FALSE);              // already gone
 }
 
+//-------------------- LBM / IFF helpers (Graphics/LBM.CPP) --------------------
+// LBM::MakeBody encodes each row as PackBits-style chunks: header byte
+// >0x80 = run of 1-(SByte)b copies of the next byte, <0x80 = literal of
+// 1+b bytes, 0x80 = transparent run (SkipRow-only; the encoder never
+// emits it). Decode here mirrors Graphic::SkipRow's accounting.
+
+// Free functions in LBM.CPP with no header declaration.
+extern void Put68KWord(FILE* fp, UWord size);
+extern void Put68KLong(FILE* fp, int size);
+
+static const UByte* lbm_decode_row(const UByte* c, UByte* out, SLong width)
+{
+    SLong got = 0;
+    while (got < width) {
+        UByte ub = *c++;
+        if (ub > 0x80) {
+            SLong n = 1 - (SByte)ub;
+            UByte v = *c++;
+            for (SLong i = 0; i < n; i++) out[got++] = v;
+        } else if (ub < 0x80) {
+            SLong n = 1 + (SByte)ub;
+            for (SLong i = 0; i < n; i++) out[got++] = *c++;
+        } else {
+            SLong n = 1 + *c++;                  // transparent run
+            got += n;
+        }
+    }
+    return c;
+}
+
+static void lbm_check_roundtrip(const UByte* pixels, SLong w, SLong h, SLong stride)
+{
+    LBM l;
+    l.MakeHead((short)w, (short)h);
+    ULong encLen = l.MakeBody((LogicalPtr)pixels, (int)stride);
+    CHECK(encLen > 0);
+    CHECK(encLen <= (ULong)w * (ULong)h * 2);    // body buffer is w*h*2
+
+    // Structural: SkipRow must consume exactly width pixels per row and
+    // land exactly on encLen — a run leaking into the next row shows up
+    // as a stride error here.
+    const UByte* p = l.body;
+    for (SLong y = 0; y < h; y++) {
+        const UByte* next = Graphic::SkipRow((UByte*)p, (SWord)w);
+        CHECK(next > p);
+        p = next;
+    }
+    CHECK_EQ((SLong)(p - l.body), (SLong)encLen);
+
+    // Pixel-exact decode of every row.
+    static UByte dec[128 * 128];
+    CHECK(w * h <= (SLong)sizeof dec);
+    p = l.body;
+    for (SLong y = 0; y < h; y++)
+        p = lbm_decode_row(p, &dec[(size_t)y * w], w);
+    for (SLong y = 0; y < h; y++)
+        CHECK(memcmp(&dec[(size_t)y * w], &pixels[(size_t)y * stride], w) == 0);
+}
+
+static void test_lbm()
+{
+    // 1) Uniform image: each row is a single max-length run chain
+    //    (127-run cap + remainder).
+    {
+        static UByte img[8 * 8];
+        memset(img, 0x5A, sizeof img);
+        lbm_check_roundtrip(img, 8, 8, 8);
+
+        LBM l; l.MakeHead(8, 8);
+        ULong n = l.MakeBody(img, 8);
+        CHECK_EQ(n, (ULong)(8 * 2));             // 8 rows * (hdr + value)
+        CHECK_EQ(l.body[0], (UByte)249);         // run of 8: 257-8
+        CHECK_EQ(l.body[1], (UByte)0x5A);
+    }
+
+    // 2) Alternating bytes: no runs at all — worst-case literal stream.
+    {
+        static UByte img[16 * 4];
+        for (int i = 0; i < (int)sizeof img; i++) img[i] = (UByte)(i & 1);
+        lbm_check_roundtrip(img, 16, 4, 16);
+    }
+
+    // 3) Row-boundary trap: last byte of a row equals the first byte of
+    //    the next row. The old code probed [x+1] at x==width-1 — reading
+    //    the next row (harmless mid-buffer, OOB on the last row). Encode
+    //    must not start a cross-row run.
+    {
+        static UByte img[4 * 3] = {
+            9, 9, 9, 7,     // row0 ends 7
+            7, 2, 2, 2,     // row1 starts 7 — same byte, NOT same row
+            5, 5, 5, 7,     // row2 ends 7 — [x+1] is past the buffer
+        };
+        lbm_check_roundtrip(img, 4, 3, 4);
+    }
+
+    // 4) Runs wider than the 127 cap split into chained run blocks.
+    {
+        static UByte img[130 * 2];
+        memset(img, 0x11, sizeof img);
+        lbm_check_roundtrip(img, 130, 2, 130);
+
+        LBM l; l.MakeHead(130, 1);
+        ULong n = l.MakeBody(img, 130);
+        // row = 127-run + 3-run -> 4 bytes
+        CHECK_EQ(n, (ULong)4);
+        CHECK_EQ(l.body[0], (UByte)130);         // 257-127
+        CHECK_EQ(l.body[2], (UByte)254);         // 257-3
+        CHECK_EQ(l.body[3], (UByte)0x11);
+    }
+
+    // 5) Degenerate 1xN: no adjacent pair ever — every pixel a 1-literal.
+    {
+        static UByte img[1 * 5] = {3, 3, 3, 3, 3};
+        lbm_check_roundtrip(img, 1, 5, 1);
+
+        LBM l; l.MakeHead(1, 5);
+        ULong n = l.MakeBody(img, 5);
+        CHECK_EQ(n, (ULong)(5 * 2));
+        CHECK_EQ(l.body[0], (UByte)0);           // literal of 1
+        CHECK_EQ(l.body[1], (UByte)3);
+    }
+
+    // 6) Stride > width: row data must come from the strided source,
+    //    not packed contiguity.
+    {
+        static UByte img[6 * 3];
+        memset(img, 0xFF, sizeof img);           // padding bytes
+        for (int y = 0; y < 3; y++)
+            memset(&img[y * 6], (UByte)(0x20 + y), 4);
+        lbm_check_roundtrip(img, 4, 3, 6);
+    }
+
+    // 7) Big-endian field readers on a synthetic buffer.
+    {
+        UByte buf[] = {0x12, 0x34, 0xAB, 0xCD, 0xEF, 0x01};
+        SWord w = 0; SLong v = 0;
+        UByte* p = Graphic::ReadWord(buf, w);
+        CHECK_EQ(w, (SWord)0x1234);
+        CHECK(p == buf + 2);
+        p = Graphic::ReadLong(p, v);
+        CHECK_EQ(v, (SLong)0xABCDEF01);
+        CHECK(p == buf + 6);
+    }
+
+    // 8) IFF chunk walkers: FORM > CMAP + BMHD + BODY. Chunk stride is
+    //    len+8 with no even-padding — pinned, that is the shipped quirk.
+    {
+        static UByte iff[] = {
+            'F','O','R','M', 0, 0, 0, 38,
+            'P','B','M',' ',
+            'C','M','A','P', 0, 0, 0, 6, 1, 2, 3, 4, 5, 6,
+            'B','M','H','D', 0, 0, 0, 4, 9, 9, 9, 9,
+            'B','O','D','Y', 0, 0, 0, 2, 7, 7,
+        };
+        UByte* bmhd = Graphic::SearchIFFHunk((UByte*)"BMHD", iff);
+        CHECK(bmhd == iff + 34);                 // 8+4(type)+12+8
+        CHECK_EQ(bmhd[0], (UByte)9);
+        CHECK(Graphic::SearchIFFHunk((UByte*)"BODY", iff) == iff + 46);
+        CHECK(Graphic::SearchIFFHunk((UByte*)"XXXX", iff) == 0);
+        // Not a FORM buffer at all -> fail-safe null.
+        CHECK(Graphic::SearchIFFHunk((UByte*)"BMHD", (UByte*)"NOPE") == 0);
+
+        IFFHunkSearch s[2];
+        s[0].searchVal = *(ULong*)"CMAP"; s[0].hunkPtr = nullptr;
+        s[1].searchVal = *(ULong*)"BMHD"; s[1].hunkPtr = nullptr;
+        CHECK_EQ(Graphic::SearchIFFHunks(2, s, iff), (SLong)2);
+        CHECK(s[0].hunkPtr == iff + 20);         // CMAP data
+        CHECK(s[1].hunkPtr == iff + 34);         // BMHD data
+
+        // Absent hunk -> found count stops short.
+        s[0].hunkPtr = nullptr; s[1].hunkPtr = nullptr;
+        s[1].searchVal = *(ULong*)"NOPE";
+        CHECK_EQ(Graphic::SearchIFFHunks(2, s, iff), (SLong)1);
+        CHECK(s[0].hunkPtr == iff + 20);
+        CHECK(s[1].hunkPtr == nullptr);
+    }
+
+    // 9) Put68KWord/Long write big-endian to the file.
+    {
+        FILE* f = tmpfile();
+        CHECK(f != nullptr);
+        if (!f) return;
+        Put68KWord(f, 0xABCD);
+        Put68KLong(f, 0x01020304);
+        rewind(f);
+        CHECK_EQ(fgetc(f), 0xAB);
+        CHECK_EQ(fgetc(f), 0xCD);
+        CHECK_EQ(fgetc(f), 0x01);
+        CHECK_EQ(fgetc(f), 0x02);
+        CHECK_EQ(fgetc(f), 0x03);
+        CHECK_EQ(fgetc(f), 0x04);
+        fclose(f);
+    }
+}
+
 int main()
 {
     test_type_layout();
@@ -4459,6 +4657,7 @@ int main()
     test_dolighttimer();
     test_doanimation();
     test_deadstream_iterator();
+    test_lbm();
 
     test_mathlib_trig();
     test_mathlib_distance();

@@ -169,11 +169,16 @@ ULong LBM::MakeBody(LogicalPtr logicalscreenptr,int	BytesPerScanLine)
 		x=0;
 		while (x<hdr->width)
 		{
-			if (x<hdr->width && (logicalscreenptr[x] == logicalscreenptr[x+1]))
+			//RERUN bounds before the read: at x==width-1 the [x+1] probe
+			//touched the next row (or past the buffer on the last row);
+			//likewise the run loop read [x+k] before checking x+k<width.
+			//Semantics unchanged — a lone trailing pixel emits as a
+			//1-byte literal either way.
+			if (x+1<hdr->width && (logicalscreenptr[x] == logicalscreenptr[x+1]))
 			{											//packable
 				k=0;
 				c=logicalscreenptr[x+k];
-				while ((logicalscreenptr[x+k]==c) && k<127 && ((x+k)<hdr->width))
+				while (((x+k)<hdr->width) && (logicalscreenptr[x+k]==c) && k<127)
 					k++;
 				body[packedlength++]=257-k;
 				body[packedlength++]=c;
@@ -351,18 +356,21 @@ UByte *Graphic::SkipRow(UByte *c, SWord length)
 	while(length>0)
 	{
 	SLong	Count;
-	char	b=*c;
+	//RERUN was `char b` — a signed char makes every run header (>=0x80)
+	//negative, so it fell into the Copy branch with a negative Count and
+	//the walk desynced. Compare as unsigned; counts keep signed math.
+	int		b=(UByte)*c;
 
 		if(b<0x080)						//Copy
 		{
-			Count = 1+(SByte)b;
+			Count = 1+b;
 			c+=Count+1;
 		}
 		else
 		{
 			if(b>0x080)					//Run
 			{
-				Count = 1-(SByte)b;
+				Count = 257-b;
 				c+=2;
 			}
 			else							//transparent
