@@ -1975,6 +1975,9 @@ typedef int* LPINT;
 #ifndef HKEY_CLASSES_ROOT
 struct HKEY__; typedef HKEY__* HKEY;
 typedef unsigned long REGSAM;
+#define VER_PLATFORM_WIN32_WINDOWS 1
+#define VER_PLATFORM_WIN32_NT      2
+
 #define HKEY_CLASSES_ROOT     ((HKEY)0x80000000)
 #define HKEY_CURRENT_USER     ((HKEY)0x80000001)
 #define HKEY_LOCAL_MACHINE    ((HKEY)0x80000002)

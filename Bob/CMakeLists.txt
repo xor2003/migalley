@@ -70,3 +70,31 @@ target_include_directories(bob_frontend PRIVATE
 )
 target_compile_options(bob_frontend PRIVATE -fpermissive)
 target_link_libraries(bob_frontend PRIVATE ProjectDefaults)
+
+# Native lib3d (T120a route C): BoB's own CLib3D compiled against the rowan
+# DX7 emulation (rowan-engine/compat/{d3dtypes,d3d,ddraw}.h). Source list is
+# the DSP/vcxproj/winelib-Makefile live set; texmgr.cpp + stdafx.cpp are not
+# in any build list (PCH stub / superseded). Renders through state-recording
+# no-ops for now — flight rendering is the later route-C render wave.
+add_library(bob_lib3d STATIC
+    ${BOB_SRC}/lib3d/lib3d.cpp
+    ${BOB_SRC}/lib3d/polyvert.cpp
+    ${BOB_SRC}/lib3d/flagsw.cpp
+    ${BOB_SRC}/lib3d/l3dguid.cpp
+    ${BOB_SRC}/lib3d/getdxver.cpp
+    ${BOB_SRC}/lib3d/alloc.c
+    ${BOB_SRC}/lib3d/radix.c
+    ${BOB_SRC}/3d/monotxt.cpp)
+# CXX-only project: the K&R .c files compile as C++ (MSVC treated them the
+# same inside the lib3d project).
+set_source_files_properties(
+    ${BOB_SRC}/lib3d/alloc.c ${BOB_SRC}/lib3d/radix.c
+    PROPERTIES LANGUAGE CXX)
+target_include_directories(bob_lib3d PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/port
+    ${BOB_OVERLAY}
+    ${CMAKE_SOURCE_DIR}/H
+    ${ROWAN_ENGINE}/compat
+)
+target_compile_options(bob_lib3d PRIVATE -fpermissive)
+target_link_libraries(bob_lib3d PRIVATE ProjectDefaults)
