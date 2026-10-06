@@ -25,6 +25,10 @@ extern CMIGApp theApp;
 // chains to CWinApp::InitInstance, so it must run here (after chdir).
 extern void LoadDialogTemplates();
 
+// Bob/port/dd_present.cpp — installs RowanDDPresentHook so DirectDraw
+// Flip/Blt presents upload the primary surface to the SDL window (T123).
+extern void BoBInstallDDPresent();
+
 #ifndef __MSVC__
 static void segv_backtrace(int sig)
 {
@@ -75,6 +79,7 @@ int main(int argc, char** argv)
 		fprintf(stderr, "bob: TTF_Init failed: %s\n", TTF_GetError());
 		return 2;
 	}
+	BoBInstallDDPresent();
 
 	if (!theApp.InitInstance())
 		return -1;

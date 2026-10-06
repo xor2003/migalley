@@ -220,6 +220,7 @@ add_test(NAME bob_lib3d_smoke COMMAND bob_lib3d_smoke)
 # ---------------------------------------------------------------------------
 add_executable(bob
     bob_main.cpp
+    port/dd_present.cpp
     ${ROWAN_ENGINE}/shell/detect.cpp
     ${ROWAN_ENGINE}/shell/manifests.cpp
     # shared support TUs mig carries inside its exe/libs — bob needs them
