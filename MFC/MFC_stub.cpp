@@ -26,6 +26,8 @@
 #include "REDTBT.H"
 #include "RTABS.H"
 #include "RRADIO.H"
+#include "RSPINBUT.H"
+#include "RJOYCFG.H"
 #include "RESOURCE.H"
 #include "MIGVIEW.H"
 
@@ -3638,8 +3640,12 @@ void ParseRCFile(const std::string& filename)
 
 void LoadDialogTemplates()
 {
-    // Try to find MIG_RC.json
-    const char* paths[] = { "MIG_RC.json", "./MIG_RC.json", "./MigAlley/MIG_RC.json" };
+    // Try to find the game's RC json — each install tree ships its own
+    // (MIG_RC.json for MiG Alley, BOB_RC.json for BoB); first match wins.
+    const char* paths[] = {
+        "MIG_RC.json", "./MIG_RC.json", "./MigAlley/MIG_RC.json",
+        "BOB_RC.json", "./BOB_RC.json", "./Bob/BOB_RC.json"
+    };
     for (const char* p : paths) {
         std::ifstream f(p);
         if (f.good()) {
@@ -3648,7 +3654,7 @@ void LoadDialogTemplates()
             return;
         }
     }
-    std::cerr << "[MFC_stub] ERROR: MIG_RC.json NOT FOUND in expected paths. Dialogs will be missing layout and captions." << std::endl;
+    std::cerr << "[MFC_stub] ERROR: RC json NOT FOUND in expected paths. Dialogs will be missing layout and captions." << std::endl;
 }
 
 BOOL CDialog::GetControlInfo(int id, CRect& rect, DWORD& style)
@@ -3928,29 +3934,40 @@ BOOL CDialog::Create(int id, CWnd* pParent)
                 ((CRStatic*)pChild)->SetFontNum(2); // RERUN: Use Font 2 for standard static text labels (e.g. UI descriptions)
             }
             else if (ctl.className == "COMBOBOX") pChild = new CRCombo();
-            else if (ctl.className == "{78918646-A917-11D1-A1F0-444553540000}") {
-                pChild = new CRButton();
-                // RERUN: Automatically enable Close/Help buttons for Title Bars (IDJ_TITLE=1001)
-                if (ctl.id == 1001) {
-                    ((CRButton*)pChild)->SetCloseButton(TRUE);
-                    ((CRButton*)pChild)->SetHelpButton(TRUE);
+            else {
+                // RERUN: Rowan OCX CLSID dispatch. The GUID's first field
+                // identifies the control family; the third field varies
+                // (11D1 = MiG Alley typelib, 11D6 = BoB typelib) and BoB's
+                // rc mixes hex case, so match the normalized prefix.
+                std::string clsid = ctl.className;
+                for (auto& ch : clsid) ch = (char)toupper((unsigned char)ch);
+                if (clsid.rfind("{78918646-", 0) == 0) {
+                    pChild = new CRButton();
+                    // RERUN: Automatically enable Close/Help buttons for Title Bars (IDJ_TITLE=1001)
+                    if (ctl.id == 1001) {
+                        ((CRButton*)pChild)->SetCloseButton(TRUE);
+                        ((CRButton*)pChild)->SetHelpButton(TRUE);
+                    }
                 }
+                else if (clsid.rfind("{C42BAC3D-", 0) == 0) {
+                    pChild = new CRStatic();
+                    // RERUN: Use Font 2 for standard static text labels in UI menus (Preferences, Quick Mission),
+                    // but keep default (0) for others (Campaign details etc) which may need smaller text.
+                    if (id == 257 || id == 266 || id == 274 || id == 271 || id == 273 || id == 261 || id == 958 || id == 287 || id == 297 || id == 298)
+                        ((CRStatic*)pChild)->SetFontNum(8);
+                    else
+                        ((CRStatic*)pChild)->SetFontNum(0);
+                }
+                else if (clsid.rfind("{737CB0C9-", 0) == 0) pChild = new CRCombo();
+                else if (clsid.rfind("{461A1FE3-", 0) == 0 || ctl.className == "7CREdtBt") pChild = new CREdtBt();
+                else if (clsid.rfind("{48814009-", 0) == 0) pChild = new CRListBox();
+                else if (clsid.rfind("{4A1E1986-", 0) == 0 || ctl.className.find("Tab") != std::string::npos) pChild = new CRTabs();
+                else if (clsid.rfind("{5363BA22-", 0) == 0) pChild = new CRRadio();
+                else if (clsid.rfind("{C3270E66-", 0) == 0) pChild = new CRSpinBut();
+                else if (clsid.rfind("{1B499F6B-", 0) == 0) pChild = new CRJoyCfg();
+                else if (clsid.rfind("{499E2BE6-", 0) == 0) pChild = new CREdit();
+                else pChild = new DlgItem();
             }
-            else if (ctl.className == "{C42BAC3D-CA3C-11D1-A1F0-444553540000}") {
-                pChild = new CRStatic();
-                // RERUN: Use Font 2 for standard static text labels in UI menus (Preferences, Quick Mission),
-                // but keep default (0) for others (Campaign details etc) which may need smaller text.
-                if (id == 257 || id == 266 || id == 274 || id == 271 || id == 273 || id == 261 || id == 958 || id == 287 || id == 297 || id == 298)
-                    ((CRStatic*)pChild)->SetFontNum(8);
-                else
-                    ((CRStatic*)pChild)->SetFontNum(0);
-            }
-            else if (ctl.className == "{737CB0C9-B42B-11D1-A1F0-444553540000}") pChild = new CRCombo();
-            else if (ctl.className == "{461A1FE3-B81B-11D1-A1F0-444553540000}" || ctl.className == "7CREdtBt") pChild = new CREdtBt();
-            else if (ctl.className == "{48814009-65AE-11D1-A1F0-444553540000}") pChild = new CRListBox();
-            else if (ctl.className == "{4A1E1986-8B31-11D1-A1F0-444553540000}" || ctl.className.find("Tab") != std::string::npos) pChild = new CRTabs();
-            else if (ctl.className == "{5363BA22-D90A-11D1-A1F0-0080C8582DE4}") pChild = new CRRadio();
-            else pChild = new DlgItem();
 
             if (pChild) {
                 CRect r(ctl.x * g_dluX, ctl.y * g_dluY, (ctl.x + ctl.cx) * g_dluX, (ctl.y + ctl.cy) * g_dluY);
