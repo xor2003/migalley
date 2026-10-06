@@ -168,7 +168,10 @@ void CREdtBt::OnPaint()
 
     // RERUN: Draw Artwork if available
     bool drawnArt = false;
-    if (m_pictureFileNum > 0) {
+    // BoB may hand icon indices through here — not FileNums — so under BoB
+    // only values that resolve to a real directory entry get opened.
+    if (m_pictureFileNum > 0 &&
+        (!g_rowanGameIsBoB || RowanFileNumSafe(m_pictureFileNum))) {
         long artNum = m_pictureFileNum;
         fileblock picture((FileNum)artNum);
         BYTE* pData = (BYTE*)getdata(picture);

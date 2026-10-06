@@ -2060,17 +2060,12 @@ inline CWnd* GetDesktopWindow()
 #define ID_VIEW_TOOLBAR         0xE800
 #define ID_VIEW_STATUS_BAR      0xE801
 
-inline CDC* BeginPaint(void* /*hwnd*/, PAINTSTRUCT* /*ps*/)
-{
-    // Return a dummy DC, just like CWnd::BeginPaint does
-    static CDC dummy;
-    return &dummy;
-}
-
-inline void EndPaint(void* /*hwnd*/, PAINTSTRUCT* /*ps*/)
-{
-    // No-op
-}
+// Global BeginPaint/EndPaint — real implementations in MFC_stub.cpp.
+// BoB's CMainFrame::OnPaint calls ::BeginPaint then never ::EndPaint;
+// the globals must behave exactly like the CWnd members (validate the
+// region, bind a real DC, drive the present path).
+CDC* BeginPaint(void* hwnd, PAINTSTRUCT* ps);
+void EndPaint(void* hwnd, PAINTSTRUCT* ps);
 
 // Win32/MFC window-positioning pseudo-handles
 extern CWnd wndTop;
@@ -2637,3 +2632,14 @@ inline HINSTANCE AfxGetInstanceHandle()
 // loader owns the real handle. Keep a process slot so Set/Get agree.
 HINSTANCE AfxGetResourceHandle();
 void AfxSetResourceHandle(HINSTANCE);
+
+// True when the active game is Battle of Britain (set by the RC-json
+// loader in MFC_stub.cpp). Shared widget code uses this to skip MiG Alley
+// specific artwork behaviour.
+extern bool g_rowanGameIsBoB;
+
+// True when `fnum` resolves to a real file directory entry — safe to hand
+// to fileblock/opennumberedfile. BoB passes icon-table indices through
+// fields that MiG Alley treats as FileNums, and an out-of-range FileNum is
+// fatal inside fileman, so BoB-facing paint code must filter first.
+bool RowanFileNumSafe(long fnum);

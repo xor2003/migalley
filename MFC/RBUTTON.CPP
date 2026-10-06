@@ -76,6 +76,8 @@ questions about this file may be asked at http://www.simhq.com/
 #include "RTOOLBAR.H" //RERUN for CRToolBar check
 #include "FILEMAN.H" //RERUN for fileblock
 
+extern bool g_rowanGameIsBoB;
+
 /////////////////////////////////////////////////////////////////////////////
 // CRButton
 
@@ -265,22 +267,27 @@ void CRButton::OnPaint()
 	FileNum artnum = FIL_NULL;
 
 	// RERUN HACK START due to json issues to be fixed
-	if (GetDlgCtrlID() == 7)
-		m_iIconEnum = FIL_ICON_ZOOMIN;
-	if ((GetDlgCtrlID() == IDC_THUMBNAIL) && rect.Height() > 30)
+	// These filenums are MiG Alley artwork ids; BoB dialogs reuse the same
+	// control ids for other purposes, so skip them entirely under BoB.
+	if (!g_rowanGameIsBoB)
 	{
-		m_iIconEnum = FIL_ICON_THUMBNAIL;
-		std::cout << "[CRButton::OnPaint] HACK Setting thumbnail button icon for control ID " << GetDlgCtrlID() << 
-		" with rect " << rect.Width() << "x" << rect.Height() << " at (" << rect.left << "," << rect.top << ")" << std::endl;
-	}
-	// RERUN TODO: Add special handling for Title Bar text controls (e.g. IDC_TITLE, IDC_DATE) to use FIL_TITLEB_BMP if no specific artnum is assigned
-	if (GetDlgCtrlID() == IDJ_TITLE)
-	{
-		m_iIconEnum = FIL_TITLEB_BMP; //RERUN hack: Set icon enum to title bar bitmap
-	}
-	if (GetDlgCtrlID() == IDC_FRAG2)
-	{
-		m_iIconEnum = FIL_ICON_FRAG; //RERUN hack: Set icon enum to frag icon
+		if (GetDlgCtrlID() == 7)
+			m_iIconEnum = FIL_ICON_ZOOMIN;
+		if ((GetDlgCtrlID() == IDC_THUMBNAIL) && rect.Height() > 30)
+		{
+			m_iIconEnum = FIL_ICON_THUMBNAIL;
+			std::cout << "[CRButton::OnPaint] HACK Setting thumbnail button icon for control ID " << GetDlgCtrlID() <<
+			" with rect " << rect.Width() << "x" << rect.Height() << " at (" << rect.left << "," << rect.top << ")" << std::endl;
+		}
+		// RERUN TODO: Add special handling for Title Bar text controls (e.g. IDC_TITLE, IDC_DATE) to use FIL_TITLEB_BMP if no specific artnum is assigned
+		if (GetDlgCtrlID() == IDJ_TITLE)
+		{
+			m_iIconEnum = FIL_TITLEB_BMP; //RERUN hack: Set icon enum to title bar bitmap
+		}
+		if (GetDlgCtrlID() == IDC_FRAG2)
+		{
+			m_iIconEnum = FIL_ICON_FRAG; //RERUN hack: Set icon enum to frag icon
+		}
 	}
 	// RERUN HACK END
 
@@ -309,6 +316,12 @@ void CRButton::OnPaint()
 		else if (m_bPressed && m_nPressedFileNum != FIL_NULL)
 			artnum = m_nPressedFileNum;
 	}
+
+	// BoB reuses this field for icon-table indices (IconsUI packed values
+	// and small ICONNUM entries), not just FileNums — drop anything that
+	// does not resolve to a real directory entry.
+	if (g_rowanGameIsBoB && artnum != FIL_NULL && !RowanFileNumSafe(artnum))
+		artnum = FIL_NULL;
 
 	if (artnum != FIL_NULL)
 	{

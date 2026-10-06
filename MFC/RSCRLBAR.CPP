@@ -107,6 +107,22 @@ static ScrlBarData& GetData(CWnd* pWnd) {
 	return g_BarData[pWnd];
 }
 
+// Callers store either an HWND (BoB) or a CWnd* (MiG Alley) through this
+// OCX-era property. HWNDs are registered tokens, so resolve that form
+// authoritatively before treating the value as a CWnd*.
+static CWnd* ResolveParent(ScrlBarData& data, CWnd* self)
+{
+	CWnd* pParent = nullptr;
+	if (data.parentPtr)
+	{
+		if (WindowBackend* pbe = backend_from_hwnd((HWND)data.parentPtr))
+			pParent = pbe->owner;
+		else
+			pParent = (CWnd*)data.parentPtr;
+	}
+	return pParent ? pParent : self->GetParent();
+}
+
 static void Draw3dRect(CDC* pDC, const CRect& rect, COLORREF clrTopLeft, COLORREF clrBottomRight)
 {
 	pDC->FillSolidRect(rect.left, rect.top, rect.Width() - 1, 1, clrTopLeft);
@@ -332,8 +348,7 @@ void CRScrlBar::OnLButtonDown(UINT nFlags, CPoint point)
 			SetScrollPos(newPos);
 			
 			// Notify parent
-			CWnd* pParent = (CWnd*)data.parentPtr;
-			if (!pParent) pParent = GetParent();
+			CWnd* pParent = ResolveParent(data, this);
 			if (pParent) {
 				if (data.useMessages)
 					pParent->SendMessage(WM_ACTIVEXSCROLL, data.scrollPos, data.horzAlign);
@@ -364,8 +379,7 @@ void CRScrlBar::OnLButtonDown(UINT nFlags, CPoint point)
 			SetScrollPos(newPos);
 
 			// Notify parent
-			CWnd* pParent = (CWnd*)data.parentPtr;
-			if (!pParent) pParent = GetParent();
+			CWnd* pParent = ResolveParent(data, this);
 			if (pParent) {
 				if (data.useMessages)
 					pParent->SendMessage(WM_ACTIVEXSCROLL, data.scrollPos, data.horzAlign);
@@ -411,8 +425,7 @@ void CRScrlBar::OnMouseMove(UINT nFlags, CPoint point)
 		SetScrollPos(newPos);
 
 		// Notify parent
-		CWnd* pParent = (CWnd*)data.parentPtr;
-		if (!pParent) pParent = GetParent();
+		CWnd* pParent = ResolveParent(data, this);
 		if (pParent) {
 			if (data.useMessages)
 				pParent->SendMessage(WM_ACTIVEXSCROLL, data.scrollPos, data.horzAlign);

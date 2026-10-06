@@ -38,4 +38,11 @@ FILE* fopen_ci(const char* path, const char* mode);
 
 #ifdef __cplusplus
 }
+
+#include <string>
+// Resolve a Windows-style path component-by-component under
+// case-insensitive matching: '\' -> '/', existing components take the
+// on-disk spelling, the unresolved tail is kept verbatim (so a file yet
+// to be created lands in the correctly-cased directory).
+std::string resolve_ci_path(const char* path);
 #endif

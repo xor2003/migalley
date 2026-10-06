@@ -30,6 +30,7 @@
 #include "RJOYCFG.H"
 #include "RESOURCE.H"
 #include "MIGVIEW.H"
+#include "FILEMAN.H" //RERUN for File_Man/RowanFileNumSafe
 
 #include <SDL.h>
 #include "SDL_syswm.h"
@@ -40,10 +41,39 @@ float g_dluX = 1.5; // 1.5 to 2 is typical for 8pt font
 float g_dluY = 1.5;
 
 // Forward declaration for composition logic
-static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int parentAbsX, int parentAbsY);
+static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int parentAbsX, int parentAbsY, int depth);
 
-// WINSMACK.CPP: arms the skip flag while a smack video is playing
+// WINSMACK.CPP: arms the skip flag while a smack video is playing.
+// Weak default — mig's WINSMACK.CPP strong-def overrides at link; consumers
+// with no smack player (bob) get the no-op.
 extern void InterruptSmack();
+__attribute__((weak)) void InterruptSmack() {}
+
+// XX_ScreenFlip_Vulkan.cpp (mig): set when the shared SDL/X11 window is
+// torn down so the Vulkan blit path stops presenting. Weak default —
+// consumers without the Vulkan renderer (bob) still need the symbol.
+__attribute__((weak)) volatile bool g_migVulkanWindowGone = false;
+
+// Every OS window is created SDL_WINDOW_VULKAN-flagged so mig's
+// SDL_Vulkan_* calls work — but that flag hard-fails on video drivers
+// with no Vulkan (dummy/Xvfb-without-llvmpipe, and BoB which never
+// renders Vulkan). Try flagged, retry plain once, then remember.
+static int g_sdlVulkanCapable = -1;  // -1 unknown, 0 no, 1 yes
+static SDL_Window* CreateOSWindow(const char* title, int x, int y,
+                                  int w, int h, Uint32 flags)
+{
+    SDL_Window* win = nullptr;
+    if (g_sdlVulkanCapable != 0) {
+        win = SDL_CreateWindow(title, x, y, w, h, flags | SDL_WINDOW_VULKAN);
+        if (win) {
+            g_sdlVulkanCapable = 1;
+            return win;
+        }
+        g_sdlVulkanCapable = 0;
+        SDL_ClearError();
+    }
+    return SDL_CreateWindow(title, x, y, w, h, flags);
+}
 
 #ifndef GetRValue
 #define GetRValue(rgb)      ((BYTE)(rgb))
@@ -686,11 +716,13 @@ void PumpSDL()
                     //if (msg.message == WM_LBUTTONDOWN) std::cout << "[Input] MouseDown HWND=" << targetHwnd << " at (" << x << "," << y << ")" << std::endl;
                     else if (e.button.button == SDL_BUTTON_RIGHT)
                         msg.message = (e.type == SDL_MOUSEBUTTONDOWN) ? 0x0204 /*WM_RBUTTONDOWN*/ : 0x0205 /*WM_RBUTTONUP*/;
-                    std::cout << "[IN] " << (e.type == SDL_MOUSEBUTTONDOWN ? "DOWN" : "UP")
-                              << " btn=" << (int)e.button.button
-                              << " hwnd=" << targetHwnd << " wnd=" << (void*)wnd
-                              << " sdlwin=" << (void*)sdlWin << " at " << x << "," << y
-                              << " cap=" << (void*)g_pCaptureWnd << std::endl;
+                    static const bool dbgInput = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+                    if (dbgInput)
+                        std::cout << "[IN] " << (e.type == SDL_MOUSEBUTTONDOWN ? "DOWN" : "UP")
+                                  << " btn=" << (int)e.button.button
+                                  << " hwnd=" << targetHwnd << " wnd=" << (void*)wnd
+                                  << " sdlwin=" << (void*)sdlWin << " at " << x << "," << y
+                                  << " cap=" << (void*)g_pCaptureWnd << std::endl;
                     // Pack coordinates into lParam
                     msg.lParam = MAKELPARAM(x, y);
                     msg.wParam = (e.type == SDL_MOUSEBUTTONDOWN) ? 1 : 0; // MK_LBUTTON approx
@@ -990,15 +1022,35 @@ BOOL DispatchMessage(const MSG* msg)
     if (!msg->hwnd) return FALSE;
 
     WindowBackend* backend = backend_from_hwnd((HWND)msg->hwnd);
-    if (msg->message == WM_LBUTTONDOWN || msg->message == WM_LBUTTONUP)
-        std::cout << "[DISP] " << (msg->message == WM_LBUTTONDOWN ? "DOWN" : "UP")
-                  << " hwnd=" << msg->hwnd << " be=" << (void*)backend
-                  << " owner=" << (backend ? (void*)backend->owner : nullptr)
-                  << " type=" << ((backend && backend->owner) ? typeid(*backend->owner).name() : "?")
-                  << std::endl;
+    if (msg->message == WM_LBUTTONDOWN || msg->message == WM_LBUTTONUP) {
+        static const bool dbgInput = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+        if (dbgInput)
+            std::cout << "[DISP] " << (msg->message == WM_LBUTTONDOWN ? "DOWN" : "UP")
+                      << " hwnd=" << msg->hwnd << " be=" << (void*)backend
+                      << " owner=" << (backend ? (void*)backend->owner : nullptr)
+                      << " type=" << ((backend && backend->owner) ? typeid(*backend->owner).name() : "?")
+                      << std::endl;
+    }
     if (backend && backend->owner)
     {
-        return backend->owner->WindowProc(msg->message, msg->wParam, msg->lParam);
+        LRESULT r = backend->owner->WindowProc(msg->message, msg->wParam, msg->lParam);
+        // Win32 completes a paint with EndPaint — but legacy code paths
+        // (BoB's CMainFrame::OnPaint) call BeginPaint without EndPaint.
+        // After any WM_PAINT dispatch, walk to the root window and
+        // present whatever was drawn, so those paths still reach screen.
+        if (msg->message == WM_PAINT) {
+            WindowBackend* root = backend;
+            while (root && root->isChild && root->parent)
+                root = backend_from_hwnd(root->parent->GetSafeHwnd());
+            if (root && root->renderer) {
+                PaintChildrenRecursive((HWND)msg->hwnd, root->renderer, 0, 0, 0);
+                SDL_RenderPresent(root->renderer);
+                root->needsRepaint = false;
+                root->fullDirty = false;
+                root->dirtyRegions.clear();
+            }
+        }
+        return r;
     }
     return FALSE;
 }
@@ -1196,7 +1248,7 @@ BOOL CWnd::Create(
                 backend.window = mainBe->window;
                 backend.renderer = mainBe->renderer;
                 backend.isChild = true;
-                backend.parent = main;
+                backend.parent = pParentWnd ? pParentWnd : main;
                 isChild = true;
                 host = main;
             }
@@ -1210,7 +1262,7 @@ BOOL CWnd::Create(
                     backend.window = be.window;
                     backend.renderer = be.renderer;
                     backend.isChild = true;
-                    backend.parent = be.owner;
+                    backend.parent = pParentWnd ? pParentWnd : be.owner;
                     isChild = true;
                     host = be.owner;
                     break;
@@ -1220,11 +1272,11 @@ BOOL CWnd::Create(
     }
 
     if (!backend.isChild) {
-    backend.window = SDL_CreateWindow(
+    backend.window = CreateOSWindow(
         lpszWindowName ? lpszWindowName : "",
             rect.left, rect.top,
             rect.right - rect.left, rect.bottom - rect.top,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_VULKAN
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
     );
     if (backend.window && !g_migOSWindow)
         g_migOSWindow = backend.window;
@@ -1259,10 +1311,15 @@ BOOL CWnd::Create(
         m_rect = rect;
     }
 
-    // Attach to parent (or to the host main window for routed dialogs)
-    if (host) {
-        if (host->m_hWnd) {
-             g_hwndRegistry[host->m_hWnd].children.push_back(h);
+    // Attach to parent for hit-testing. m_rect is always stored relative to
+    // the CWnd parent (pParentWnd), so the children list must follow CWnd
+    // parentage — not the SDL host, which only decides which OS window we
+    // render into. Routed top-level dialogs (isChild forced) therefore still
+    // land on their dialog parent's child list.
+    CWnd* hittestParent = (pParentWnd && pParentWnd->m_hWnd) ? pParentWnd : host;
+    if (hittestParent) {
+        if (hittestParent->m_hWnd) {
+             g_hwndRegistry[hittestParent->m_hWnd].children.push_back(h);
         }
         if (pParentWnd && nID != 0) {
             pParentWnd->m_children[nID] = this;
@@ -1916,12 +1973,12 @@ void UpdateSDLVisibility(WindowBackend& backend)
 SDL_Window* CreateSDLDialogWindow(int templateID)
 {
     // For now, create a simple SDL window.
-    return SDL_CreateWindow(
+    return CreateOSWindow(
         "Dialog",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         100, 100,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS | SDL_WINDOW_VULKAN
+        SDL_WINDOW_SHOWN | SDL_WINDOW_BORDERLESS
     );
 }
 
@@ -2135,9 +2192,11 @@ void CWnd::GetClientRect(LPRECT lpRect) const
     if (lpRect) {
         // RERUN: If this window is backed by a real SDL window (and is not a child control sharing it),
         // query SDL for the true size. This fixes views/frames reporting 0x0 or stale sizes.
+        // Only the backend's owner reports the physical size: a CWnd sharing another
+        // window's backend (e.g. a view holding the frame HWND) reports its own m_rect.
         if (m_hWnd) {
              WindowBackend* be = backend_from_hwnd(m_hWnd);
-             if (be && be->window && !be->isChild) {
+             if (be && be->window && !be->isChild && be->owner == this) {
                  int w, h;
                  SDL_GetWindowSize(be->window, &w, &h);
                  lpRect->left = 0;
@@ -2162,7 +2221,7 @@ void CWnd::BringWindowToTop()
     WindowBackend* be = backend_from_hwnd(m_hWnd);
 
     // RERUN: For independent top-level windows, physically raise the window
-    if (be && be->window && !be->isChild) {
+    if (be && be->window && !be->isChild && be->owner == this) {
         SDL_RaiseWindow(be->window);
     }
 
@@ -2195,7 +2254,7 @@ void CWnd::GetWindowRect(LPRECT lpRect) const
     if (!lpRect) return;
     if (m_hWnd) {
         WindowBackend* be = backend_from_hwnd(m_hWnd);
-        if (be && be->window && !be->isChild) {
+        if (be && be->window && !be->isChild && be->owner == this) {
 			// This is a top-level window, get rect directly from SDL.
             int x, y, w, h;
             SDL_GetWindowPosition(be->window, &x, &y);
@@ -2383,6 +2442,13 @@ void CWnd::MapDialogRect(LPRECT lpRect) const
 CDC* CWnd::BeginPaint(PAINTSTRUCT* /*ps*/)
 {
     WindowBackend* be = backend_from_hwnd(m_hWnd);
+    // Win32 BeginPaint validates the update region — the window stops
+    // being dirty here, not in EndPaint.
+    if (be) {
+        be->needsRepaint = false;
+        be->fullDirty = false;
+        be->dirtyRegions.clear();
+    }
     // If this window owns its own renderer, clear it to start a new frame
     if (be && be->renderer && !be->isChild) {
         SDL_SetRenderDrawColor(be->renderer, 192, 192, 192, 255); // Standard dialog gray
@@ -2395,6 +2461,23 @@ CDC* CWnd::BeginPaint(PAINTSTRUCT* /*ps*/)
     return &dummyDC;
 }
 
+// Global ::BeginPaint/::EndPaint — delegate to the window's member
+// versions so BoB code using the raw Win32 calls gets the same DC and
+// the same paint/present semantics.
+CDC* BeginPaint(void* hwnd, PAINTSTRUCT* ps)
+{
+    WindowBackend* be = backend_from_hwnd((HWND)hwnd);
+    if (be && be->owner) return be->owner->BeginPaint(ps);
+    static CDC dummy;
+    return &dummy;
+}
+
+void EndPaint(void* hwnd, PAINTSTRUCT* ps)
+{
+    WindowBackend* be = backend_from_hwnd((HWND)hwnd);
+    if (be && be->owner) be->owner->EndPaint(ps);
+}
+
 void CWnd::EndPaint(PAINTSTRUCT* /*ps*/) 
 {
     if (!m_hWnd) return;
@@ -2404,7 +2487,7 @@ void CWnd::EndPaint(PAINTSTRUCT* /*ps*/)
     if (be && be->renderer && !be->isChild)
     {
         // Compose the entire child window tree onto the root renderer
-        PaintChildrenRecursive(m_hWnd, be->renderer, 0, 0);
+        PaintChildrenRecursive(m_hWnd, be->renderer, 0, 0, 0);
 
         // Finish rendering and swap buffers
         SDL_RenderPresent(be->renderer);
@@ -2534,9 +2617,12 @@ void CWnd::ModifyStyle(DWORD remove, DWORD add)
 BOOL CWnd::SetWindowPos(const CWnd* pWndInsertAfter, int x, int y, int cx, int cy, UINT nFlags)
 {
     WindowBackend* be = backend_from_hwnd(m_hWnd);
-    // RERUN: For independent top-level windows, synchronize with the physical SDL window
+    // RERUN: For independent top-level windows, synchronize with the physical SDL window.
+    // Only the backend's owner may move/resize it: a CWnd sharing another window's
+    // backend (e.g. a view holding the frame HWND) is a logical child and must only
+    // update m_rect, never touch the OS window.
     if (cx > 0 || cy > 0) {
-        if (be && be->window && !be->isChild) {
+        if (be && be->window && !be->isChild && be->owner == this) {
             if (!(nFlags & SWP_NOMOVE)) {
                 SDL_SetWindowPosition(be->window, x, y);
             }
@@ -2561,12 +2647,17 @@ BOOL CWnd::SetWindowPos(const CWnd* pWndInsertAfter, int x, int y, int cx, int c
         std::cout << "[MFC_stub] WARNING WARNING SetWindowPos called with zero size, ignoring size change." << std::endl;
     }
 
+    if (be && (nFlags & (SWP_SHOWWINDOW | SWP_HIDEWINDOW))) {
+        be->visible = (nFlags & SWP_SHOWWINDOW) != 0;
+        UpdateSDLVisibility(*be);
+    }
+
     if (!(nFlags & SWP_NOZORDER)) {
         if (pWndInsertAfter == &wndTop) {
             BringWindowToTop();
         }
         else if (pWndInsertAfter == &wndBottom) {
-            if (be && be->window && !be->isChild) {
+            if (be && be->window && !be->isChild && be->owner == this) {
                 // To move to bottom in SDL, we raise all other top-level windows
                 for (auto& pair : g_hwndRegistry) {
                     WindowBackend& otherBe = pair.second;
@@ -3338,7 +3429,7 @@ void AFXAPI DDX_Control(CDataExchange* pDX, int nIDC, CWnd& rControl)
     // If the C++ object isn't attached to a window yet, subclass it.
     if (rControl.m_hWnd == NULL)
     {
-        CWnd* pOldCtrl = pDX->m_pDlgWnd->GetDlgItem(nIDC);
+        CWnd* pOldCtrl = pDX->m_pDlgWnd ? pDX->m_pDlgWnd->GetDlgItem(nIDC) : nullptr;
         if (pOldCtrl)
         {
             HWND hWnd = pOldCtrl->GetSafeHwnd();
@@ -3349,7 +3440,7 @@ void AFXAPI DDX_Control(CDataExchange* pDX, int nIDC, CWnd& rControl)
 
                 // RERUN: After subclassing, check for and apply custom button metadata
                 int dlgID = 0;
-                if (pDX->m_pDlgWnd) {
+                {
                     WindowBackend* be = backend_from_hwnd(pDX->m_pDlgWnd->GetSafeHwnd());
                     if (be) dlgID = be->templateID;
                 }
@@ -3365,7 +3456,13 @@ void AFXAPI DDX_Control(CDataExchange* pDX, int nIDC, CWnd& rControl)
                         pButton->SetButtonMetadata(meta.icon_enum, meta.icon_name.c_str());
                     } else if (pRadio) {
                         if (meta.icon_enum == 0)
-                            pRadio->SetFileNum(27330); // RERUN force radioup.bmp
+                        {
+                            // RERUN force radioup.bmp — a MiG Alley filenum;
+                            // BoB metadata never supplies radio artwork and
+                            // BoB icon indices are not FileNums.
+                            if (!g_rowanGameIsBoB)
+                                pRadio->SetFileNum(27330);
+                        }
                         else
                             pRadio->SetFileNum(meta.icon_enum);
                         // RERUN: Apply the length as ColumnWidth if present in metadata
@@ -3638,6 +3735,21 @@ void ParseRCFile(const std::string& filename)
     std::cout << "[RCParser] Loaded " << g_dlgCaptions.size() << " captions from JSON." << std::endl;
 }
 
+// True when the active game is Battle of Britain — set by which RC json
+// loaded below. Lets shared UI code skip MiG Alley specific artwork hacks.
+bool g_rowanGameIsBoB = false;
+
+// Filter for fields that mix FileNums and BoB icon-table indices: fileman
+// treats an out-of-range FileNum as fatal, so paint code validates first.
+// namenumberedfilelessfail returns "//", NULL, or a path with an empty
+// filename (trailing '/') for anything that cannot resolve.
+bool RowanFileNumSafe(long fnum)
+{
+    string nm = File_Man.namenumberedfilelessfail((FileNum)fnum);
+    size_t nl = nm ? strlen(nm) : 0;
+    return nl && nm[nl - 1] != '/';
+}
+
 void LoadDialogTemplates()
 {
     // Try to find the game's RC json — each install tree ships its own
@@ -3650,6 +3762,8 @@ void LoadDialogTemplates()
         std::ifstream f(p);
         if (f.good()) {
             std::cout << "[MFC_stub] Loading dialog templates from " << p << std::endl;
+            if (strstr(p, "BOB_RC.json"))
+                g_rowanGameIsBoB = true;
             ParseRCFile(p);
             return;
         }
@@ -3813,6 +3927,17 @@ BOOL CDialog::Create(int id, CWnd* pParent)
                 host = be.owner;
                 break;
             }
+        }
+    }
+
+    // RERUN: logical children need a real m_rect before OnInitDialog queries
+    // GetClientRect - the routed-dialog path above never initializes it, which
+    // left modal dialogs (RMdlDlg) zero-sized and unreachable by hit-testing.
+    if (backend.isChild && m_rect.IsRectEmpty()) {
+        if (m_pTemplate) {
+            m_rect = CRect(m_pTemplate->x * g_dluX, m_pTemplate->y * g_dluY, (m_pTemplate->x + m_pTemplate->cx) * g_dluX, (m_pTemplate->y + m_pTemplate->cy) * g_dluY);
+        } else {
+            m_rect = CRect(0, 0, 300, 200);
         }
     }
 
@@ -4117,12 +4242,12 @@ BOOL CFrameWnd::LoadFrame(UINT nIDResource, DWORD dwDefaultStyle, CWnd* pParentW
     WindowBackend& backend = g_hwndRegistry[h];
 
     // Create SDL window
-    backend.window = SDL_CreateWindow(
+    backend.window = CreateOSWindow(
         "MFC Stub Window",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
         1280, 960,
-        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_VULKAN
+        SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
     if (backend.window && !g_migOSWindow)
         g_migOSWindow = backend.window;
@@ -4185,16 +4310,28 @@ void CFrameWnd::AttachView(CView* pView)
     pView->m_rect = CRect(0, 0, m_rect.Width(), m_rect.Height()); // RERUN: View is at 0,0 in client coords
 }
 
-static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int parentAbsX, int parentAbsY)
+static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int parentAbsX, int parentAbsY, int depth = 0)
 {
+    static const bool dumpLayout = getenv("ROWAN_DUMP_LAYOUT") != nullptr;
     WindowBackend* parentBe = backend_from_hwnd(parentHwnd);
     if (!parentBe) return;
 
     for (HWND childHwnd : parentBe->children) {
         WindowBackend* childBe = backend_from_hwnd(childHwnd);
+        int childAbsX = 0, childAbsY = 0;
+        if (childBe && childBe->owner) {
+            childAbsX = parentAbsX + childBe->owner->m_rect.left;
+            childAbsY = parentAbsY + childBe->owner->m_rect.top;
+            if (dumpLayout)
+                printf("[LAYOUT] %*shwnd=%p vis=%d tid=%d id=%d type=%s par=%p ptype=%s abs=(%d,%d) rect=(%ld,%ld)-(%ld,%ld)\n",
+                    depth * 2, "",
+                    childHwnd, (int)childBe->visible, childBe->templateID, childBe->owner->m_nID,
+                    typeid(*childBe->owner).name(), (void*)childBe->parent,
+                    childBe->parent ? typeid(*childBe->parent).name() : "-", childAbsX, childAbsY,
+                    (long)childBe->owner->m_rect.left, (long)childBe->owner->m_rect.top,
+                    (long)childBe->owner->m_rect.right, (long)childBe->owner->m_rect.bottom);
+        }
         if (childBe && childBe->visible && childBe->owner) {
-            int childAbsX = parentAbsX + childBe->owner->m_rect.left;
-            int childAbsY = parentAbsY + childBe->owner->m_rect.top;
 
             SDL_Rect viewport;
             viewport.x = childAbsX;
@@ -4240,7 +4377,7 @@ static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int 
                 }
             }
 
-            PaintChildrenRecursive(childHwnd, renderer, childAbsX, childAbsY);
+            PaintChildrenRecursive(childHwnd, renderer, childAbsX, childAbsY, depth + 1);
 
             SDL_RenderSetViewport(renderer, &oldViewport);
 
@@ -4263,7 +4400,7 @@ void CFrameWnd::OnPaint()
             m_pActiveView->OnPaint();
 
         // Paint children recursively (toolbars, dialogs, panels)
-        PaintChildrenRecursive(m_hWnd, backend->renderer, 0, 0);
+        PaintChildrenRecursive(m_hWnd, backend->renderer, 0, 0, 0);
 
         // Reset viewport
         SDL_RenderSetViewport(backend->renderer, NULL);
@@ -4325,8 +4462,10 @@ void CFrameWnd::OnSize(UINT nType, int cx, int cy)
         // This ensures mouse coordinates in SDL events map 1:1 to the window client area.
         SDL_RenderSetLogicalSize(be->renderer, cx, cy);
     }
-    if (m_pActiveView)
-        m_pActiveView->MoveWindow(0, 0, cx, cy);
+    // RERUN: Real MFC calls RecalcLayout on frame resize; the derived class
+    // repositions docked toolbars and resizes the view around them. Sizing the
+    // view to the full client here would overlay docked controls.
+    RecalcLayout();
 }
 
 void CFrameWnd::OnHelp()
@@ -4988,7 +5127,26 @@ void      AfxSetResourceHandle(HINSTANCE h) { g_resHandle = h; }
 
 // Font enumeration — report success without invoking the callback; callers
 // fall back to their default font paths.
-int EnumFontFamiliesEx(HDC, LOGFONT*, FONTENUMPROC, long, DWORD) { return 1; }
+int EnumFontFamiliesEx(HDC, LOGFONT* lpLogFont, FONTENUMPROC proc, long lParam, DWORD)
+{
+    // Report only the faces GetSystemFontPath resolves to an explicit target —
+    // the games probe fallback lists ("Fusion Bold\n...\nArial") and must see
+    // misses for names we don't have, else the first name "wins" wrongly.
+    if (!proc) return 0;
+    const char* face = lpLogFont ? lpLogFont->lfFaceName : nullptr;
+    static const char* known[] = { "MS Sans Serif", "Helv", "Arial",
+        "Arial Italic", "Times New Roman", "Courier New", "Intel" };
+    bool found = !face || !*face;
+    for (const char* k : known)
+        if (face && strcmp(face, k) == 0) { found = true; break; }
+    if (!found) return 1;
+    ENUMLOGFONTEX elf{};
+    if (lpLogFont) {
+        elf.elfLogFont = *lpLogFont;
+        strncpy(elf.elfFullName, face, sizeof(elf.elfFullName) - 1);
+    }
+    return proc(&elf, nullptr, TRUETYPE_FONTTYPE, lParam);
+}
 
 // Raw-handle GDI entry points used by BoB's map view. The SDL backend draws
 // through WindowBackend surfaces; until the T120 artwork path lands these are
@@ -5003,6 +5161,9 @@ int ReleaseDC(HWND, HDC)     { return 0; }
 
 UINT SetSystemPaletteUse(HDC, UINT) { return SYSPAL_NOSTATIC; }
 
+/* weak: BoB's lib3d carries its own _i64toa — the strong game definition
+   wins where both are linked; this is the fallback for everyone else. */
+__attribute__((weak))
 char* _i64toa(long long value, char* str, int base)
 {
     if (!str) return str;

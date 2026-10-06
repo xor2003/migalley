@@ -74,6 +74,14 @@ long _findfirst(const char *filespec, struct _finddata_t *fileinfo) {
 
     DIR* dir = opendir(dir_path.c_str());
     if (!dir) {
+        // Windows file lookup is case-insensitive for every path component,
+        // not just the filename pattern - e.g. BoB keeps SAVEGAME/ uppercase.
+        dir_path = resolve_ci_path(dir_path.c_str());
+        if (!dir_path.empty()) {
+            dir = opendir(dir_path.c_str());
+        }
+    }
+    if (!dir) {
         return -1L;
     }
 
@@ -85,8 +93,10 @@ long _findfirst(const char *filespec, struct _finddata_t *fileinfo) {
     long handle = add_handle(handle_info);
 
     if (_findnext(handle, fileinfo) == 0) {
+        fprintf(stderr, "[findfirst] '%s' -> '%s'\n", filespec, fileinfo->name);
         return handle;
     }
+    fprintf(stderr, "[findfirst] '%s' no match\n", filespec);
 
     _findclose(handle);
     return -1L;
@@ -139,28 +149,31 @@ int _findclose(long handle) {
 // data on disk is a mix of cases (PILOT1.X8, b26eng.x8, ...) while stored
 // names come back as e.g. "imagemap/PILOT1.x8". On failure we walk each
 // path component and match it case-insensitively in its directory.
-FILE* fopen_ci(const char* path, const char* mode) {
-    if (!path || !*path) {
-        return nullptr; // fopen("") fails; an empty path must not resolve to "."
-    }
-    FILE* f = fopen(path, mode);
-    if (f || !strchr(mode, 'r')) {
-        return f; // literal hit, or a write-mode failure we shouldn't fix
-    }
 
-    // Resolve component-by-component under a case-insensitive match.
+} // extern "C"
+
+// Windows-style path resolution: '\' -> '/', each existing component
+// matched case-insensitively in its parent directory. Components that
+// don't resolve (and everything after them) are appended verbatim, so a
+// not-yet-created file still lands in the correctly-cased directory.
+// Returns "" only when the input is empty.
+std::string resolve_ci_path(const char* path) {
+    if (!path || !*path) {
+        return "";
+    }
     std::string resolved;
     std::string input = path;
     std::replace(input.begin(), input.end(), '\\', '/');
 
     size_t pos = 0;
-    if (!input.empty() && input[0] == '/') {
+    if (input[0] == '/') {
         resolved = "/";
         pos = 1;
     } else {
         resolved = ".";
     }
 
+    bool resolving = true;
     while (pos < input.size()) {
         size_t slash = input.find('/', pos);
         std::string comp = (slash == std::string::npos)
@@ -172,26 +185,48 @@ FILE* fopen_ci(const char* path, const char* mode) {
             continue;
         }
 
-        DIR* dir = opendir(resolved.c_str());
-        if (!dir) {
-            return nullptr;
-        }
         std::string found;
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (strcasecmp(comp.c_str(), entry->d_name) == 0) {
-                found = entry->d_name;
-                break;
+        if (resolving) {
+            DIR* dir = opendir(resolved.c_str());
+            if (dir) {
+                struct dirent* entry;
+                while ((entry = readdir(dir)) != nullptr) {
+                    if (strcasecmp(comp.c_str(), entry->d_name) == 0) {
+                        found = entry->d_name;
+                        break;
+                    }
+                }
+                closedir(dir);
+            } else {
+                resolving = false;
             }
         }
-        closedir(dir);
-        if (found.empty()) {
-            return nullptr;
+        if (found.empty() && resolving) {
+            resolving = false;
         }
-        resolved += "/" + found;
+        resolved += "/" + (resolving ? found : comp);
     }
 
-    return fopen(resolved.c_str(), mode);
+    // Strip the leading "./" the relative-path walk produces.
+    if (resolved.compare(0, 2, "./") == 0) {
+        resolved.erase(0, 2);
+    }
+    return resolved;
 }
 
-} // extern "C"
+FILE* fopen_ci(const char* path, const char* mode) {
+    if (!path || !*path) {
+        return nullptr; // fopen("") fails; an empty path must not resolve to "."
+    }
+    FILE* f = fopen(path, mode);
+    if (f || !strchr(mode, 'r')) {
+        return f; // literal hit, or a write-mode failure we shouldn't fix
+    }
+
+    std::string resolved = resolve_ci_path(path);
+    struct stat st;
+    if (resolved.empty() || stat(resolved.c_str(), &st) != 0) {
+        return nullptr;
+    }
+    return fopen(resolved.c_str(), mode);
+}

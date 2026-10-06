@@ -74,6 +74,7 @@ questions about this file may be asked at http://www.simhq.com/
 #include "MIGVIEW.H"
 #include "RRADIO.H"
 #include "FILES.H"
+#include "FILEMAN.H" //RERUN for File_Man/namenumberedfilelessfail
 
 /////////////////////////////////////////////////////////////////////////////
 // CRRadio
@@ -235,14 +236,19 @@ void CRRadio::OnPaint()
 
         int circleY = y + buttonHeight / 2;
 
-        if (m_artNum)
+        long currentartnum = m_artNum;
+        if (currentartnum)
         {
-            long currentartnum = m_artNum;
             if ((long)i == m_currentSelection)
             {
                 currentartnum++;
             }
+            if (g_rowanGameIsBoB && !RowanFileNumSafe(currentartnum))
+                currentartnum = 0; // BoB icon index, not a FileNum — draw circle
+        }
 
+        if (currentartnum)
+        {
             // Draw artwork
             fileblock art((FileNum)currentartnum);
             BYTE* pData = (BYTE*)getdata(art);

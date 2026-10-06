@@ -229,6 +229,10 @@ void CRListBox::OnPaint()
             // Draw Icon if present
             if (data.icons.count({row, (int)col})) {
                 int artNum = data.icons[{row, (int)col}];
+                // Under BoB, values here can be icon indices, not FileNums.
+                if (g_rowanGameIsBoB && artNum != FIL_NULL &&
+                    !RowanFileNumSafe(artNum))
+                    artNum = FIL_NULL;
                 if (artNum != FIL_NULL) {
                     fileblock picture((FileNum)artNum);
                     BYTE* pData = (BYTE*)getdata(picture);
