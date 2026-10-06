@@ -538,6 +538,14 @@ static inline HANDLE CreateFileA(LPCSTR lpFileName,
     }
 
     int fd = open(lpFileName, flags, 0666);
+    if (fd == -1) {
+        // Windows callers hand us case-mangled '\' paths ("landscap\NORTH.DAT").
+        // Resolve component-by-component like fopen_ci; for create-modes the
+        // unresolved tail lands in the correctly-cased directory.
+        std::string resolved = resolve_ci_path(lpFileName);
+        if (!resolved.empty())
+            fd = open(resolved.c_str(), flags, 0666);
+    }
     if (fd == -1) return INVALID_HANDLE_VALUE;
     return (HANDLE)(intptr_t)fd;
 }
