@@ -165,3 +165,5 @@
 #include "EndDyBmp.h"
 #include "CampName.h"
 #include "DirNoRes.h"
+#include "bfcommon.h"   // game-side PCH: MMC/Node_Data/Target/singleton decl surface
+#include "_mfc.h"        // unity-TU decl surface: missman2/nodebob (MMC, Node_Data)

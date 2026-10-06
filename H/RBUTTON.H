@@ -36,6 +36,7 @@ protected:
 	CString m_sIconName;
 	unsigned long m_ulShadowColor;
 	unsigned long m_ulForeColor;
+	unsigned long m_ulBackColor;
 
 public:
 	CRButton();
@@ -44,6 +45,8 @@ public:
 public:
 	OLE_COLOR GetForeColor();
 	void SetForeColor(OLE_COLOR);
+	OLE_COLOR GetBackColor();
+	void SetBackColor(OLE_COLOR);
 	CString GetCaption();
 	void SetCaption(LPCTSTR);
 	CString GetString();

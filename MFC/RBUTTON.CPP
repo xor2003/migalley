@@ -110,6 +110,7 @@ CRButton::CRButton()
 	m_iIconEnum = 0;
 	m_ulShadowColor = 0;
 	m_ulForeColor = RGB(0,0,0);
+	m_ulBackColor = 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////
@@ -123,6 +124,17 @@ OLE_COLOR CRButton::GetForeColor()
 void CRButton::SetForeColor(OLE_COLOR propVal)
 {
 	m_ulForeColor = propVal;
+	Invalidate();
+}
+
+OLE_COLOR CRButton::GetBackColor()
+{
+	return m_ulBackColor;
+}
+
+void CRButton::SetBackColor(OLE_COLOR propVal)
+{
+	m_ulBackColor = propVal;
 	Invalidate();
 }
 
@@ -395,7 +407,9 @@ void CRButton::OnPaint()
 	if (bDrawText && !text.IsEmpty())
 	{
 		dc.SetBkMode(TRANSPARENT);
-		dc.SetTextColor(m_ulForeColor ? m_ulForeColor : RGB(255,255,255)); // RERUN: Default to white if black (0)
+		// OCX semantic (rbuttonc.cpp): pressed caption draws in BackColor
+		OLE_COLOR cap = (m_bPressed && m_ulBackColor) ? m_ulBackColor : m_ulForeColor;
+		dc.SetTextColor(cap ? cap : RGB(255,255,255)); // RERUN: Default to white if black (0)
 
 		CFont* pOldFont = nullptr;
 		if (GetParent())

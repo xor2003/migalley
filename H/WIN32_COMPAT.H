@@ -108,6 +108,58 @@ typedef char TCHAR;   // or wchar_t if you want to mimic UNICODE builds
 typedef const TCHAR* LPCTSTR;
 #endif
 
+/* Primitive types the vendored DirectMusic/DirectShow headers need. Kept
+   unconditional where the name is a type (guards only against macros). */
+#ifndef USHORT
+typedef unsigned short USHORT;
+#endif
+#ifndef SHORT
+typedef short SHORT;
+#endif
+#ifndef WCHAR
+typedef wchar_t WCHAR;
+#endif
+#ifndef LONGLONG
+typedef long long          LONGLONG;
+typedef unsigned long long ULONGLONG;
+typedef ULONGLONG          DWORDLONG;
+#endif
+#ifndef LPLONG
+typedef long* LPLONG;
+#endif
+#ifndef FILETIME
+typedef struct { DWORD dwLowDateTime; DWORD dwHighDateTime; } FILETIME;
+typedef FILETIME* LPFILETIME;
+#endif
+/* MSVC COM spelling: 'interface' expands to 'struct' */
+#ifndef interface
+#define interface struct
+#endif
+/* RPC pointer qualifiers in the vendored MS headers */
+#ifndef __RPC_FAR
+#define __RPC_FAR
+#endif
+#ifndef OVERLAPPED
+typedef struct {
+    DWORD  Internal;
+    DWORD  InternalHigh;
+    DWORD  Offset;
+    DWORD  OffsetHigh;
+    void*  hEvent;
+} OVERLAPPED, *LPOVERLAPPED;
+#endif
+/* OLE stream interface — opaque: vendored headers only pass pointers. */
+#ifndef LPSTREAM
+struct IStream;
+typedef IStream* LPSTREAM;
+#endif
+/* DirectMusic clock types */
+#ifndef REFERENCE_TIME
+typedef LONGLONG   REFERENCE_TIME;
+typedef REFERENCE_TIME* LPREFERENCE_TIME;
+typedef long       MUSIC_TIME;
+#endif
+
 // Some MSVC headers use the __cdecl keyword; on non-MSVC compilers make it a no-op
 #ifndef __cdecl
 #define __cdecl
@@ -1151,6 +1203,16 @@ typedef struct {
     uint16_t   wBitsPerSample;  // bits per sample (8, 16, etc.)
 } PCMWAVEFORMAT;
 
+typedef struct {
+    uint16_t wFormatTag;
+    uint16_t nChannels;
+    uint32_t nSamplesPerSec;
+    uint32_t nAvgBytesPerSec;
+    uint16_t nBlockAlign;
+    uint16_t wBitsPerSample;
+    uint16_t cbSize;
+} WAVEFORMATEX, *LPWAVEFORMATEX;
+
 #define WAVE_MAPPER   (-1)
 
 // WinMM MIDI constants
@@ -1682,6 +1744,10 @@ struct IUnknown {
     HRESULT QueryInterface(const void* riid, void** ppvObject) {
         return lpVtbl->QueryInterface(this, riid, ppvObject);
     }
+    /* COM callers pass GUIDs by reference (REFIID) — forward the address. */
+    HRESULT QueryInterface(REFIID riid, void** ppvObject) {
+        return lpVtbl->QueryInterface(this, &riid, ppvObject);
+    }
     ULONG AddRef()  { return lpVtbl->AddRef(const_cast<IUnknown*>(this)); }
     ULONG Release() { return lpVtbl->Release(const_cast<IUnknown*>(this)); }
 };
@@ -1713,6 +1779,299 @@ typedef struct HMONITOR__* HMONITOR;
 #define WINDING   2
 #endif
 
+/* Win32 critical sections — pthread-backed recursive mutex, same impl as
+   rowan-engine/compat/windows.h (guarded so both may coexist). BoB's
+   stub3d.h uses these unqualified. */
+#ifndef ROWAN_CS_IMPL
+#define ROWAN_CS_IMPL
+#include <pthread.h>
+struct CRITICAL_SECTION { pthread_mutex_t m; };
+typedef CRITICAL_SECTION* LPCRITICAL_SECTION;
+inline void InitializeCriticalSection(LPCRITICAL_SECTION c) {
+    pthread_mutexattr_t a; pthread_mutexattr_init(&a);
+    pthread_mutexattr_settype(&a, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&c->m, &a); pthread_mutexattr_destroy(&a);
+}
+inline void DeleteCriticalSection(LPCRITICAL_SECTION c) { pthread_mutex_destroy(&c->m); }
+inline void EnterCriticalSection(LPCRITICAL_SECTION c)  { pthread_mutex_lock(&c->m); }
+inline void LeaveCriticalSection(LPCRITICAL_SECTION c)  { pthread_mutex_unlock(&c->m); }
+#endif /* ROWAN_CS_IMPL */
+
+/* Display settings — BoB's twodpref enumerates modes for the map-resolution
+   picker. Backed by SDL display modes in MFC_stub.cpp. */
+#ifndef DM_BITSPERPEL
+#define DM_BITSPERPEL        0x00040000L
+#define DM_PELSWIDTH         0x00080000L
+#define DM_PELSHEIGHT        0x00100000L
+#define DM_DISPLAYFLAGS      0x00200000L
+#define DM_DISPLAYFREQUENCY  0x00400000L
+#define ENUM_CURRENT_SETTINGS  ((DWORD)-1)
+#define ENUM_REGISTRY_SETTINGS ((DWORD)-2)
+#define CDS_TEST             0x00000002
+#define CDS_FULLSCREEN       0x00000004
+#define CDS_RESET            0x40000000
+#define DISP_CHANGE_SUCCESSFUL   0
+#define DISP_CHANGE_RESTART      1
+#define DISP_CHANGE_FAILED      -1
+struct DEVMODE {
+    char  dmDeviceName[32];
+    WORD  dmSpecVersion, dmDriverVersion;
+    WORD  dmSize, dmDriverExtra;
+    DWORD dmFields;
+    long  dmPositionX, dmPositionY;
+    DWORD dmDisplayOrientation, dmDisplayFixedOutput;
+    short dmColor, dmDuplex, dmYResolution, dmTTOption, dmCollate;
+    char  dmFormName[32];
+    WORD  dmLogPixels;
+    DWORD dmBitsPerPel, dmPelsWidth, dmPelsHeight;
+    DWORD dmDisplayFlags, dmDisplayFrequency;
+};
+typedef DEVMODE* PDEVMODE;
+typedef DEVMODE* LPDEVMODE;
+BOOL EnumDisplaySettings(const char* lpszDeviceName, DWORD iModeNum, DEVMODE* lpDevMode);
+LONG ChangeDisplaySettings(DEVMODE* lpDevMode, DWORD dwflags);
+#endif
+
+/* Appbar query — no auto-hide taskbars under SDL; return "not found". */
+#ifndef ABM_GETAUTOHIDEBAR
+#define ABM_NEW              0x00000000
+#define ABM_REMOVE           0x00000001
+#define ABM_QUERYPOS         0x00000002
+#define ABM_SETPOS           0x00000003
+#define ABM_GETSTATE         0x00000004
+#define ABM_GETTASKBARPOS    0x00000005
+#define ABM_ACTIVATE         0x00000006
+#define ABM_GETAUTOHIDEBAR   0x00000007
+#define ABM_SETAUTOHIDEBAR   0x00000008
+#define ABE_LEFT             0
+#define ABE_TOP              1
+#define ABE_RIGHT            2
+#define ABE_BOTTOM           3
+#define ABS_AUTOHIDE         0x0000001
+#define ABS_ALWAYSONTOP      0x0000002
+struct APPBARDATA {
+    DWORD cbSize; HWND hWnd; unsigned int uCallbackMessage;
+    unsigned int uEdge; RECT rc; long lParam;
+};
+typedef APPBARDATA* PAPPBARDATA;
+unsigned int SHAppBarMessage(DWORD dwMessage, PAPPBARDATA pData);
+#endif
+
+#ifndef SW_SHOWMINIMIZED
+#define SW_SHOWMINIMIZED 2
+#endif
+#ifndef REG_SZ
+#define REG_SZ 1
+#endif
+
+char* _itoa(int value, char* str, int base);
+
+/* --- BoB frontend surface (T118 wave-3) ------------------------------- */
+
+/* Unqualified min/max — legacy code used the windows.h macros. These
+   function templates reproduce macro semantics exactly (usual arithmetic
+   conversions, mixed types allowed) without corrupting std::min/std::max
+   tokens in this and downstream headers. */
+#ifndef min
+#include <type_traits>
+template <typename A, typename B>
+inline typename std::common_type<A,B>::type min(A a, B b) { return (a < b) ? a : b; }
+template <typename A, typename B>
+inline typename std::common_type<A,B>::type max(A a, B b) { return (a > b) ? a : b; }
+#endif
+
+/* _T/_TEXT: ANSI build, identity */
+#ifndef _T
+#define _T(x)    x
+#define _TEXT(x) x
+#define _tcscmp  strcmp
+#endif
+
+/* MSVCRT case-insensitive compares */
+#ifndef stricmp
+#define stricmp  strcasecmp
+#define strnicmp strncasecmp
+#define strcmpi  strcasecmp
+#endif
+
+/* Logical-font weights */
+#ifndef FW_DONTCARE
+#define FW_DONTCARE 0
+#define FW_THIN     100
+#define FW_NORMAL   400
+#define FW_MEDIUM   500
+#define FW_BOLD     700
+#define FW_HEAVY    900
+#endif
+
+/* GetDeviceCaps indices */
+#ifndef LOGPIXELSX
+#define LOGPIXELSX 88
+#define LOGPIXELSY 90
+#endif
+int GetDeviceCaps(HDC hdc, int nIndex);
+
+/* Ternary raster ops not already covered */
+#ifndef SRCAND
+#define SRCAND    0x008800C6L
+#define SRCPAINT  0x00EE0086L
+#define SRCINVERT 0x00660046L
+#define SRCERASE  0x00440328L
+#define SRCINVERT2 SRCINVERT
+#endif
+
+/* Standard cursor identifiers (MAKEINTRESOURCE values).
+   IDC_ARROW itself is defined earlier near SetCursor. */
+#ifndef IDC_IBEAM
+#define IDC_IBEAM      ((const char*)32513)
+#define IDC_WAIT       ((const char*)32514)
+#define IDC_CROSS      ((const char*)32515)
+#define IDC_UPARROW    ((const char*)32516)
+#define IDC_SIZE       ((const char*)32640)
+#define IDC_ICON       ((const char*)32641)
+#define IDC_SIZENWSE   ((const char*)32642)
+#define IDC_SIZENESW   ((const char*)32643)
+#define IDC_SIZEWE     ((const char*)32644)
+#define IDC_SIZENS     ((const char*)32645)
+#define IDC_SIZEALL    ((const char*)32646)
+#define IDC_NO         ((const char*)32648)
+#define IDC_APPSTARTING ((const char*)32650)
+#define IDC_HELP       ((const char*)32651)
+#endif
+
+/* Windows messages for help/menu/map-shell handlers. WM_HELPINFO is not a
+   real message — MFC's ON_WM_HELPINFO maps onto WM_HELP (0x0053, already
+   defined above); HELPINFO is declared at tagHELPINFO above. */
+#ifndef WM_INITMENUPOPUP
+#define WM_INITMENUPOPUP   0x0117
+#define WM_MENUSELECT      0x011F
+#define WM_DEVMODECHANGE   0x001B
+#define WM_DISPLAYCHANGE   0x007E
+#define WM_GETDLGCODE      0x0087
+#define WM_GETFONT         0x0031
+#define WM_SETFONT         0x0030
+#define WM_CTLCOLORSTATIC  0x0138
+#define WM_CTLCOLOREDIT    0x0133
+#define WM_NCCREATE        0x0081
+#define WM_NCDESTROY       0x0082
+#define WM_NCCALCSIZE      0x0083
+#define WM_NCHITTEST       0x0084
+#define WM_NCPAINT         0x0085
+#define WM_NCACTIVATE      0x0086
+#define WM_SETFOCUS        0x0007
+#define WM_MOUSEACTIVATE   0x0021
+#define WM_INITDIALOG      0x0110
+#define WM_PARENTNOTIFY    0x0210
+#define WM_IDLEUPDATECMDUI 0x0363
+#define WM_WINDOWPOSCHANGING 0x0046
+#define WM_WINDOWPOSCHANGED  0x0047
+#endif
+#ifndef LPINT
+typedef int* LPINT;
+#endif
+
+/* Registry — REQUIREMENT: no registry use. Decls exist only so legacy
+   source compiles; impls return failure so callers keep defaults. */
+#ifndef HKEY_CLASSES_ROOT
+struct HKEY__; typedef HKEY__* HKEY;
+typedef unsigned long REGSAM;
+#define HKEY_CLASSES_ROOT     ((HKEY)0x80000000)
+#define HKEY_CURRENT_USER     ((HKEY)0x80000001)
+#define HKEY_LOCAL_MACHINE    ((HKEY)0x80000002)
+#define HKEY_USERS            ((HKEY)0x80000003)
+#define KEY_READ              0x20019
+#define KEY_WRITE             0x20006
+#define KEY_ALL_ACCESS        0xF003F
+#define ERROR_SUCCESS         0
+#define ERROR_FILE_NOT_FOUND  2
+LONG RegOpenKeyEx(HKEY, const char*, DWORD, REGSAM, HKEY*);
+LONG RegQueryValueEx(HKEY, const char*, DWORD*, DWORD*, unsigned char*, DWORD*);
+LONG RegSetValueEx(HKEY, const char*, DWORD, DWORD, const unsigned char*, DWORD);
+LONG RegCloseKey(HKEY);
+#endif
+
+/* Help-context id base used by MFC's WinHelp routing (afxpriv.h) */
+#ifndef HID_BASE_RESOURCE
+#define HID_BASE_RESOURCE 0x00020000UL
+#define HID_BASE_COMMAND  0x00010000UL
+#endif
+
+/* Mouse capture — global forms (CWnd::SetCapture exists) */
+HWND GetCapture();
+HWND SetCapture(HWND);
+BOOL ReleaseCapture();
+
+/* Missing handle flavors used by the BoB frontend. HMENU/HCURSOR/HICON
+   already exist above (HANDLE/void* typedefs). */
+#ifndef ROWAN_EXTRA_HANDLES
+#define ROWAN_EXTRA_HANDLES
+typedef HANDLE HINSTANCE;
+typedef HANDLE HMODULE;
+typedef struct HBITMAP__ { int unused; } *HBITMAP;
+#endif
+
+/* Resources — version-block readers (credits). Loader arrives with T119;
+   for now these resolve to NULL so callers take fallback paths. */
+#ifndef RT_VERSION
+#define RT_VERSION  ((const char*)16)
+#define VS_VERSION_INFO 1
+typedef void* HRSRC;
+struct VS_FIXEDFILEINFO {
+    DWORD dwSignature, dwStrucVersion, dwFileVersionMS, dwFileVersionLS,
+          dwProductVersionMS, dwProductVersionLS, dwFileFlagsMask,
+          dwFileFlags, dwFileOS, dwFileType, dwFileSubtype,
+          dwFileDateMS, dwFileDateLS;
+};
+HRSRC  FindResource(HMODULE, const char*, const char*);
+HGLOBAL LoadResource(HMODULE, HRSRC);
+void*  LockResource(HGLOBAL);
+DWORD  GlobalSize(HGLOBAL);
+BOOL   FreeResource(HGLOBAL);
+#endif
+
+/* Module handles — BoB loads a language-resource DLL. Native port maps this
+   to the RC blob loader in T119; LoadLibrary returns NULL meanwhile. */
+HMODULE LoadLibraryA(const char*);
+BOOL    FreeLibrary(HMODULE);
+#define LoadLibrary LoadLibraryA
+
+/* Font enumeration (mig.cpp checks for installed fonts); LOGFONT exists
+   at tagLOGFONT above. */
+#ifndef ENUMLOGFONTEX_H
+#define ENUMLOGFONTEX_H
+struct ENUMLOGFONTEX { LOGFONT elfLogFont; char elfFullName[64]; char elfStyle[64]; char elfScript[32]; };
+typedef int (*FONTENUMPROC)(const ENUMLOGFONTEX*, const void*, DWORD, long);
+int EnumFontFamiliesEx(HDC, LOGFONT*, FONTENUMPROC, long, DWORD);
+#endif
+
+/* DIB + stretch modes for the map/icon artwork path (uiicons, migview) */
+#ifndef CBM_INIT
+#define CBM_INIT        0x04
+#define DIB_PAL_COLORS  1   /* DIB_RGB_COLORS defined at line ~1494 */
+#define HALFTONE        4
+#define COLORONCOLOR    3
+#define BLACKONWHITE    1
+#define WHITEONBLACK    2
+HBITMAP CreateDIBitmap(HDC, const BITMAPINFOHEADER*, DWORD, const void*,
+                       const BITMAPINFO*, UINT);
+#endif
+
+/* Global GDI helpers the frontend calls with raw handles */
+int SetDIBitsToDevice(HDC, int, int, DWORD, DWORD, int, int, UINT, UINT, const void*, const BITMAPINFO*, UINT);
+int SetStretchBltMode(HDC, int);
+HDC  GetDC(HWND);
+int  ReleaseDC(HWND, HDC);
+
+/* Menu-item flags (migview builds runtime popup menus) */
+#ifndef MF_ENABLED
+#define MF_ENABLED      0x00000000
+#define MF_STRING       0x00000000
+#define MF_POPUP        0x00000010
+#define MF_SEPARATOR    0x00000800
+#define MF_CHECKED      0x00000008
+#define MF_UNCHECKED    0x00000000
+#endif
+
 #define MF_GRAYED     0x00000001
 #define MF_BYCOMMAND  0x00000000
 
@@ -1731,6 +2090,53 @@ typedef unsigned int COLORREF;
 #ifndef PS_NULL
 #define PS_NULL 5
 #endif
+/* Extended pen styles + LOGBRUSH for the ExtCreatePen CPen ctor */
+#ifndef PS_GEOMETRIC
+#define PS_GEOMETRIC      0x00010000
+#define PS_COSMETIC       0x00000000
+#define PS_ENDCAP_ROUND   0x00000000
+#define PS_ENDCAP_SQUARE  0x00000100
+#define PS_ENDCAP_FLAT    0x00000200
+#define PS_JOIN_ROUND     0x00000000
+#define PS_JOIN_BEVEL     0x00001000
+#define PS_JOIN_MITER     0x00002000
+#define BS_SOLID          0
+#define BS_NULL           1
+#define BS_HOLLOW         BS_NULL
+#define BS_HATCHED        2
+#define HS_HORIZONTAL     0
+#define HS_VERTICAL       1
+#define HS_FDIAGONAL      2
+#define HS_BDIAGONAL      3
+#define HS_CROSS          4
+#define HS_DIAGCROSS      5
+struct tagLOGBRUSH { UINT lbStyle; COLORREF lbColor; LONG lbHatch; };
+typedef tagLOGBRUSH LOGBRUSH;
+#endif
+/* Multimedia/periodic timers live in H/timeapi.h (SDL-backed winmm shim,
+   including BoB's timeSetEvent surface) — pulled in at the end of this
+   header once UINT/DWORD/MMRESULT/CALLBACK/DWORD_PTR exist. */
+
+/* Misc Win32 surface the BoB 3D stub relies on */
+#ifndef WINBASEAPI
+#define WINBASEAPI
+#endif
+#ifndef __assume
+#define __assume(x) ((void)0)
+#endif
+#ifndef PUCHAR
+typedef unsigned char* PUCHAR;
+#endif
+#ifndef LPHANDLE
+typedef HANDLE* LPHANDLE;
+#endif
+#ifndef SYSPAL_NOSTATIC
+#define SYSPAL_NOSTATIC      2
+#define SYSPAL_STATIC        1
+#define SYSPAL_NOSTATIC256   3
+UINT SetSystemPaletteUse(HDC hdc, UINT uUsage);
+#endif
+char* _i64toa(long long value, char* str, int base);
 #ifndef DCB_RESET
 #define DCB_RESET 0x0001
 #endif
@@ -2065,5 +2471,14 @@ typedef struct tagSCROLLINFO
     int     nPos;
     int     nTrackPos;
 }   SCROLLINFO, *LPSCROLLINFO;
+
+#ifndef DWORD_PTR
+typedef unsigned long DWORD_PTR;
+#endif
+
+/* winmm timer shim (timeGetTime/timeSetEvent/etc.) — SDL-backed; included
+   here so every WIN32_COMPAT consumer gets the surface. Its static-inline
+   impls need UINT/DWORD/MMRESULT/CALLBACK/DWORD_PTR, all defined above. */
+#include "timeapi.h"
 
 #endif // WIN32_COMPAT_H

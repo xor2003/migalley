@@ -13,6 +13,30 @@ typedef struct IDirectSoundBuffer IDirectSoundBuffer;
 struct IDirectSound       { void* unused; };
 struct IDirectSoundBuffer { void* unused; };
 
+/* LP-prefixed spellings used by the DirectMusic headers */
+typedef IDirectSound*       LPDIRECTSOUND;
+typedef IDirectSoundBuffer* LPDIRECTSOUNDBUFFER;
+typedef struct IDirectSound3DListener { void* unused; } IDirectSound3DListener;
+typedef IDirectSound3DListener*         LPDIRECTSOUND3DLISTENER;
+
+/* Buffer descriptor — fields sized like the real DX7 struct */
+typedef struct {
+    unsigned long dwSize;
+    unsigned long dwFlags;
+    unsigned long dwBufferBytes;
+    unsigned long dwReserved;
+    void*         lpwfxFormat;
+} DSBUFFERDESC, *LPDSBUFFERDESC;
+
+typedef struct {
+    unsigned long dwSize;
+    unsigned long dwFlags;
+    unsigned long dwBufferBytes;
+    unsigned long dwReserved;
+    void*         lpwfxFormat;
+    void*         guid3DAlgorithm;
+} DSBUFFERDESC1, *LPDSBUFFERDESC1;
+
 // Cooperative levels
 #define DSSCL_NORMAL 0
 

@@ -7,6 +7,12 @@
 
 #include "WIN32_COMPAT.H"
 
+/* afx.h's debug-allocation marker: files do `#define new DEBUG_NEW` under
+   _DEBUG. No CRT debug heap — expand to plain new. */
+#ifndef DEBUG_NEW
+#define DEBUG_NEW new
+#endif
+
 #define SW_HIDE 0
 #define SW_SHOW 5
 #define SW_SHOWMAXIMIZED 3
@@ -193,6 +199,12 @@ protected: \
 #define ON_UPDATE_COMMAND_UI(id, memberFxn) \
     { WM_COMMAND, CN_UPDATE_COMMAND_UI, (WORD)id, (WORD)id, (AFX_PMSG)(void (CCmdTarget::*)())(void (CCmdTarget::*)(CCmdUI*))&thisClass::memberFxn },
 
+#define ON_COMMAND_RANGE(idFirst, idLast, memberFxn) \
+    { WM_COMMAND, 0, (WORD)idFirst, (WORD)idLast, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT))&thisClass::memberFxn },
+
+#define ON_UPDATE_COMMAND_UI_RANGE(idFirst, idLast, memberFxn) \
+    { WM_COMMAND, CN_UPDATE_COMMAND_UI, (WORD)idFirst, (WORD)idLast, (AFX_PMSG)(void (CCmdTarget::*)())(void (CCmdTarget::*)(CCmdUI*))&thisClass::memberFxn },
+
 #define ON_MESSAGE(message, memberFxn) \
     { message, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(LRESULT (CWnd::*)(WPARAM, LPARAM))&thisClass::memberFxn },
 
@@ -238,6 +250,18 @@ protected: \
 // --- ADDED ---
 #define ON_WM_TIMER() \
     { WM_TIMER, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT))&thisClass::OnTimer },
+
+#define ON_WM_HELPINFO() \
+    { WM_HELP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(BOOL (CWnd::*)(HELPINFO*))&thisClass::OnHelpInfo },
+
+#define ON_WM_INITMENUPOPUP() \
+    { WM_INITMENUPOPUP, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(CMenu*, UINT, BOOL))&thisClass::OnInitMenuPopup },
+
+#define ON_WM_DEVMODECHANGE() \
+    { WM_DEVMODECHANGE, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(char*))&thisClass::OnDevModeChange },
+
+#define ON_WM_KEYDOWN() \
+    { WM_KEYDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, UINT, UINT))&thisClass::OnKeyDown },
 
 #define ON_WM_LBUTTONDOWN() \
     { WM_LBUTTONDOWN, 0, 0, 0, (AFX_PMSG)(void (CCmdTarget::*)())(void (CWnd::*)(UINT, CPoint))&thisClass::OnLButtonDown },
@@ -413,11 +437,18 @@ protected: \
     #define TRACE1(sz, p1)           printf(sz "\n", p1)
     #define TRACE2(sz, p1, p2)       printf(sz "\n", p1, p2)
     #define TRACE3(sz, p1, p2, p3)   printf(sz "\n", p1, p2, p3)
+    void AFX_CDECL AfxTrace(const char* fmt, ...);
+    #ifndef TRACE
+    #define TRACE                    ::AfxTrace
+    #endif
 #else
     #define TRACE0(sz)
     #define TRACE1(sz, p1)
     #define TRACE2(sz, p1, p2)
     #define TRACE3(sz, p1, p2, p3)
+    #ifndef TRACE
+    #define TRACE(...)
+    #endif
 #endif
 
 #define SWP_NOSIZE          0x0001
@@ -537,11 +568,11 @@ class CRuntimeClass
 public:
     const char* m_lpszClassName;
     const CRuntimeClass* m_pBaseClass;
-    CObject* (*m_pfnCreateObject)();
+    CObject* (PASCAL *m_pfnCreateObject)();
 
     CRuntimeClass(const char* name,
                   CRuntimeClass* base,
-                  CObject* (*createFn)())
+                  CObject* (PASCAL *createFn)())
         : m_lpszClassName(name),
           m_pBaseClass(base),
           m_pfnCreateObject(createFn)
@@ -568,6 +599,8 @@ public:
     CPoint() : POINT{0, 0} {}
     CPoint(LONG X, LONG Y) : POINT{X, Y} {}
     CPoint(const POINT& p) : POINT{p.x, p.y} {}
+    // MFC's DWORD ctor (MAKELONG packed point) — BoB calls Zoom(0,0).
+    CPoint(DWORD dw) : POINT{(LONG)(short)LOWORD(dw), (LONG)(short)HIWORD(dw)} {}
 
     // MFC-compatible arithmetic
     CPoint operator+(const CPoint& other) const {
@@ -585,6 +618,9 @@ public:
     CPoint& operator-=(const CPoint& other) {
         x -= other.x; y -= other.y; return *this;
     }
+
+    BOOL operator==(const CPoint& other) const { return x == other.x && y == other.y; }
+    BOOL operator!=(const CPoint& other) const { return x != other.x || y != other.y; }
 
     void Offset(LONG dx, LONG dy) {
         x += dx;
@@ -787,13 +823,13 @@ public:
 
 #define DECLARE_DYNCREATE(class_name) \
 public: \
-    static CObject* CreateObject(); \
+    static CObject* PASCAL CreateObject(); \
     static CRuntimeClass class##class_name; \
     virtual CRuntimeClass* GetRuntimeClass() const override;
 
 
 #define IMPLEMENT_DYNCREATE(class_name, base_class_name) \
-    CObject* class_name::CreateObject() { return new class_name; } \
+    CObject* PASCAL class_name::CreateObject() { return new class_name; } \
     CRuntimeClass class_name::class##class_name( \
         #class_name, \
         RUNTIME_CLASS(base_class_name), \
@@ -925,6 +961,18 @@ public:
         : m_style(style), m_width(width), m_color(color)
     {}
 
+    // MFC's ExtCreatePen ctor: cosmetic pens ignore the LOGBRUSH hatch —
+    // keep lbColor, matching observable behaviour for a solid brush style.
+    // styleCount is required: defaulting it would collide with the
+    // COLORREF ctor on calls like CPen(PS_NULL,0,0).
+    CPen(int style, int width, const LOGBRUSH* brush, int styleCount,
+         const DWORD* /*styles*/ = nullptr)
+        : m_style(style), m_width(width)
+    {
+        (void)styleCount;
+        m_color = brush ? brush->lbColor : 0;
+    }
+
     // MFC exposes GetSafeHandle(), but Rowan never uses it
     void* GetSafeHandle() const { return nullptr; }
 
@@ -1000,6 +1048,12 @@ public:
     virtual CFont* GetCurrentFont() const;
     BOOL BitBlt(int x, int y, int cx, int cy, CDC* srcDC, int srcX, int srcY, DWORD /*rop*/);
     int SetDIBitsToDevice(int xDest, int yDest, DWORD w, DWORD h, int xSrc, int ySrc, UINT uStartScan, UINT cScanLines, const void *lpvBits, const BITMAPINFO *lpbmi, UINT fuColorUse);
+    // BoB's map view uses ExtTextOut with a character-spacing array (dx).
+    BOOL ExtTextOut(int x, int y, UINT nOptions, LPCRECT lpRect, LPCTSTR str, LPINT lpDxWidths);
+    // Map-view arrowheads (migview.cpp) — filled polygon outline.
+    BOOL Polygon(const POINT* lpPoints, int nCount);
+    // CDC* used where HDC expected (EnumFontFamiliesEx(*pdc,...) dereferences)
+    operator HDC() const { return m_hDC; }
 };
 
 class CScrollBar {};
@@ -1151,7 +1205,20 @@ public:
     virtual void OnActivate(UINT /*nState*/, CWnd* /*pWndOther*/, BOOL /*bMinimized*/) {}
     virtual void OnActivateApp(BOOL /*bActive*/, DWORD /*dwThreadID*/) {}
 
+    // BoB map-shell handlers (rtoolbar/titlebar/mainfrm/migview maps)
+    afx_msg virtual void OnKeyDown(UINT /*nChar*/, UINT /*nRepCnt*/, UINT /*nFlags*/) {}
+    afx_msg virtual BOOL OnHelpInfo(HELPINFO* /*pHelpInfo*/) { return FALSE; }
+    afx_msg virtual void OnInitMenuPopup(CMenu* /*pMenu*/, UINT /*nPos*/, BOOL /*bSysMenu*/) {}
+    afx_msg virtual void OnDevModeChange(char* /*lpszDeviceName*/) {}
+
+    // Frame/help machinery used by BoB's CMainFrame
+    virtual BOOL IsFrameWnd() const { return FALSE; }
+    CWnd* GetTopLevelParent();
+    void SendMessageToDescendants(UINT message, WPARAM wParam, LPARAM lParam,
+                                  BOOL bDeep = TRUE, BOOL bOnlyPerm = FALSE);
+
     DWORD GetStyle() const { return m_dwStyle; }
+    DWORD GetExStyle() const { return m_dwExStyle; }
     void SetMenu(HMENU /*hMenu*/);
     CDC* GetDC();
     void ReleaseDC(CDC* /*pDC*/);
@@ -1492,6 +1559,10 @@ public:
     virtual void UpdateAllViews(CView* /*pSender*/, LPARAM /*lHint*/ = 0, CObject* /*pHint*/ = nullptr);
     void AddView(CView* pView); void 
     RemoveView(CView* pView);
+
+    CString m_strTitle;
+    virtual void SetTitle(LPCTSTR t) { m_strTitle = t ? t : ""; }
+    virtual CString GetTitle() const { return m_strTitle; }
     DECLARE_MESSAGE_MAP()
 };
 
@@ -1628,6 +1699,10 @@ public:
     BOOL GetBitmap(BITMAP* pBM) const;
     BOOL DeleteObject();
     SDL_Texture* GetTexture(SDL_Renderer* renderer);
+
+    // BoB's uiicons wraps raw HBITMAPs — our objects are heap-owned;
+    // FromHandle returns a wrapper borrowed for the call duration.
+    static CBitmap* FromHandle(HBITMAP /*h*/) { return nullptr; }
 };
 
 
@@ -1735,6 +1810,18 @@ public:
         return (POSITION)n;
     }
 
+    POSITION Find(const ARG_TYPE& value, POSITION startAfter = NULL) const
+    {
+        Node* n = startAfter ? ((Node*)startAfter)->next : m_head;
+        while (n)
+        {
+            if (n->data == value)
+                return (POSITION)n;
+            n = n->next;
+        }
+        return NULL;
+    }
+
     POSITION InsertAfter(POSITION pos, const ARG_TYPE& value)
     {
         Node* p = (Node*)pos;
@@ -1813,6 +1900,8 @@ public:
 class CMenu
 {
 public:
+    HMENU m_hMenu = nullptr;   // BoB migview builds popup chains via raw handle
+
     CMenu() = default;
     virtual ~CMenu() = default;
 
@@ -1889,6 +1978,20 @@ public:
     virtual void OnSize(UINT nType, int cx, int cy) override;
     virtual void OnHelp();
     virtual void OnContextHelp();
+
+    // BoB CMainFrame help-mode machinery (copied from MFC's WinHelp impl)
+    virtual BOOL IsFrameWnd() const override { return TRUE; }
+    afx_msg virtual void OnHelpFinder() {}
+    virtual void ExitHelpMode() {}
+};
+
+// CWaitCursor — RAII wait-cursor; no stock cursors under SDL, so scope-only.
+class CWaitCursor
+{
+public:
+    CWaitCursor() {}
+    ~CWaitCursor() {}
+    void Restore() {}
 };
 
 int AfxLoadString(unsigned int, char* buffer, unsigned int maxLen);
@@ -2205,6 +2308,18 @@ public:
     virtual BOOL InitApplication();
     virtual BOOL InitInstance();
     virtual int ExitInstance();
+    virtual BOOL OnIdle(LONG /*lCount*/) { return FALSE; }
+    virtual void LoadStdProfileSettings(UINT /*nMaxMRU*/ = 10) {}
+
+    // Current message being processed (BoB's CMIGApp::Run reads it)
+    MSG m_msgCur{};
+
+    // Standard cursors: SDL has no stock-cursor API — return the current one.
+    HCURSOR LoadStandardCursor(const char* /*idc*/) { return nullptr; }
+
+    // WinHelp — no HTML/WinHelp engine in the port; the map shell's own
+    // CMainFrame::WinHelp funnels here. HELP_CONTEXT matches MFC default.
+    virtual void WinHelp(DWORD /*dwData*/, UINT /*nCmd*/ = HELP_CONTEXT) {}
 
     // Rowan code sometimes checks this
     void SetRegistryKey(const char*);
@@ -2517,3 +2632,8 @@ inline HINSTANCE AfxGetInstanceHandle()
 {
     return reinterpret_cast<HINSTANCE>(1);
 }
+
+// Resource handle — BoB loads MIG_RC-equivalent language resources; T119's
+// loader owns the real handle. Keep a process slot so Set/Get agree.
+HINSTANCE AfxGetResourceHandle();
+void AfxSetResourceHandle(HINSTANCE);

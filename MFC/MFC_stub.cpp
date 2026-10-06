@@ -4838,3 +4838,257 @@ void InvokeHelper(
 
     va_end(args);
 }
+
+/////////////////////////////////////////////////////////////////////////////
+// Display settings — BoB's twodpref enumerates real display modes to offer
+// map resolutions. Backed by SDL: iModeNum walks SDL mode list,
+// ENUM_CURRENT_SETTINGS returns the desktop mode. ChangeDisplaySettings is a
+// no-op — the port runs windowed and never performs a real mode switch.
+
+static void FillDevMode(DEVMODE* dm, const SDL_DisplayMode& sm)
+{
+    memset(dm, 0, sizeof(*dm));
+    dm->dmSize = sizeof(*dm);
+    dm->dmFields = DM_BITSPERPEL | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY;
+    dm->dmBitsPerPel = (DWORD)SDL_BITSPERPIXEL(sm.format);
+    dm->dmPelsWidth = (DWORD)sm.w;
+    dm->dmPelsHeight = (DWORD)sm.h;
+    dm->dmDisplayFrequency = (DWORD)sm.refresh_rate;
+}
+
+BOOL EnumDisplaySettings(const char* /*lpszDeviceName*/, DWORD iModeNum, DEVMODE* lpDevMode)
+{
+    if (!lpDevMode)
+        return FALSE;
+    if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+        SDL_InitSubSystem(SDL_INIT_VIDEO);
+
+    SDL_DisplayMode sm;
+    if (iModeNum == ENUM_CURRENT_SETTINGS || iModeNum == ENUM_REGISTRY_SETTINGS)
+    {
+        if (SDL_GetDesktopDisplayMode(0, &sm) != 0)
+            return FALSE;
+        FillDevMode(lpDevMode, sm);
+        return TRUE;
+    }
+    int n = SDL_GetNumDisplayModes(0);
+    if (n <= 0 || (int)iModeNum >= n)
+        return FALSE;
+    if (SDL_GetDisplayMode(0, (int)iModeNum, &sm) != 0)
+        return FALSE;
+    FillDevMode(lpDevMode, sm);
+    return TRUE;
+}
+
+LONG ChangeDisplaySettings(DEVMODE* lpDevMode, DWORD dwflags)
+{
+    // The game runs windowed under SDL: a real mode switch is never performed.
+    // CDS_TEST validates the request — report success for any sane mode.
+    if (!lpDevMode)
+        return DISP_CHANGE_SUCCESSFUL; // nullptr = restore; nothing to restore
+    if (lpDevMode->dmPelsWidth == 0 || lpDevMode->dmPelsHeight == 0)
+        return DISP_CHANGE_FAILED;
+    return DISP_CHANGE_SUCCESSFUL;
+}
+
+unsigned int SHAppBarMessage(DWORD /*dwMessage*/, PAPPBARDATA /*pData*/)
+{
+    return 0; // no auto-hide appbars in the SDL environment
+}
+
+char* _itoa(int value, char* str, int base)
+{
+    if (base == 10)
+        sprintf(str, "%d", value);
+    else if (base == 16)
+        sprintf(str, "%x", value);
+    else
+    {
+        char tmp[66];
+        char* p = tmp + sizeof(tmp) - 1;
+        unsigned int u = (unsigned int)value; // non-decimal bases are unsigned
+        *p = '\0';
+        if (u == 0)
+            *--p = '0';
+        while (u)
+        {
+            int d = u % base;
+            *--p = (char)(d < 10 ? '0' + d : 'a' + d - 10);
+            u /= base;
+        }
+        strcpy(str, p);
+    }
+    return str;
+}
+
+/////////////////////////////////////////////////////////////////////////////
+// T118 wave-3 — BoB frontend surface impls
+
+int GetDeviceCaps(HDC /*hdc*/, int nIndex)
+{
+    if (nIndex == LOGPIXELSX || nIndex == LOGPIXELSY)
+        return 96;
+    return 0;
+}
+
+// Registry — hard requirement: no registry. Always fail so callers keep
+// compiled-in defaults.
+LONG RegOpenKeyEx(HKEY, const char*, DWORD, REGSAM, HKEY* out)
+{
+    if (out) *out = nullptr;
+    return ERROR_FILE_NOT_FOUND;
+}
+LONG RegQueryValueEx(HKEY, const char*, DWORD*, DWORD*, unsigned char*, DWORD*)
+{
+    return ERROR_FILE_NOT_FOUND;
+}
+LONG RegSetValueEx(HKEY, const char*, DWORD, DWORD, const unsigned char*, DWORD)
+{
+    return ERROR_FILE_NOT_FOUND;
+}
+LONG RegCloseKey(HKEY) { return ERROR_SUCCESS; }
+
+// Version resources — the T119 RC loader owns real resource data.
+HRSRC  FindResource(HMODULE, const char*, const char*) { return nullptr; }
+HGLOBAL LoadResource(HMODULE, HRSRC)                   { return nullptr; }
+void*  LockResource(HGLOBAL)                           { return nullptr; }
+DWORD  GlobalSize(HGLOBAL)                             { return 0; }
+BOOL   FreeResource(HGLOBAL)                           { return TRUE; }
+
+// Language-resource DLL — T119 maps this to the RC blob; NULL = not loaded.
+HMODULE LoadLibraryA(const char*) { return nullptr; }
+BOOL    FreeLibrary(HMODULE)      { return TRUE; }
+
+static HINSTANCE g_resHandle = nullptr;
+HINSTANCE AfxGetResourceHandle()          { return g_resHandle; }
+void      AfxSetResourceHandle(HINSTANCE h) { g_resHandle = h; }
+
+// Font enumeration — report success without invoking the callback; callers
+// fall back to their default font paths.
+int EnumFontFamiliesEx(HDC, LOGFONT*, FONTENUMPROC, long, DWORD) { return 1; }
+
+// Raw-handle GDI entry points used by BoB's map view. The SDL backend draws
+// through WindowBackend surfaces; until the T120 artwork path lands these are
+// safe no-ops.
+int SetDIBitsToDevice(HDC, int, int, DWORD, DWORD, int, int, UINT, UINT,
+                      const void*, const BITMAPINFO*, UINT) { return 0; }
+HDC GetDC(HWND)              { return nullptr; }
+int ReleaseDC(HWND, HDC)     { return 0; }
+
+// winmm surface (timeGetTime/timeSetEvent/timeKillEvent/...) lives in
+// H/timeapi.h — SDL-backed static-inline impls shared by mig and BoB.
+
+UINT SetSystemPaletteUse(HDC, UINT) { return SYSPAL_NOSTATIC; }
+
+char* _i64toa(long long value, char* str, int base)
+{
+    if (!str) return str;
+    char* p = str;
+    bool neg = value < 0 && base == 10;
+    unsigned long long v = neg ? (unsigned long long)(-value)
+                               : (unsigned long long)value;
+    char tmp[66]; int i = 0;
+    do { unsigned d = (unsigned)(v % (unsigned)base);
+         tmp[i++] = d < 10 ? char('0' + d) : char('a' + d - 10);
+         v /= (unsigned)base; } while (v);
+    if (neg) *p++ = '-';
+    while (i) *p++ = tmp[--i];
+    *p = 0;
+    return str;
+}
+
+// DirectShow-era COM surface — nothing is ever instantiated.
+HRESULT CoCreateInstance(REFCLSID, LPUNKNOWN, DWORD, REFIID, LPVOID* ppv)
+{
+    if (ppv) *ppv = nullptr;
+    return E_NOINTERFACE;
+}
+
+int MultiByteToWideChar(UINT codepage, DWORD, const char* src,
+                        int srclen, wchar_t* dst, int dstlen)
+{
+    // CP_ACP only: narrow bytes widen 1:1 (BoB uses it for ASCII filenames).
+    if (!src || !dst || dstlen <= 0) return 0;
+    int n = srclen < 0 ? (int)strlen(src) + 1 : srclen;
+    if (n > dstlen) n = dstlen;
+    for (int i = 0; i < n; i++) dst[i] = (wchar_t)(unsigned char)src[i];
+    (void)codepage;
+    return n;
+}
+
+const GUID IID_IGraphBuilder = { 0x56a868a9, 0x0ad4, 0x11ce, {0xb0,0x3a,0x00,0x20,0xaf,0x0b,0xa7,0x70} };
+const GUID IID_IMediaControl = { 0x56a868b1, 0x0ad4, 0x11ce, {0xb0,0x3a,0x00,0x20,0xaf,0x0b,0xa7,0x70} };
+const GUID IID_IMediaEventEx = { 0x56a868c0, 0x0ad4, 0x11ce, {0xb0,0x3a,0x00,0x20,0xaf,0x0b,0xa7,0x70} };
+const GUID IID_IVideoWindow  = { 0x56a868b4, 0x0ad4, 0x11ce, {0xb0,0x3a,0x00,0x20,0xaf,0x0b,0xa7,0x70} };
+const GUID IID_IBasicAudio   = { 0x56a868b3, 0x0ad4, 0x11ce, {0xb0,0x3a,0x00,0x20,0xaf,0x0b,0xa7,0x70} };
+const GUID CLSID_FilterGraph = { 0xe436ebb3, 0x524f, 0x11ce, {0x9f,0x53,0x00,0x20,0xaf,0x0b,0xa7,0x70} };
+
+BOOL CDC::ExtTextOut(int x, int y, UINT /*nOptions*/, LPCRECT /*lpRect*/,
+                     LPCTSTR str, LPINT /*lpDxWidths*/)
+{
+    // Character-spacing variant of TextOut; spacing is ignored for now —
+    // the frontend legibility cost is cosmetic.
+    TextOut(x, y, str ? str : "", str ? (int)strlen(str) : 0);
+    return TRUE;
+}
+
+// Frame/help machinery for BoB's CMainFrame
+CWnd* CWnd::GetTopLevelParent()
+{
+    CWnd* p = this;
+    while (p && p->GetParent())
+        p = p->GetParent();
+    return p;
+}
+
+void CWnd::SendMessageToDescendants(UINT message, WPARAM wParam, LPARAM lParam,
+                                    BOOL bDeep, BOOL /*bOnlyPerm*/)
+{
+    for (auto& kv : m_children)
+    {
+        if (kv.second)
+        {
+            kv.second->SendMessage(message, wParam, lParam);
+            if (bDeep)
+                kv.second->SendMessageToDescendants(message, wParam, lParam, TRUE, FALSE);
+        }
+    }
+}
+
+// Mouse capture — single static owner, mirroring Win32's one-capture rule.
+static HWND g_capture = nullptr;
+HWND GetCapture()            { return g_capture; }
+HWND SetCapture(HWND h)      { HWND old = g_capture; g_capture = h; return old; }
+BOOL ReleaseCapture()        { g_capture = nullptr; return TRUE; }
+
+// DIB upload — the T120 artwork pipeline owns real bitmap ingestion.
+HBITMAP CreateDIBitmap(HDC, const BITMAPINFOHEADER*, DWORD, const void*,
+                       const BITMAPINFO*, UINT)
+{
+    return nullptr;
+}
+
+int SetStretchBltMode(HDC, int) { return 0; }
+
+BOOL CDC::Polygon(const POINT* lpPoints, int nCount)
+{
+    // Map-view arrowheads — draw the outline through the backend path.
+    if (!lpPoints || nCount < 2 || !m_renderer)
+        return FALSE;
+    SDL_Point pts[64];
+    int n = nCount < 63 ? nCount : 63;
+    for (int i = 0; i < n; i++)
+    {
+        pts[i].x = (int)lpPoints[i].x;
+        pts[i].y = (int)lpPoints[i].y;
+    }
+    pts[n] = pts[0];
+    Uint8 r, g, b, a;
+    SDL_GetRenderDrawColor(m_renderer, &r, &g, &b, &a);
+    SDL_SetRenderDrawColor(m_renderer,
+        (Uint8)(m_textColor & 0xFF), (Uint8)((m_textColor >> 8) & 0xFF),
+        (Uint8)((m_textColor >> 16) & 0xFF), a);
+    SDL_RenderDrawLines(m_renderer, pts, n + 1);
+    SDL_SetRenderDrawColor(m_renderer, r, g, b, a);
+    return TRUE;
+}
