@@ -4943,8 +4943,14 @@ char* _itoa(int value, char* str, int base)
 
 int GetDeviceCaps(HDC /*hdc*/, int nIndex)
 {
-    if (nIndex == LOGPIXELSX || nIndex == LOGPIXELSY)
+    switch (nIndex)
+    {
+    case LOGPIXELSX:
+    case LOGPIXELSY:
         return 96;
+    case BITSPIXEL:
+        return 32; // native surfaces are always >= High Color
+    }
     return 0;
 }
 

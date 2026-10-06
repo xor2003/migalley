@@ -578,24 +578,9 @@ static const GUID IID_IDirectPlay4 =
 { 0x9d460581, 0xa822, 0x11cf, {0x96,0x17,0x00,0x80,0xc7,0x53,0x4e,0x82} };
 #endif
 
-inline HRESULT CoCreateInstance(REFCLSID rclsid,
-                                LPUNKNOWN pUnkOuter,
-                                DWORD dwClsContext,
-                                REFIID riid,
-                                LPVOID *ppv) {
-    (void)rclsid; (void)pUnkOuter; (void)dwClsContext; (void)riid;
-    if (ppv) *ppv = NULL;
-    return DPERR_UNSUPPORTED;  /* or E_NOTIMPL if you prefer */
-}
-
-inline HRESULT CoInitialize(LPVOID pvReserved) {
-    return DPERR_UNSUPPORTED; 
-}
-
-inline void CoUninitialize() {
-    // On Windows this uninitializes COM for the calling thread.
-    // On Linux we do nothing.
-}
+/* CoCreateInstance/CoInitialize/CoUninitialize are provided by
+   WIN32_COMPAT.H (decl) + MFC_stub.cpp (impl returning failure) — the
+   inlines that used to live here were removed to avoid redefinition. */
 
 /* ------------------------------------------------------------------
    DirectPlay system message IDs

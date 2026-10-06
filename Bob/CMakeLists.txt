@@ -99,6 +99,58 @@ target_include_directories(bob_lib3d PRIVATE
 target_compile_options(bob_lib3d PRIVATE -fpermissive)
 target_link_libraries(bob_lib3d PRIVATE ProjectDefaults)
 
+# ---------------------------------------------------------------------------
+# BoB game module (T121) — the authoritative Release-config TU set from
+# mfc/bob.vcproj.
+#
+# MSVC Release compiled just 32 TUs: the game logic lives in 13 unity files
+# (_AI.CPP ... _3D.CPP) that #include sibling .cpps directly; the mfc-side
+# unities (_MFC/_AFX/_LW/_RAF/_sA/_full/_tool) are skipped here because
+# bob_frontend already holds every mfc/*.cpp individually. keystub.cpp is
+# added explicitly — _MFC.CPP used to pull it.
+#
+# Every entry is UsePrecompiledHeader="0" in the vcproj, so no -include
+# injection: unity TUs supply their own context via _*.h umbrellas.
+# ROWAN_USE_MIG_CSTRING makes h/cstring.h adopt the shared CString (required
+# — otherwise BoB's local class collides with MigCstring across TU ABI).
+# ---------------------------------------------------------------------------
+add_library(bob_game STATIC
+    # unity aggregations (each pulls its sibling .cpps internally)
+    ${BOB_SRC}/3d/_3d.cpp
+    ${BOB_SRC}/ai/_ai.cpp
+    ${BOB_SRC}/aircraft/_airc.cpp
+    ${BOB_SRC}/bfields/_bfie.cpp
+    ${BOB_SRC}/comms/_comm.cpp
+    ${BOB_SRC}/files/_file.cpp
+    ${BOB_SRC}/general/_gene.cpp
+    ${BOB_SRC}/hardware/_hard.cpp
+    ${BOB_SRC}/input/_inpu.cpp
+    ${BOB_SRC}/math/_math.cpp
+    ${BOB_SRC}/missman/_miss.cpp
+    ${BOB_SRC}/model/_mode.cpp
+    ${BOB_SRC}/movecode/_move.cpp
+    # standalone 3d TUs (not in _3D.CPP's include list)
+    ${BOB_SRC}/3d/jimcol.cpp
+    ${BOB_SRC}/3d/overlay.cpp
+    ${BOB_SRC}/3d/viewsel.cpp
+    ${BOB_SRC}/3d/smktrls.cpp
+    ${BOB_SRC}/3d/tilemake.cpp
+    ${BOB_SRC}/3d/weappak.cpp
+    # standalone game TUs
+    ${BOB_SRC}/missman/nodebob.cpp
+    ${BOB_SRC}/movecode/sagmove.cpp
+    ${BOB_SRC}/input/keystub.cpp
+)
+target_include_directories(bob_game PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/port
+    ${BOB_OVERLAY}
+    ${CMAKE_SOURCE_DIR}/H
+    ${ROWAN_ENGINE}/compat
+)
+target_compile_definitions(bob_game PRIVATE ROWAN_USE_MIG_CSTRING)
+target_compile_options(bob_game PRIVATE -fpermissive -Wno-narrowing)
+target_link_libraries(bob_game PRIVATE ProjectDefaults)
+
 # T120b smoke: stub3d's init sequence (Create/Initialise/GetDrivers/GetModes/
 # GetDefaults/SetDriverAndMode/Release) driven for real through libbob_lib3d.
 add_executable(bob_lib3d_smoke tests/lib3d_smoke.cpp tests/win32_leaves.cpp)

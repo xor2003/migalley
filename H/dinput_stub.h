@@ -13,6 +13,27 @@ extern "C" {
 #ifndef DI_OK
 #define DI_OK 0x00000000
 #endif
+#ifndef DI_NOEFFECT
+#define DI_NOEFFECT 0x00000001  // effect params empty — still "success" (S_FALSE)
+#endif
+#ifndef DI_PROPNOEFFECT
+#define DI_PROPNOEFFECT 0x00000001
+#endif
+#ifndef DI_BUFFEROVERFLOW
+#define DI_BUFFEROVERFLOW 0x00000001  // non-fatal: some buffered data was lost
+#endif
+#ifndef DI_DOWNLOADSKIPPED
+#define DI_DOWNLOADSKIPPED 0x00000001
+#endif
+#ifndef DI_EFFECTRESTARTED
+#define DI_EFFECTRESTARTED 0x00000001
+#endif
+#ifndef DI_TRUNCATED
+#define DI_TRUNCATED 0x00000001
+#endif
+#ifndef DI_TRUNCATEDANDRESTARTED
+#define DI_TRUNCATEDANDRESTARTED 0x00000001
+#endif
 
 #ifndef DI_NOTATTACHED
 #define DI_NOTATTACHED 0x8007000A
@@ -807,6 +828,14 @@ struct IDirectInputDevice2A : public IDirectInputDeviceA {
         return DI_OK;
     }
 
+    // DX7: enumerate effect objects created via CreateEffect — none exist.
+    typedef BOOL (*LPDIENUMCREATEDEFFECTOBJECTSCALLBACK)(LPDIRECTINPUTEFFECT, LPVOID);
+    HRESULT EnumCreatedEffectObjects(LPDIENUMCREATEDEFFECTOBJECTSCALLBACK,
+                                     LPVOID, DWORD)
+    {
+        return DI_OK;
+    }
+
     HRESULT GetEffectInfo(LPDIEFFECTINFO pdei, REFGUID rguid)
     {
         if (pdei) memset(pdei, 0, sizeof(DIEFFECTINFO));
@@ -818,14 +847,6 @@ struct IDirectInputDevice2A : public IDirectInputDeviceA {
         return DI_OK;
     }
 };
-
-// Stub for SideWinder Force Feedback helper
-inline HRESULT SWFF_DestroyAllEffects(IDirectInputDevice2A* pDevice) {
-    // In real DirectInput, this would enumerate and destroy all active effects.
-    // Stubbed: do nothing, pretend success.
-    (void)pDevice;
-    return DI_OK;
-}
 
 // Axis configuration structure (stub)
 typedef struct SWFFAxisConfig {
@@ -1032,7 +1053,7 @@ HRESULT DirectInputCreate(HINSTANCE hinst,
                                  LPDIRECTINPUT* ppDI,
                                  LPUNKNOWN punkOuter);
 
-typedef void* LPDIRECTINPUTDEVICE2;
+typedef IDirectInputDevice2A* LPDIRECTINPUTDEVICE2;
 
 typedef struct {
     const void* pguid;
@@ -1066,6 +1087,30 @@ static const GUID IID_IDirectInputDevice2 = {
     0x5944e682, 0xc92e, 0x11cf,
     {0xbf, 0x8b, 0x00, 0xaa, 0x00, 0x6c, 0xe2, 0x14}
 };
+
+/* DirectInput effect-type GUIDs (dinput.h SDK) — used by BoB's SWFF code */
+static const GUID GUID_ConstantForce = {
+    0x13541c2b, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_RampForce = {
+    0x13541c2c, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_Square = {
+    0x13541c2d, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_Sine = {
+    0x13541c2e, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_Triangle = {
+    0x13541c2f, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_SawtoothUp = {
+    0x13541c30, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_SawtoothDown = {
+    0x13541c31, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_Damper = {
+    0x13541c33, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_Inertia = {
+    0x13541c34, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_Friction = {
+    0x13541c35, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
+static const GUID GUID_CustomForce = {
+    0x13541c36, 0x8e33, 0x11d0, {0x9a,0xd0,0x00,0xa0,0xc9,0xa0,0x6e,0x35} };
 
 #ifndef X_AXIS
 #define X_AXIS 1

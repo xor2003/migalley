@@ -1,0 +1,17 @@
+// bob_port shim: SDK cguid.h — the DirectSound IIDs BoB's digdrvr/sample
+// pass to QueryInterface. Values match the real DX7 SDK. GUID_NULL itself
+// is provided by WIN32_COMPAT.H (BoB code uses it beyond cguid includers).
+#pragma once
+#include "WIN32_COMPAT.H"
+
+#ifndef CGUID_H_ROWAN
+#define CGUID_H_ROWAN
+
+DEFINE_GUID(IID_IDirectSound3DListener,
+    0x279AFA84,0x4981,0x11CE, 0xA5,0x21,0x00,0x20,0xAF,0x0B,0xE5,0x60);
+DEFINE_GUID(IID_IDirectSound3DBuffer,
+    0x279AFA86,0x4981,0x11CE, 0xA5,0x21,0x00,0x20,0xAF,0x0B,0xE5,0x60);
+DEFINE_GUID(IID_IDirectSoundNotify,
+    0xB0210783,0x89CD,0x11D0, 0xAF,0x08,0x00,0xA0,0xC9,0x25,0xCD,0x16);
+
+#endif

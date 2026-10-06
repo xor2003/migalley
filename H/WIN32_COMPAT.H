@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 #include <sys/uio.h>
+#include <sys/mman.h>
 #include <unordered_map>
 #include "io_compat.h"
 #include "SDL.h"
@@ -27,6 +28,7 @@
 
 #ifndef ZeroMemory
 #include <string.h>  // for memset
+#include <cwchar>
 #define ZeroMemory(Destination,Length) memset((Destination), 0, (Length))
 #endif
 
@@ -79,7 +81,15 @@ typedef void VOID;
 typedef void* LPVOID;
 typedef const void* LPCVOID;
 
+/* DWORD is unsigned long in MSVC — same type as the game's ULong, which
+   matters for overload resolution (e.g. ReceiveMessage(ULong&)).  On the
+   -m32 build that is 32 bits; keep 32-bit width for any host-side compile. */
+#if defined(__x86_64__) || defined(_WIN64)
 typedef uint32_t DWORD;
+#else
+typedef unsigned long DWORD;
+#endif
+static_assert(sizeof(DWORD) == 4, "DWORD must stay 32-bit");
 typedef DWORD* LPDWORD;
 
 typedef uint16_t WORD;
@@ -547,6 +557,63 @@ static inline DWORD GetFileSize(HANDLE hFile, DWORD* lpFileSizeHigh)
 }
 
 /* ------------------------------------------------------------------
+   File mapping (CreateFileMapping/MapViewOfFile) — mmap-backed.
+   The mapping object is a dup'd fd so closing it never invalidates the
+   source handle; view sizes are tracked for UnmapViewOfFile.
+   ------------------------------------------------------------------ */
+#ifndef PAGE_READONLY
+#define PAGE_READONLY   0x02
+#define PAGE_READWRITE  0x04
+#endif
+#ifndef FILE_MAP_READ
+#define FILE_MAP_READ   0x0004
+#define FILE_MAP_WRITE  0x0002
+#endif
+
+static inline HANDLE CreateFileMappingA(HANDLE hFile, void* /*attrs*/,
+                                        DWORD /*protect*/, DWORD /*maxHi*/,
+                                        DWORD /*maxLo*/, LPCSTR /*name*/)
+{
+    int fd = dup((int)(intptr_t)hFile);
+    return fd == -1 ? NULL : (HANDLE)(intptr_t)fd;
+}
+#define CreateFileMapping CreateFileMappingA
+
+static inline LPVOID MapViewOfFile(HANDLE hMapping, DWORD access,
+                                   DWORD /*offHi*/, DWORD offLo, size_t len)
+{
+    int fd = (int)(intptr_t)hMapping;
+    if (len == 0) {
+        off_t size = lseek(fd, 0, SEEK_END);
+        if (size <= 0) return NULL;
+        len = (size_t)size;
+    }
+    int prot = (access & FILE_MAP_WRITE) ? (PROT_READ|PROT_WRITE) : PROT_READ;
+    void* p = mmap(NULL, len, prot, MAP_PRIVATE, fd, offLo);
+    return p == MAP_FAILED ? NULL : p;
+}
+
+static inline BOOL UnmapViewOfFile(LPCVOID base)
+{
+    // munmap needs the length; mappings here are whole-file views, so
+    // recover the size by scanning /proc/self/maps for the range start.
+    FILE* f = fopen("/proc/self/maps", "r");
+    if (!f) return FALSE;
+    char line[256];
+    BOOL ok = FALSE;
+    while (fgets(line, sizeof(line), f)) {
+        unsigned long start, end;
+        if (sscanf(line, "%lx-%lx", &start, &end) == 2 &&
+            (void*)start == (void*)base) {
+            ok = munmap((void*)base, end - start) == 0;
+            break;
+        }
+    }
+    fclose(f);
+    return ok;
+}
+
+/* ------------------------------------------------------------------
    ReadFile replacement
    ------------------------------------------------------------------ */
 static inline BOOL ReadFile(HANDLE hFile,
@@ -662,6 +729,21 @@ static inline BOOL FlushFileBuffers(HANDLE hFile)
 #ifndef FILE_FLAG_RANDOM_ACCESS
 #define FILE_FLAG_RANDOM_ACCESS 0x10000000
 #endif
+
+static inline BOOL CopyFileA(LPCSTR src, LPCSTR dst, BOOL failIfExists)
+{
+    if (failIfExists && access(dst, F_OK) == 0) return FALSE;
+    int in = open(src, O_RDONLY);
+    if (in < 0) return FALSE;
+    int out = open(dst, O_WRONLY|O_CREAT|O_TRUNC, 0666);
+    if (out < 0) { close(in); return FALSE; }
+    char buf[65536]; ssize_t n; BOOL ok = TRUE;
+    while ((n = read(in, buf, sizeof(buf))) > 0)
+        if (write(out, buf, n) != n) { ok = FALSE; break; }
+    close(in); close(out);
+    return ok;
+}
+#define CopyFile CopyFileA
 
 #ifndef DeleteFile
 static inline BOOL DeleteFile(const char* lpFileName)
@@ -1190,6 +1272,24 @@ inline int midiOutGetDevCaps(int deviceID, MIDIOUTCAPS* caps, unsigned int size)
     return 0; // success
 }
 
+/* WinMM joystick info (mmsystem.h) — SWFF_GetJoyData declaration surface */
+#ifndef JOYINFOEX_DEFINED
+#define JOYINFOEX_DEFINED
+typedef struct {
+    DWORD dwSize;
+    DWORD dwFlags;
+    DWORD dwXpos, dwYpos, dwZpos;
+    DWORD dwRpos, dwUpos, dwVpos;
+    DWORD dwButtons;
+    DWORD dwButtonNumber;
+    DWORD dwPOV;
+    DWORD dwReserved1, dwReserved2;
+} JOYINFOEX, *PJOYINFOEX, *LPJOYINFOEX;
+#define JOY_RETURNALL 0x000000FFL
+#endif
+
+#ifndef _WAVEFORMAT_
+#define _WAVEFORMAT_
 typedef struct {
     uint16_t wFormatTag;        // PCM = 1
     uint16_t nChannels;         // 1 = mono, 2 = stereo
@@ -1202,7 +1302,10 @@ typedef struct {
     WAVEFORMAT wf;              // nested WAVEFORMAT
     uint16_t   wBitsPerSample;  // bits per sample (8, 16, etc.)
 } PCMWAVEFORMAT;
+#endif
 
+#ifndef _WAVEFORMATEX_
+#define _WAVEFORMATEX_
 typedef struct {
     uint16_t wFormatTag;
     uint16_t nChannels;
@@ -1212,6 +1315,12 @@ typedef struct {
     uint16_t wBitsPerSample;
     uint16_t cbSize;
 } WAVEFORMATEX, *LPWAVEFORMATEX;
+typedef const WAVEFORMATEX* LPCWAVEFORMATEX;
+#endif
+
+#ifndef WAVE_FORMAT_PCM
+#define WAVE_FORMAT_PCM 1
+#endif
 
 #define WAVE_MAPPER   (-1)
 
@@ -1772,6 +1881,10 @@ typedef struct HMONITOR__* HMONITOR;
 #define DEFINE_GUID(name,l,w1,w2,b1,b2,b3,b4,b5,b6,b7,b8) \
     static const GUID name = { l, w1, w2, { b1,b2,b3,b4,b5,b6,b7,b8 } }
 #endif
+
+/* Zero GUID — cguid.h ships it in the SDK; BoB code uses it far beyond
+   cguid.h includers (savegame, comms), so it lives here for all TUs. */
+DEFINE_GUID(GUID_NULL, 0,0,0, 0,0,0,0,0,0,0,0);
 
 /* Polygon region fill modes */
 #ifndef ALTERNATE
@@ -2344,6 +2457,96 @@ static inline int DeleteTimerQueueTimer(HANDLE TimerQueue, HANDLE Timer, void* C
 
 #ifndef E_NOINTERFACE
 #define E_NOINTERFACE    ((HRESULT)0x80004002L)
+#endif
+
+#ifndef E_FAIL
+#define E_FAIL           ((HRESULT)0x80004005L)
+#endif
+#ifndef E_PENDING
+#define E_PENDING        ((HRESULT)0x8000000AL)
+#endif
+#ifndef E_NOTIMPL
+#define E_NOTIMPL        ((HRESULT)0x80004001L)
+#endif
+#ifndef E_UNEXPECTED
+#define E_UNEXPECTED     ((HRESULT)0x8000FFFFL)
+#endif
+#ifndef S_FALSE
+#define S_FALSE          ((HRESULT)1L)
+#endif
+
+#ifndef MAKE_HRESULT
+#define MAKE_HRESULT(sev,fac,code) \
+    ((HRESULT)(((unsigned long)(sev)<<31) | ((unsigned long)(fac)<<16) | ((unsigned long)(code))))
+#endif
+#ifndef HRESULT_FROM_WIN32
+#define HRESULT_FROM_WIN32(x) \
+    ((HRESULT)(x) <= 0 ? ((HRESULT)(x)) : ((HRESULT)(((x)&0x0000FFFF)|(0x00070000L<<16)|0x80000000L)))
+#endif
+
+/* COM class-object activation — no COM runtime exists; the MFC_stub
+   implementation always fails, so every consumer stays on its
+   null-guarded fallback path (DirectPlay/DirectShow both degrade). */
+#ifndef CLSCTX_INPROC_SERVER
+#define CLSCTX_INPROC_SERVER   0x1
+#define CLSCTX_LOCAL_SERVER    0x4
+#define CLSCTX_SERVER          (CLSCTX_INPROC_SERVER|CLSCTX_LOCAL_SERVER)
+#endif
+typedef DWORD CLSCTX_;
+#ifndef WIN32_COMPAT_COCREATE_DECL
+#define WIN32_COMPAT_COCREATE_DECL
+HRESULT CoCreateInstance(REFCLSID rclsid, LPUNKNOWN pUnkOuter,
+                         DWORD dwClsContext, REFIID riid, LPVOID* ppv);
+inline HRESULT CoInitialize(LPVOID)   { return S_OK; }
+inline HRESULT CoInitializeEx(LPVOID, DWORD) { return S_OK; }
+inline void    CoUninitialize()       {}
+inline void    CoFreeUnusedLibraries() {}
+#endif
+
+#ifndef CLSCTX_INPROC
+#define CLSCTX_INPROC_HANDLER  0x2
+#define CLSCTX_INPROC          (CLSCTX_INPROC_SERVER|CLSCTX_INPROC_HANDLER)
+#endif
+
+/* FIELD_OFFSET — ntdef.h */
+#ifndef FIELD_OFFSET
+#define FIELD_OFFSET(type,field) ((LONG)(uintptr_t)&(((type*)0)->field))
+#endif
+
+/* Code pages + wide-char conversion (impls in MFC_stub.cpp) */
+#ifndef CP_ACP
+#define CP_ACP        0
+#define CP_OEMCP      1
+#define CP_UTF8       65001
+#endif
+int  MultiByteToWideChar(UINT codepage, DWORD flags, const char* src,
+                         int srclen, wchar_t* dst, int dstlen);
+static inline int WideCharToMultiByte(UINT codepage, DWORD,
+                                      const wchar_t* src, int srclen,
+                                      char* dst, int dstlen,
+                                      const char*, BOOL*)
+{
+    if (!src || !dst || dstlen <= 0) return 0;
+    int n = srclen < 0 ? (int)wcslen(src) + 1 : srclen;
+    if (n > dstlen) n = dstlen;
+    for (int i = 0; i < n; i++) dst[i] = (char)src[i];
+    (void)codepage;
+    return n;
+}
+
+/* Dynamic loading — DLL functions never resolve; consumers fall back. */
+struct HINSTANCE__;
+inline void* GetProcAddress(HINSTANCE, LPCSTR) { return NULL; }
+inline void* GetProcAddress(HINSTANCE__*, LPCSTR) { return NULL; }
+
+/* Bitmap compression modes (wingdi.h) */
+#ifndef BI_RGB
+#define BI_RGB       0L
+#define BI_RLE8      1L
+#define BI_RLE4      2L
+#define BI_BITFIELDS 3L
+#define BI_JPEG      4L
+#define BI_PNG       5L
 #endif
 
 typedef struct _SECURITY_ATTRIBUTES {
