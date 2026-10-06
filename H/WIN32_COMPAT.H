@@ -384,6 +384,13 @@ inline bool operator!=(const GUID& a, const GUID& b) {
 #ifndef MB_OKCANCEL
 #define MB_OKCANCEL 0x00000001L 
 #endif
+#ifndef MB_RETRYCANCEL
+#define MB_RETRYCANCEL    0x00000005L
+#define MB_ICONSTOP       0x00000010L
+#define MB_ICONERROR      MB_ICONSTOP
+#define MB_APPLMODAL      0x00000000L
+#define MB_DEFBUTTON2     0x00000100L
+#endif
 
 #if 0
 inline int MessageBox(void* /*hWnd*/, const char* text, const char* caption, unsigned /*type*/) {
@@ -2157,6 +2164,9 @@ BOOL    FreeLibrary(HMODULE);
 #define ENUMLOGFONTEX_H
 struct ENUMLOGFONTEX { LOGFONT elfLogFont; char elfFullName[64]; char elfStyle[64]; char elfScript[32]; };
 typedef int (*FONTENUMPROC)(const ENUMLOGFONTEX*, const void*, DWORD, long);
+#ifndef TRUETYPE_FONTTYPE
+#define TRUETYPE_FONTTYPE 4
+#endif
 int EnumFontFamiliesEx(HDC, LOGFONT*, FONTENUMPROC, long, DWORD);
 #endif
 

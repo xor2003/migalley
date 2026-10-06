@@ -116,14 +116,16 @@ struct IVideoWindow : public IUnknown
     virtual HRESULT IsCursorHidden(long* CursorHidden) = 0;
 };
 
-/* GUIDs — distinct placeholder IIDs; no real DirectShow object is ever
-   created so exact bit patterns are irrelevant. */
-extern const GUID IID_IGraphBuilder;
-extern const GUID IID_IMediaControl;
-extern const GUID IID_IMediaEventEx;
-extern const GUID IID_IVideoWindow;
-extern const GUID IID_IBasicAudio;
-extern const GUID CLSID_FilterGraph;
+/* GUIDs — real DirectShow SDK values. CoCreateInstance always fails on
+   Linux so they are never matched, but call sites take their addresses. */
+#ifndef IID_IGraphBuilder
+DEFINE_GUID(IID_IGraphBuilder,  0x56A868A9,0x0AD4,0x11CE,0xB0,0x3A,0x00,0x20,0xAF,0x0B,0xA7,0x70);
+DEFINE_GUID(IID_IMediaControl,  0x56A868B1,0x0AD4,0x11CE,0xB0,0x3A,0x00,0x20,0xAF,0x0B,0xA7,0x70);
+DEFINE_GUID(IID_IMediaEventEx,  0x56A868C0,0x0AD4,0x11CE,0xB0,0x3A,0x00,0x20,0xAF,0x0B,0xA7,0x70);
+DEFINE_GUID(IID_IVideoWindow,   0x56A868B4,0x0AD4,0x11CE,0xB0,0x3A,0x00,0x20,0xAF,0x0B,0xA7,0x70);
+DEFINE_GUID(IID_IBasicAudio,    0x56A868B3,0x0AD4,0x11CE,0xB0,0x3A,0x00,0x20,0xAF,0x0B,0xA7,0x70);
+DEFINE_GUID(CLSID_FilterGraph,  0xE436EBB3,0x524F,0x11CE,0x9F,0x53,0x00,0x20,0xAF,0x0B,0xA7,0x70);
+#endif
 
 HRESULT CoCreateInstance(const GUID& rclsid, IUnknown* pUnkOuter,
                          DWORD dwClsContext, const GUID& riid, void** ppv);

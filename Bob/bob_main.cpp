@@ -1,20 +1,53 @@
 // bob_main.cpp — dedicated `bob` executable entry (REQ-LAUNCH-01/02).
 //
-// RERUN: embeds the rowan shared-shell detection gate exactly like
-// MigAlley.cpp; the game module entry is wired incrementally as BoB's
-// frontend TUs land on the compat layer (T116 inventory → waves 2-3).
-// Until the module seam is connected the exe refuses to pretend: it
-// passes detection, reports port status, and exits 3 (distinct from
-// the gate's exit-2 so CI can tell "bad install" from "not yet wired").
+// Mirrors MigAlley.cpp: shared-shell install gate first (REQ-DETECT-01/02/03),
+// then straight into BoB's real MFC entry — CMIGApp theApp lives in
+// bob-flight-sim's mfc/mig.cpp (bob_frontend).
 
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <signal.h>
+#include <execinfo.h>
 #include "detect.h"   // rowan-engine shared shell
+
+#include <SDL.h>
+#include <SDL_ttf.h>
+
+#include "stdafx.h"   // Bob/port — MFC compat context (afxwin etc.)
+#include "mig.h"      // h/mig.h via bob_overlay — class CMIGApp
+
+extern CMIGApp theApp;
+
+// MFC_stub.cpp — loads the install's RC json (BOB_RC.json) into the shared
+// string table and dialog-template store. BoB's CMIGApp::InitInstance never
+// chains to CWinApp::InitInstance, so it must run here (after chdir).
+extern void LoadDialogTemplates();
+
+#ifndef __MSVC__
+static void segv_backtrace(int sig)
+{
+	void* buf[32];
+	int   n = backtrace(buf, 32);
+	const char* msg = "\n*** bob fatal signal — backtrace ***\n";
+	write(STDERR_FILENO, msg, strlen(msg));
+	backtrace_symbols_fd(buf, n, STDERR_FILENO);
+	_exit(128 + sig);
+}
+#endif
 
 int main(int argc, char** argv)
 {
+#ifndef __MSVC__
+	struct sigaction sa = {0};
+	sa.sa_handler = segv_backtrace;
+	sigemptyset(&sa.sa_mask);
+	sa.sa_flags = SA_RESETHAND;
+	sigaction(SIGSEGV, &sa, NULL);
+	sigaction(SIGBUS, &sa, NULL);
+#endif
+
 	// Shell gate — unconditional, no bypass (REQ-DETECT-01/02/03).
 	const char* dir = (argc > 1 && argv[1][0] != '-') ? argv[1] : ".";
 	rowan_shell::Report rep = rowan_shell::detect_install(dir, "bob");
@@ -30,9 +63,21 @@ int main(int argc, char** argv)
 		return 2;
 	}
 
-	// wave-2 seam: CMIGApp/theApp entry once mfc/ TUs compile on the
-	// compat layer. Not a frontend claim — explicit non-launch status.
-	fprintf(stderr, "bob: detected %s/%s — frontend port in progress (wave 2)\n",
-			rep.game.c_str(), rep.edition.c_str());
-	return 3;
+	// Same subset as CWinApp::InitInstance minus doc-template creation —
+	// BoB builds its own document/frame inside CMIGApp::InitInstance.
+	LoadDialogTemplates();
+	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_JOYSTICK |
+	             SDL_INIT_GAMECONTROLLER) != 0) {
+		fprintf(stderr, "bob: SDL_Init failed: %s\n", SDL_GetError());
+		return 2;
+	}
+	if (TTF_Init() == -1) {
+		fprintf(stderr, "bob: TTF_Init failed: %s\n", TTF_GetError());
+		return 2;
+	}
+
+	if (!theApp.InitInstance())
+		return -1;
+
+	return theApp.Run();
 }

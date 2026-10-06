@@ -6,15 +6,6 @@ get_filename_component(ROWAN_ENGINE
 get_filename_component(BOB_SRC
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../battle-of-britain/source-ported/bob-flight-sim" ABSOLUTE)
 
-add_executable(bob
-    bob_main.cpp
-    ${ROWAN_ENGINE}/shell/detect.cpp
-    ${ROWAN_ENGINE}/shell/manifests.cpp
-)
-
-target_include_directories(bob PRIVATE ${ROWAN_ENGINE}/shell)
-target_link_libraries(bob PRIVATE ProjectDefaults)
-
 # ---------------------------------------------------------------------------
 # BoB frontend compile environment (T118).
 #
@@ -68,6 +59,10 @@ target_include_directories(bob_frontend PRIVATE
     ${CMAKE_SOURCE_DIR}/H
     ${ROWAN_ENGINE}/compat
 )
+# One CString ABI across every BoB object: without this, a TU that reaches
+# h/cstring.h before afxwin.h would build BoB's local class — same symbol
+# names as MigCstring's, silent ODR at link.
+target_compile_definitions(bob_frontend PRIVATE ROWAN_USE_MIG_CSTRING)
 target_compile_options(bob_frontend PRIVATE -fpermissive)
 target_link_libraries(bob_frontend PRIVATE ProjectDefaults)
 
@@ -114,8 +109,20 @@ target_link_libraries(bob_lib3d PRIVATE ProjectDefaults)
 # ROWAN_USE_MIG_CSTRING makes h/cstring.h adopt the shared CString (required
 # — otherwise BoB's local class collides with MigCstring across TU ABI).
 # ---------------------------------------------------------------------------
+# Source set = mfc/bob.vcxproj Release|Win32 (the VS2013 port project's
+# authoritative live list — the MSVC6 vcproj predates the port's unity
+# changes). 50 TUs: the mfc-side set is handled by bob_frontend; this lib
+# holds the 40 game-side TUs:
+#   - 13 unity TUs. _3D.CPP and _MATH.CPP are gutted in the port (bodies in
+#     /*x0r*/ comments) — their members compile standalone below. The other
+#     unities are live: they #include the members the vcxproj excludes.
+#   - 22 standalone 3d TUs (ex-unity members + never-unity files)
+#   - Winerror/Math/Matrix/nodebob/Sagmove — ex-unity members the vcxproj
+#     compiles directly.
+#   - keystub.cpp — _mfc.cpp pulls it in the VC build; bob_frontend is flat
+#     (per-file) so it lives here instead.
 add_library(bob_game STATIC
-    # unity aggregations (each pulls its sibling .cpps internally)
+    # unity TUs (bodies or shells per the port's state)
     ${BOB_SRC}/3d/_3d.cpp
     ${BOB_SRC}/ai/_ai.cpp
     ${BOB_SRC}/aircraft/_airc.cpp
@@ -129,13 +136,33 @@ add_library(bob_game STATIC
     ${BOB_SRC}/missman/_miss.cpp
     ${BOB_SRC}/model/_mode.cpp
     ${BOB_SRC}/movecode/_move.cpp
-    # standalone 3d TUs (not in _3D.CPP's include list)
+    # 3d TUs — standalone because _3D.CPP's includes are commented out
+    ${BOB_SRC}/3d/3dcode.cpp
+    ${BOB_SRC}/3d/3dcom.cpp
+    ${BOB_SRC}/3d/btree.cpp
+    ${BOB_SRC}/3d/collided.cpp
+    ${BOB_SRC}/3d/imagemap.cpp
+    ${BOB_SRC}/3d/landscap.cpp
+    ${BOB_SRC}/3d/migland.cpp
+    ${BOB_SRC}/3d/shapes.cpp
+    ${BOB_SRC}/3d/shpbld.cpp
+    ${BOB_SRC}/3d/transite.cpp
+    ${BOB_SRC}/3d/world.cpp
+    ${BOB_SRC}/3d/anmcntrl.cpp
+    ${BOB_SRC}/3d/anmradio.cpp
+    ${BOB_SRC}/3d/impact.cpp
+    # 3d TUs — never in the unity (compiled directly in every config)
     ${BOB_SRC}/3d/jimcol.cpp
     ${BOB_SRC}/3d/overlay.cpp
     ${BOB_SRC}/3d/viewsel.cpp
     ${BOB_SRC}/3d/smktrls.cpp
     ${BOB_SRC}/3d/tilemake.cpp
     ${BOB_SRC}/3d/weappak.cpp
+    ${BOB_SRC}/3d/loadpcx.cpp
+    # game TUs whose unity includes are commented out
+    ${BOB_SRC}/general/winerror.cpp
+    ${BOB_SRC}/math/math.cpp
+    ${BOB_SRC}/math/matrix.cpp
     # standalone game TUs
     ${BOB_SRC}/missman/nodebob.cpp
     ${BOB_SRC}/movecode/sagmove.cpp
@@ -149,6 +176,26 @@ target_include_directories(bob_game PRIVATE
 )
 target_compile_definitions(bob_game PRIVATE ROWAN_USE_MIG_CSTRING)
 target_compile_options(bob_game PRIVATE -fpermissive -Wno-narrowing)
+# The vcxproj built every TU on the stdafx.h PCH; under GCC the standalone
+# member TUs need that context injected explicitly (-include stdafx.h ->
+# Bob/port/stdafx.h).  The live unity TUs supply their own context and must
+# NOT get the injection — their members' static LoadResString copies would
+# collide with rdialog.h's inline (MSVC hid it, GCC errors).
+set(BOB_GAME_PCH_SOURCES
+    ${BOB_SRC}/3d/3dcode.cpp ${BOB_SRC}/3d/3dcom.cpp ${BOB_SRC}/3d/btree.cpp
+    ${BOB_SRC}/3d/collided.cpp ${BOB_SRC}/3d/imagemap.cpp
+    ${BOB_SRC}/3d/landscap.cpp ${BOB_SRC}/3d/migland.cpp ${BOB_SRC}/3d/shapes.cpp
+    ${BOB_SRC}/3d/shpbld.cpp ${BOB_SRC}/3d/transite.cpp ${BOB_SRC}/3d/world.cpp
+    ${BOB_SRC}/3d/anmcntrl.cpp ${BOB_SRC}/3d/anmradio.cpp ${BOB_SRC}/3d/impact.cpp
+    ${BOB_SRC}/3d/jimcol.cpp ${BOB_SRC}/3d/overlay.cpp ${BOB_SRC}/3d/viewsel.cpp
+    ${BOB_SRC}/3d/smktrls.cpp ${BOB_SRC}/3d/tilemake.cpp ${BOB_SRC}/3d/weappak.cpp
+    ${BOB_SRC}/3d/loadpcx.cpp
+    ${BOB_SRC}/general/winerror.cpp ${BOB_SRC}/math/math.cpp
+    ${BOB_SRC}/math/matrix.cpp ${BOB_SRC}/missman/nodebob.cpp
+    ${BOB_SRC}/movecode/sagmove.cpp ${BOB_SRC}/input/keystub.cpp
+)
+set_source_files_properties(${BOB_GAME_PCH_SOURCES}
+    PROPERTIES COMPILE_OPTIONS "-include;stdafx.h")
 target_link_libraries(bob_game PRIVATE ProjectDefaults)
 
 # T120b smoke: stub3d's init sequence (Create/Initialise/GetDrivers/GetModes/
@@ -164,3 +211,46 @@ target_include_directories(bob_lib3d_smoke PRIVATE
 target_compile_options(bob_lib3d_smoke PRIVATE -fpermissive)
 target_link_libraries(bob_lib3d_smoke PRIVATE bob_lib3d ProjectDefaults)
 add_test(NAME bob_lib3d_smoke COMMAND bob_lib3d_smoke)
+
+# ---------------------------------------------------------------------------
+# The `bob` executable (REQ-LAUNCH-02) — shell gate + real BoB entry.
+# Declared last: needs BOB_OVERLAY set and the module libs defined above.
+# bob_main.cpp calls CMIGApp theApp (bob_frontend's mfc/mig.cpp) after the
+# shared-shell detection gate, exactly like MigAlley.cpp.
+# ---------------------------------------------------------------------------
+add_executable(bob
+    bob_main.cpp
+    ${ROWAN_ENGINE}/shell/detect.cpp
+    ${ROWAN_ENGINE}/shell/manifests.cpp
+    # shared support TUs mig carries inside its exe/libs — bob needs them
+    # too: the MigCstring impl (BoB adopted it via ROWAN_USE_MIG_CSTRING)
+    # and the SDL-backed DirectInput stub.
+    ${CMAKE_SOURCE_DIR}/MigAlley/MigCString.cpp
+    ${CMAKE_SOURCE_DIR}/Hardware/dinput_stub.cpp
+)
+
+target_include_directories(bob PRIVATE
+    ${ROWAN_ENGINE}/shell
+    ${CMAKE_CURRENT_SOURCE_DIR}/port
+    ${BOB_OVERLAY}
+    ${CMAKE_SOURCE_DIR}/H
+    ${ROWAN_ENGINE}/compat
+)
+target_compile_definitions(bob PRIVATE ROWAN_USE_MIG_CSTRING)
+target_compile_options(bob PRIVATE -fpermissive)
+target_link_libraries(bob PRIVATE ProjectDefaults)
+# BoB module stack — game + frontend + lib3d built on the shared compat
+# layer; --start-group for the frontend<->game circular references.
+target_link_libraries(bob PRIVATE
+ -Wl,--start-group
+    bob_frontend
+    bob_game
+    bob_lib3d
+    RowanMFC
+    RowanAFX
+    RowanSheets
+ -Wl,--end-group
+    ${SDL2_LIBRARIES}
+    ${SDL2TTF_LIBRARIES}
+    ${SDL2_MIXER_LIBRARIES}
+)
