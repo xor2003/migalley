@@ -113,7 +113,7 @@ add_subdirectory(Assembler)
 add_subdirectory(GENERAL)
 add_subdirectory(MFC)
 add_subdirectory(MigAlley)
+enable_testing()
 add_subdirectory(Bob)
 
-enable_testing()
 add_subdirectory(tests)

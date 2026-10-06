@@ -98,3 +98,17 @@ target_include_directories(bob_lib3d PRIVATE
 )
 target_compile_options(bob_lib3d PRIVATE -fpermissive)
 target_link_libraries(bob_lib3d PRIVATE ProjectDefaults)
+
+# T120b smoke: stub3d's init sequence (Create/Initialise/GetDrivers/GetModes/
+# GetDefaults/SetDriverAndMode/Release) driven for real through libbob_lib3d.
+add_executable(bob_lib3d_smoke tests/lib3d_smoke.cpp tests/win32_leaves.cpp)
+target_include_directories(bob_lib3d_smoke PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/port
+    ${BOB_OVERLAY}
+    ${CMAKE_SOURCE_DIR}/H
+    ${ROWAN_ENGINE}/compat
+    ${BOB_SRC}/lib3d
+)
+target_compile_options(bob_lib3d_smoke PRIVATE -fpermissive)
+target_link_libraries(bob_lib3d_smoke PRIVATE bob_lib3d ProjectDefaults)
+add_test(NAME bob_lib3d_smoke COMMAND bob_lib3d_smoke)
