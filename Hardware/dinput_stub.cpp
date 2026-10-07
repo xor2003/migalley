@@ -20,13 +20,39 @@ static std::deque<DIDEVICEOBJECTDATA> g_kbQueue;
 static HANDLE                       g_kbNotify = NULL;
 static DWORD                        g_kbSeq = 0;
 static bool                         g_kbWatch = false;
+static bool                         g_kbDown[256] = {};
 
 static int SDLCALL RowanDIKeyWatchFn(void* /*userdata*/, SDL_Event* e)
 {
+    static const bool dbg = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+    if (e->type == SDL_WINDOWEVENT &&
+        e->window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+        // DInput unacquire semantics: every held key must report a release,
+        // otherwise the game's shift-column state latches until re-pressed.
+        pthread_mutex_lock(&g_kbMutex);
+        for (int k = 0; k < 256; ++k)
+            if (g_kbDown[k]) {
+                g_kbDown[k] = false;
+                if (g_kbQueue.size() < 512) {
+                    DIDEVICEOBJECTDATA d = {};
+                    d.dwOfs       = (DWORD)k;
+                    d.dwData      = 0;
+                    d.dwTimeStamp = e->window.timestamp;
+                    d.dwSequence  = g_kbSeq++;
+                    g_kbQueue.push_back(d);
+                }
+            }
+        HANDLE h = g_kbNotify;
+        pthread_mutex_unlock(&g_kbMutex);
+        if (dbg)
+            fprintf(stderr, "[key] focus lost: released held keys\n");
+        if (h)
+            SetEvent(h);
+        return 1;
+    }
     if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP)
         return 1;
     int dik = RowanSdlToDik(e->key.keysym.scancode);
-    static const bool dbg = getenv("ROWAN_DEBUG_INPUT") != nullptr;
     if (dbg)
         fprintf(stderr, "[key] sdl sc=%d dik=%02x %s\n",
                 e->key.keysym.scancode, dik,
@@ -34,6 +60,7 @@ static int SDLCALL RowanDIKeyWatchFn(void* /*userdata*/, SDL_Event* e)
     if (!dik)
         return 1;
     pthread_mutex_lock(&g_kbMutex);
+    g_kbDown[dik & 0xFF] = (e->type == SDL_KEYDOWN);
     if (g_kbQueue.size() < 512) {   // bound; drop oldest data beyond it
         DIDEVICEOBJECTDATA d = {};
         d.dwOfs       = (DWORD)(dik & 0xFF);
@@ -64,8 +91,10 @@ void RowanDISetKeyNotify(HANDLE hEvent)
 {
     pthread_mutex_lock(&g_kbMutex);
     g_kbNotify = hEvent;
-    if (hEvent)
+    if (hEvent) {
         g_kbQueue.clear();  // drop keys buffered while no consumer was armed
+        memset(g_kbDown, 0, sizeof g_kbDown);
+    }
     pthread_mutex_unlock(&g_kbMutex);
     if (hEvent)
         RowanDIKeyWatchEnsure();

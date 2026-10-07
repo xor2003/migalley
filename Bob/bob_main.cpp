@@ -102,6 +102,7 @@ int main(int argc, char** argv)
 		fprintf(stderr, "bob: TTF_Init failed: %s\n", TTF_GetError());
 		return 2;
 	}
+	SDL_DisableScreenSaver();
 	BoBInstallDDPresent();
 
 	if (!theApp.InitInstance())
