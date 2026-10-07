@@ -48,9 +48,9 @@ public:
         m_pchData[nRepeat] = '\0';
     }
     
-    CString(int i) { *this = std::to_string(i); }
-    CString(long l) { *this = std::to_string(l); }
-    CString(unsigned long ul) { *this = std::to_string(ul); }
+    CString(int i) { Init(std::to_string(i).c_str()); }
+    CString(long l) { Init(std::to_string(l).c_str()); }
+    CString(unsigned long ul) { Init(std::to_string(ul).c_str()); }
 
     ~CString() { Free(); }
 

@@ -1079,6 +1079,15 @@ BOOL DispatchMessage(const MSG* msg)
             if (root && root->renderer && !DDPrimaryActive()) {
                 PaintChildrenRecursive((HWND)msg->hwnd, root->renderer, 0, 0, 0);
                 SDL_RenderPresent(root->renderer);
+            }
+            // Clear dirty state even when DDraw owns presentation —
+            // otherwise needsRepaint stays set, PeekMessage synthesizes
+            // WM_PAINT on every call, and the Run loop's message-pump
+            // inner while never exits (starves EVENT_KEYS: dead 3D keys).
+            backend->needsRepaint = false;
+            backend->fullDirty = false;
+            backend->dirtyRegions.clear();
+            if (root) {
                 root->needsRepaint = false;
                 root->fullDirty = false;
                 root->dirtyRegions.clear();
@@ -1174,25 +1183,19 @@ DWORD MsgWaitForMultipleObjects(
     DWORD dwMilliseconds,
     DWORD dwWakeMask)
 {
-    // 1. Check for input if requested
-    if (dwWakeMask & QS_ALLINPUT)
-    {
-        PumpSDL();
-        PumpTimers();
-        // RERUN: a pending quit must also wake the caller — WM_QUIT is
-        // re-synthesized by PeekMessage once the queue has drained.
-        if (!g_msgQueue.empty() || g_shouldQuit ||
-            AnyDirtyVisibleWindow())
-        {
-            // Return index equal to nCount to indicate input is available
-            return WAIT_OBJECT_0 + nCount;
-        }
-    }
-
-    // 2. Check handles
     // This is a simplified poll. Real implementation would need to wait on condition variables.
     // Given the game loop structure, a poll with short sleep is acceptable for now.
-    
+    // Handles are checked before queued input on every iteration: the 3D loop
+    // keeps a window permanently dirty, so an input-first check would return
+    // WAIT_OBJECT_0+nCount forever and starve EVENT_KEYS (dead keyboard in 3D).
+    static const bool wdbg = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+    if (wdbg) {
+        static int calls = 0;
+        if (++calls % 200 == 1)
+            fprintf(stderr, "[wait] calls=%d n=%d ms=%d h0=%p\n",
+                    calls, (int)nCount, (int)dwMilliseconds,
+                    nCount ? pHandles[0] : nullptr);
+    }
     auto start = std::chrono::steady_clock::now();
 
     while (true)
@@ -1213,6 +1216,9 @@ DWORD MsgWaitForMultipleObjects(
                         if (!ev->manualReset)
                             ev->signaled = false;
                         pthread_mutex_unlock(&ev->mutex);
+                        static const bool wdbg = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+                        if (wdbg)
+                            fprintf(stderr, "[wait] ret handle %d ev=%p\n", (int)i, (void*)ev);
                         return WAIT_OBJECT_0 + i;
                     }
                     pthread_mutex_unlock(&ev->mutex);

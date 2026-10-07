@@ -26,6 +26,11 @@ static int SDLCALL RowanDIKeyWatchFn(void* /*userdata*/, SDL_Event* e)
     if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP)
         return 1;
     int dik = RowanSdlToDik(e->key.keysym.scancode);
+    static const bool dbg = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+    if (dbg)
+        fprintf(stderr, "[key] sdl sc=%d dik=%02x %s\n",
+                e->key.keysym.scancode, dik,
+                e->type == SDL_KEYDOWN ? "down" : "up");
     if (!dik)
         return 1;
     pthread_mutex_lock(&g_kbMutex);
@@ -39,8 +44,11 @@ static int SDLCALL RowanDIKeyWatchFn(void* /*userdata*/, SDL_Event* e)
     }
     HANDLE h = g_kbNotify;
     pthread_mutex_unlock(&g_kbMutex);
-    if (h)
+    if (h) {
+        if (dbg)
+            fprintf(stderr, "[key] setevent h=%p\n", h);
         SetEvent(h);
+    }
     return 1;
 }
 
@@ -130,7 +138,7 @@ HRESULT IDirectInputA::CreateDevice(const GUID& rguid,
     }
     // Check for our SDL Joystick GUID pattern
     else if (IsJoystickGUID(rguid)) {
-        dev->deviceIndex = (int)rguid.Data1;
+        dev->deviceIndex = (int)rguid.Data1 - 3; // EnumDevices encodes index+3
         dev->sdlJoy = SDL_JoystickOpen(dev->deviceIndex);
         if (!dev->sdlJoy) {
             delete dev;
@@ -159,7 +167,12 @@ HRESULT IDirectInputA::EnumDevices(DWORD dwDevType,
     // same SDL-backed enumeration as before
     if (!lpCallback) return DIERR_GENERIC;
 
-    if (dwDevType & DIDEVTYPE_MOUSE) {
+    // DirectInput: dwDevType==0 enumerates every attached device (BoB's
+    // SController::BuildEnumerationTables relies on this to find the mouse
+    // and all joysticks in one pass).
+    const bool all = (dwDevType == 0);
+
+    if (all || (dwDevType & DIDEVTYPE_MOUSE)) {
         DIDEVICEINSTANCE inst{};
         inst.dwSize = sizeof(inst);
         inst.guidInstance = GUID_SysMouse;
@@ -170,16 +183,28 @@ HRESULT IDirectInputA::EnumDevices(DWORD dwDevType,
         lpCallback(&inst, pvRef);
     }
 
-    if (dwDevType & DIDEVTYPE_JOYSTICK) {
+    if (all || (dwDevType & DIDEVTYPE_KEYBOARD)) {
+        DIDEVICEINSTANCE inst{};
+        inst.dwSize = sizeof(inst);
+        inst.guidInstance = GUID_SysKeyboard;
+        inst.guidProduct = GUID_SysKeyboard;
+        inst.dwDevType = DIDEVTYPE_KEYBOARD;
+        snprintf(inst.tszInstanceName, MAX_PATH, "SDL Keyboard");
+        snprintf(inst.tszProductName, MAX_PATH, "System Keyboard");
+        lpCallback(&inst, pvRef);
+    }
+
+    if (all || (dwDevType & DIDEVTYPE_JOYSTICK)) {
         int numJoy = SDL_NumJoysticks();
         for (int i = 0; i < numJoy; ++i) {
             DIDEVICEINSTANCE inst{};
             inst.dwSize = sizeof(inst);
-            // Embed index in GUID: { Index, MAGIC_HI, MAGIC_LO, ... }
-            inst.guidInstance.Data1 = (unsigned long)i;
+            // Embed index+3 in GUID Data1 — games treat Data1==0 as a
+            // device-list terminator and 1/2 as joystick/mouse aliases.
+            inst.guidInstance.Data1 = (unsigned long)(i + 3);
             inst.guidInstance.Data2 = (unsigned short)(SDL_JOY_GUID_MAGIC >> 16);
             inst.guidInstance.Data3 = (unsigned short)(SDL_JOY_GUID_MAGIC & 0xFFFF);
-            
+
             inst.dwDevType = DIDEVTYPE_JOYSTICK;
             snprintf(inst.tszInstanceName, MAX_PATH, "SDL Joystick %d", i);
             snprintf(inst.tszProductName, MAX_PATH, "%s", SDL_JoystickNameForIndex(i));
@@ -189,31 +214,25 @@ HRESULT IDirectInputA::EnumDevices(DWORD dwDevType,
     return DI_OK;
 }
 
-HRESULT IDirectInputA::GetDeviceStatus(const GUID& rguid) 
+HRESULT IDirectInputA::GetDeviceStatus(const GUID& rguid)
 {
-    // For now we only distinguish joystick vs mouse
-    if (rguid.Data1 == DIDEVTYPE_MOUSE) {
-        // SDL always exposes the system mouse
+    if (memcmp(&rguid, &GUID_SysMouse, sizeof(GUID)) == 0 ||
+        memcmp(&rguid, &GUID_SysKeyboard, sizeof(GUID)) == 0) {
+        // System mouse/keyboard are always present
         return DI_OK;
     }
-    else if (rguid.Data1 == DIDEVTYPE_JOYSTICK) 
+    if (IsJoystickGUID(rguid))
     {
-        // Check if any joystick is still attached
-        int numJoy = SDL_NumJoysticks();
-        if (numJoy > 0) {
-            // Optionally: loop through all and check SDL_JoystickGetAttached
-            for (int i = 0; i < numJoy; ++i) {
-                SDL_Joystick* joy = SDL_JoystickOpen(i);
-                if (joy) {
-                    bool attached = SDL_JoystickGetAttached(joy);
-                    SDL_JoystickClose(joy);
-                    if (attached) return DI_OK;
-                }
+        int idx = (int)rguid.Data1 - 3;
+        if (idx >= 0 && idx < SDL_NumJoysticks()) {
+            SDL_Joystick* joy = SDL_JoystickOpen(idx);
+            if (joy) {
+                bool attached = SDL_JoystickGetAttached(joy);
+                SDL_JoystickClose(joy);
+                if (attached) return DI_OK;
             }
-            return DI_NOTATTACHED;
-        } else {
-            return DI_NOTATTACHED;
         }
+        return DI_NOTATTACHED;
     }
     // Unknown GUID → pretend not attached
     return DI_NOTATTACHED;
