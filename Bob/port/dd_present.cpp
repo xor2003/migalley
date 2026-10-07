@@ -53,6 +53,17 @@ void PresentPrimary(IDirectDrawSurface7* primary)
 {
     if (!primary || !primary->desc.lpSurface) return;
     RowanDDLastPresentMs = SDL_GetTicks();
+    static bool fpsdbg = getenv("ROWAN_DEBUG_FPS") != nullptr;
+    if (fpsdbg) {
+        static unsigned frames = 0, t0 = 0;
+        unsigned now = SDL_GetTicks();
+        if (!t0) t0 = now;
+        if (++frames, now - t0 >= 2000) {
+            fprintf(stderr, "[fps] %.1f presents/s\n",
+                    frames * 1000.0 / (now - t0));
+            frames = 0; t0 = now;
+        }
+    }
     WindowBackend* be = TopLevelBackend();
     if (!be) return;
 
@@ -87,6 +98,17 @@ void QueuePresent(IDirectDrawSurface7* primary)
 {
     if (!primary || !primary->desc.lpSurface) return;
     RowanDDLastPresentMs = SDL_GetTicks();
+    static bool fpsdbg = getenv("ROWAN_DEBUG_FPS") != nullptr;
+    if (fpsdbg) {
+        static unsigned frames = 0, t0 = 0;
+        unsigned now = SDL_GetTicks();
+        if (!t0) t0 = now;
+        if (++frames, now - t0 >= 2000) {
+            fprintf(stderr, "[fps3d] %.1f frames queued/s\n",
+                    frames * 1000.0 / (now - t0));
+            frames = 0; t0 = now;
+        }
+    }
     primary->AddRef();
     IDirectDrawSurface7* old;
     {

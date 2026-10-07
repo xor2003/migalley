@@ -30,8 +30,22 @@ if(NOT MSVC)
     # GCC assumes references are non-null and deletes those guards, turning
     # intended "no arg" cases into null derefs (View3d::MakeInteractive crash).
     target_compile_options(ProjectDefaults INTERFACE
-        -m32 -fms-extensions -Wno-enum-compare -fno-delete-null-pointer-checks)
-    target_link_options(ProjectDefaults INTERFACE -m32)
+        -m32 -fms-extensions -Wno-enum-compare -fno-delete-null-pointer-checks
+        # MSVC-era code assumes wrap-around signed overflow; -fwrapv keeps
+        # that behaviour well-defined under optimisation.
+        -fwrapv
+        # -m32 defaults to i686/x87: every float op goes through the 387 stack
+        # and floorf() is a library call.  SSE2 scalar math is several times
+        # faster for the software rasterizer's float-heavy inner loops and is
+        # present on every CPU that can run this port (x86-64 era onward).
+        -msse2 -mfpmath=sse)
+    target_link_options(ProjectDefaults INTERFACE -m32
+        # Statically link the C++ runtime: the build compiles against the
+        # compiler's own headers, but the system libstdc++.so may be newer
+        # (GCC14 vs GCC13 here) with a different class layout — the vtable
+        # vbase offsets then disagree with the inline-ctor offsets and the
+        # first std::ofstream construction segfaults under -O2.
+        -static-libstdc++ -static-libgcc)
 
     if(MIG_SANITIZERS)
         message(STATUS "Sanitizers enabled: ASan + UBSan")
@@ -56,6 +70,9 @@ if(NOT MSVC)
 endif()
 
 target_include_directories(ProjectDefaults INTERFACE
+    # cxxpack/ shadows a handful of C++ standard headers so they are
+    # compiled at default packing — legacy headers leave pack(1) active.
+    ${CMAKE_SOURCE_DIR}/cxxpack
     ${CMAKE_SOURCE_DIR}/H
     ${SDL2_INCLUDE_DIRS}
     ${SDL2TTF_INCLUDE_DIRS}
@@ -63,6 +80,9 @@ target_include_directories(ProjectDefaults INTERFACE
     ${VULKAN_INCLUDE_DIRS}
     # i386 multiarch headers (SDL2/_real_SDL_config.h lives here)
     ${CMAKE_SOURCE_DIR}/../../sysroot-i386/usr/include/i386-linux-gnu
+    # sysroot root: vulkan/vulkan.h (the BoB compat backend; the vulkan.pc
+    # includedir resolves empty so VULKAN_INCLUDE_DIRS gives nothing)
+    ${CMAKE_SOURCE_DIR}/../../sysroot-i386/usr/include
 )
 
 # gcc's multilib config finds the 32-bit sysroot libs implicitly, but clang
@@ -81,6 +101,8 @@ target_link_libraries(ProjectDefaults INTERFACE
     ${VULKAN_LIBRARIES}
     # XSetErrorHandler — only the versioned runtime lib exists (no -dev pkg)
     -l:libX11.so.6
+    # d3dvk.h dlopens libvulkan at runtime (no-op stub on glibc>=2.34)
+    ${CMAKE_DL_LIBS}
 )
 
 target_compile_definitions(ProjectDefaults INTERFACE

@@ -1,0 +1,11 @@
+// Port shim: neutralise ambient #pragma pack for libstdc++ headers.
+// Game headers (dosdefs.h et al.) leave pack(1) active for the rest of
+// every TU - matching the original MSVC build, whose STL headers pushed
+// their own packing internally. libstdc++ headers do not, so stream/
+// locale/concurrency types otherwise get a packed layout that disagrees
+// with the compiled library (virtual-base offsets move -> std::ofstream
+// segfaults when built with -O2).
+#pragma pack(push)
+#pragma pack()
+#include_next <sstream>
+#pragma pack(pop)
