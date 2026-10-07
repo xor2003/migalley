@@ -12,9 +12,6 @@
 
 namespace {
 
-SDL_Texture* g_ddTex = nullptr;
-int g_ddTexW = 0, g_ddTexH = 0, g_ddTexBpp = 0;
-
 } // namespace
 
 // Read by MFC_stub's dialog repaint path: while presents are recent the
@@ -37,6 +34,11 @@ WindowBackend* TopLevelBackend()
     return fallback;
 }
 
+// Present via the window surface (software blit), not the backend renderer:
+// MFC's SDL_RENDERER_ACCELERATED GL context is bound to the main thread, so
+// SDL_UpdateTexture from the 3D worker thread fails with "window has not
+// been made current".  GetWindowSurface/BlitScaled/UpdateWindowSurface are
+// pure software paths safe to call from the worker.
 void PresentPrimary(IDirectDrawSurface7* primary)
 {
     if (!primary || !primary->desc.lpSurface) return;
@@ -53,19 +55,18 @@ void PresentPrimary(IDirectDrawSurface7* primary)
     else if (bpp == 16) fmt = SDL_PIXELFORMAT_RGB565;
     else                return;   // palettized primaries unsupported
 
-    if (!g_ddTex || g_ddTexW != w || g_ddTexH != h || g_ddTexBpp != (int)bpp) {
-        if (g_ddTex) SDL_DestroyTexture(g_ddTex);
-        g_ddTex = SDL_CreateTexture(be->renderer, fmt,
-                                    SDL_TEXTUREACCESS_STREAMING, w, h);
-        g_ddTexW = w; g_ddTexH = h; g_ddTexBpp = (int)bpp;
-    }
-    if (!g_ddTex) return;
-
-    if (SDL_UpdateTexture(g_ddTex, nullptr, primary->desc.lpSurface,
-                          (int)primary->desc.lPitch) != 0)
-        return;
-    SDL_RenderCopy(be->renderer, g_ddTex, nullptr, nullptr);
-    SDL_RenderPresent(be->renderer);
+    // Wrap the DD frame and scale it onto the window surface.  Window
+    // surfaces are shared with MFC's paint path, which is suppressed
+    // while DD presents are active.
+    SDL_Surface* ws = SDL_GetWindowSurface(be->window);
+    if (!ws) return;
+    SDL_Surface* src = SDL_CreateRGBSurfaceWithFormatFrom(
+        primary->desc.lpSurface, w, h, (int)bpp,
+        (int)primary->desc.lPitch, fmt);
+    if (!src) return;
+    SDL_BlitScaled(src, nullptr, ws, nullptr);
+    SDL_FreeSurface(src);
+    SDL_UpdateWindowSurface(be->window);
 }
 
 } // namespace
