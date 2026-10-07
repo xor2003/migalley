@@ -422,6 +422,7 @@ std::unordered_map<HWND, WindowBackend> g_hwndRegistry;
 // recent the game owns the window (DX7 fullscreen-exclusive semantics), so
 // the MFC dialog repaint must not clear/present over the 3D frame.
 extern "C" volatile unsigned long RowanDDLastPresentMs __attribute__((weak));
+extern "C" void RowanDDPumpPresent() __attribute__((weak));
 static bool DDPrimaryActive()
 {
     return &RowanDDLastPresentMs && RowanDDLastPresentMs &&
@@ -681,6 +682,16 @@ void PumpSDL()
                 msg.message = WM_QUIT;
                 g_msgQueue.push_back(msg);
                 MigArmQuitTeardown();
+                break;
+
+            case SDL_USEREVENT:
+                // Queued DirectDraw primary frame — the 3D worker must not
+                // touch SDL video, so it posts here and we present on the
+                // main thread (Bob/port/dd_present.cpp; absent in migalley).
+                {
+                    if (e.user.code == 0x44445052 && &RowanDDPumpPresent)
+                        RowanDDPumpPresent();
+                }
                 break;
 
             case SDL_MOUSEBUTTONDOWN:
@@ -1147,10 +1158,16 @@ DWORD MsgWaitForMultipleObjects(
                 // Try lock to check state safely
                 if (pthread_mutex_trylock(&ev->mutex) == 0)
                 {
-                    bool signaled = ev->signaled;
-                    pthread_mutex_unlock(&ev->mutex);
-                    if (signaled)
+                    // Win32 auto-reset semantics: a satisfied wait consumes
+                    // the signal unless the event was created manual-reset.
+                    if (ev->signaled)
+                    {
+                        if (!ev->manualReset)
+                            ev->signaled = false;
+                        pthread_mutex_unlock(&ev->mutex);
                         return WAIT_OBJECT_0 + i;
+                    }
+                    pthread_mutex_unlock(&ev->mutex);
                 }
             }
         }
@@ -2069,6 +2086,23 @@ BOOL CWnd::DestroyWindow()
                 // errors fire _XDefaultError -> exit(1) while static
                 // destructors race live worker threads. SDL_Quit reaps the
                 // window at process exit.
+                //
+                // A dedicated SDL window (non-child backend) is different:
+                // with no other backend referencing it, leaving it mapped
+                // keeps the dead dialog's last frame on top of the windows
+                // beneath — the BoB "Take-off" window froze the mission's
+                // last cockpit frame over the debrief screen. Unmap it
+                // instead of destroying, which has none of the async
+                // BadWindow/destructor-race hazards above.
+                bool still_used = false;
+                for (auto& kv : g_hwndRegistry)
+                    if (kv.first != m_hWnd &&
+                        kv.second.window == be->window) {
+                        still_used = true;
+                        break;
+                    }
+                if (!still_used)
+                    SDL_HideWindow(be->window);
                 if (AfxGetMainWnd() == this) {
                     extern volatile bool g_migVulkanWindowGone;
                     g_migVulkanWindowGone = true;

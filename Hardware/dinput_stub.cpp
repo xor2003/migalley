@@ -2,6 +2,82 @@
 
 #include "dinput_stub.h"
 
+#include <deque>
+
+// ---------------------------------------------------------------------------
+// Buffered keyboard input (system keyboard, c_dfDIKeyboard data format).
+//
+// SDL delivers real KEYDOWN/KEYUP events; an SDL event watch records them as
+// DIDEVICEOBJECTDATA entries — dwOfs = set-1 make code, dwData bit 7 = down —
+// so taps shorter than one frame are never lost the way a keyboard-state
+// diff would lose them.  When the game arms a notification handle via
+// IDirectInputDevice2::SetEventNotification we SetEvent it whenever new data
+// lands, which is what wakes CMIGApp::Run() -> Inst3d::OnKeyInput().
+// ---------------------------------------------------------------------------
+
+static pthread_mutex_t              g_kbMutex = PTHREAD_MUTEX_INITIALIZER;
+static std::deque<DIDEVICEOBJECTDATA> g_kbQueue;
+static HANDLE                       g_kbNotify = NULL;
+static DWORD                        g_kbSeq = 0;
+static bool                         g_kbWatch = false;
+
+static int SDLCALL RowanDIKeyWatchFn(void* /*userdata*/, SDL_Event* e)
+{
+    if (e->type != SDL_KEYDOWN && e->type != SDL_KEYUP)
+        return 1;
+    int dik = RowanSdlToDik(e->key.keysym.scancode);
+    if (!dik)
+        return 1;
+    pthread_mutex_lock(&g_kbMutex);
+    if (g_kbQueue.size() < 512) {   // bound; drop oldest data beyond it
+        DIDEVICEOBJECTDATA d = {};
+        d.dwOfs       = (DWORD)(dik & 0xFF);
+        d.dwData      = (e->type == SDL_KEYDOWN) ? 0x80 : 0;
+        d.dwTimeStamp = e->key.timestamp;
+        d.dwSequence  = g_kbSeq++;
+        g_kbQueue.push_back(d);
+    }
+    HANDLE h = g_kbNotify;
+    pthread_mutex_unlock(&g_kbMutex);
+    if (h)
+        SetEvent(h);
+    return 1;
+}
+
+void RowanDIKeyWatchEnsure()
+{
+    if (!g_kbWatch) {
+        SDL_AddEventWatch(RowanDIKeyWatchFn, nullptr);
+        g_kbWatch = true;
+    }
+}
+
+void RowanDISetKeyNotify(HANDLE hEvent)
+{
+    pthread_mutex_lock(&g_kbMutex);
+    g_kbNotify = hEvent;
+    if (hEvent)
+        g_kbQueue.clear();  // drop keys buffered while no consumer was armed
+    pthread_mutex_unlock(&g_kbMutex);
+    if (hEvent)
+        RowanDIKeyWatchEnsure();
+}
+
+DWORD RowanDIKeyDrain(DIDEVICEOBJECTDATA* out, DWORD want, bool peek)
+{
+    pthread_mutex_lock(&g_kbMutex);
+    DWORD n = want;
+    if (n > g_kbQueue.size())
+        n = (DWORD)g_kbQueue.size();
+    for (DWORD i = 0; i < n; ++i)
+        out[i] = g_kbQueue[i];
+    if (!peek)
+        for (DWORD i = 0; i < n; ++i)
+            g_kbQueue.pop_front();
+    pthread_mutex_unlock(&g_kbMutex);
+    return n;
+}
+
 static const unsigned long SDL_JOY_GUID_MAGIC = 0x53444C4A; // 'SDLJ'
 
 static bool IsJoystickGUID(const GUID& guid) {

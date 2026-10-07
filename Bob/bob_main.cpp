@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <signal.h>
+#include <ucontext.h>
 #include <execinfo.h>
 #include "detect.h"   // rowan-engine shared shell
 
@@ -30,13 +31,35 @@ extern void LoadDialogTemplates();
 extern void BoBInstallDDPresent();
 
 #ifndef __MSVC__
-static void segv_backtrace(int sig)
+// Async-signal-safe crash reporter.  The old handler called backtrace(),
+// which dlopen()s libgcc_s and mallocs — if the faulting thread already
+// held the malloc arena lock (e.g. a SEGV inside _int_malloc) the handler
+// deadlocked on the arena and hid the real fault.  This version writes
+// only the fault address + faulting EIP using async-safe calls, then exits.
+static char* segv_hex(char* out, unsigned long v)
 {
-	void* buf[32];
-	int   n = backtrace(buf, 32);
-	const char* msg = "\n*** bob fatal signal — backtrace ***\n";
-	write(STDERR_FILENO, msg, strlen(msg));
-	backtrace_symbols_fd(buf, n, STDERR_FILENO);
+	static const char* digs = "0123456789abcdef";
+	if (v > 0xf) out = segv_hex(out, v >> 4);
+	*out++ = digs[v & 0xf];
+	return out;
+}
+static void segv_report(int sig, siginfo_t* si, void* uc)
+{
+	ucontext_t* u = (ucontext_t*)uc;
+	char buf[128];
+	char* p = buf;
+	static const char head[] = "\n*** bob fatal signal ";
+	memcpy(p, head, sizeof(head) - 1); p += sizeof(head) - 1;
+	p = segv_hex(p, (unsigned long)sig);
+	static const char mid[] = " — si_addr=0x";
+	memcpy(p, mid, sizeof(mid) - 1); p += sizeof(mid) - 1;
+	p = segv_hex(p, (unsigned long)(si ? si->si_addr : 0));
+	static const char mid2[] = " eip=0x";
+	memcpy(p, mid2, sizeof(mid2) - 1); p += sizeof(mid2) - 1;
+	p = segv_hex(p, u ? (unsigned long)u->uc_mcontext.gregs[REG_EIP] : 0);
+	static const char tail[] = " ***\n";
+	memcpy(p, tail, sizeof(tail)); p += sizeof(tail) - 1;
+	write(STDERR_FILENO, buf, (size_t)(p - buf));
 	_exit(128 + sig);
 }
 #endif
@@ -45,9 +68,9 @@ int main(int argc, char** argv)
 {
 #ifndef __MSVC__
 	struct sigaction sa = {0};
-	sa.sa_handler = segv_backtrace;
+	sa.sa_sigaction = segv_report;
 	sigemptyset(&sa.sa_mask);
-	sa.sa_flags = SA_RESETHAND;
+	sa.sa_flags = SA_SIGINFO | SA_RESETHAND;
 	sigaction(SIGSEGV, &sa, NULL);
 	sigaction(SIGBUS, &sa, NULL);
 #endif

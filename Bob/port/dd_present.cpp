@@ -9,8 +9,18 @@
 
 #include "MFC_stub.h"   // g_hwndRegistry / WindowBackend / backend_from_hwnd
 #include <ddraw.h>      // compat/ddraw.h via bob_overlay -> IDirectDrawSurface7
+#include <mutex>
+#include <cstring>
 
 namespace {
+
+// The 3D worker must not call SDL video functions: SDL window ops are
+// main-thread-only and concurrent Xlib use of the same Display corrupts
+// X11's malloc'd buffers (that was the "corrupted double-linked list" /
+// deadlock we kept hitting).  The worker queues the latest primary surface
+// here and PumpSDL presents it on the main thread — latest frame wins.
+IDirectDrawSurface7* g_pendingPrimary = nullptr;
+std::mutex           g_pendingMutex;
 
 } // namespace
 
@@ -71,9 +81,44 @@ void PresentPrimary(IDirectDrawSurface7* primary)
 
 } // namespace
 
+// 3D-worker entry point (the RowanDDPresentHook target): refcount the frame,
+// replace any still-queued frame (latest wins), and nudge the main thread.
+void QueuePresent(IDirectDrawSurface7* primary)
+{
+    if (!primary || !primary->desc.lpSurface) return;
+    RowanDDLastPresentMs = SDL_GetTicks();
+    primary->AddRef();
+    IDirectDrawSurface7* old;
+    {
+        std::lock_guard<std::mutex> lk(g_pendingMutex);
+        old = g_pendingPrimary;
+        g_pendingPrimary = primary;
+    }
+    if (old) old->Release();
+    SDL_Event e;
+    std::memset(&e, 0, sizeof(e));
+    e.type = SDL_USEREVENT;
+    e.user.code = 0x44445052;   // 'DDPR'
+    SDL_PushEvent(&e);
+}
+
+// PumpSDL calls this (main thread) when the queued 'DDPR' event arrives.
+extern "C" void RowanDDPumpPresent()
+{
+    IDirectDrawSurface7* s;
+    {
+        std::lock_guard<std::mutex> lk(g_pendingMutex);
+        s = g_pendingPrimary;
+        g_pendingPrimary = nullptr;
+    }
+    if (!s) return;
+    PresentPrimary(s);
+    s->Release();
+}
+
 // Called once from bob_main.cpp; the hook is a plain function pointer so the
 // install is just an assignment.
 void BoBInstallDDPresent()
 {
-    RowanDDPresentHook = &PresentPrimary;
+    RowanDDPresentHook = &QueuePresent;
 }

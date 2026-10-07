@@ -34,6 +34,9 @@ extern "C" {
 #ifndef DI_TRUNCATEDANDRESTARTED
 #define DI_TRUNCATEDANDRESTARTED 0x00000001
 #endif
+#ifndef DIGDD_PEEK
+#define DIGDD_PEEK 0x00000001
+#endif
 
 #ifndef DI_NOTATTACHED
 #define DI_NOTATTACHED 0x8007000A
@@ -480,6 +483,12 @@ typedef struct DIDEVICEOBJECTDATA {
     DWORD   dwSequence; // Sequence number of event
 } DIDEVICEOBJECTDATA, *LPDIDEVICEOBJECTDATA;
 
+// Buffered-keyboard plumbing (implemented in Hardware/dinput_stub.cpp):
+// an SDL event watch captures KEYDOWN/KEYUP transitions into a queue —
+// so fast taps are never missed — and signals the DI notification handle.
+extern void  RowanDISetKeyNotify(HANDLE hEvent);
+extern void  RowanDIKeyWatchEnsure();
+extern DWORD RowanDIKeyDrain(DIDEVICEOBJECTDATA* out, DWORD want, bool peek);
 
 struct IDirectInputDeviceA {
     // SDL handle
@@ -504,7 +513,7 @@ struct IDirectInputDeviceA {
     ULONG Release() { return 1; }
 
     // --- Device setup ---
-    HRESULT Acquire() {
+    virtual HRESULT Acquire() {
         if (sdlJoy) {
             SDL_JoystickOpen(deviceIndex);
         }
@@ -524,7 +533,7 @@ struct IDirectInputDeviceA {
         return DI_OK;
     }
 
-    HRESULT Poll() {
+    virtual HRESULT Poll() {
         if (isMouse) {
             // For mouse, SDL_GetMouseState already queries current state.
             // You can pump events to be safe.
@@ -606,7 +615,7 @@ struct IDirectInputDeviceA {
     }
 
     // --- Polling state ---
-    HRESULT GetDeviceState(DWORD cbData, LPVOID lpvData) {
+    virtual HRESULT GetDeviceState(DWORD cbData, LPVOID lpvData) {
         if (!lpvData) return DIERR_GENERIC;
         auto* state = reinterpret_cast<DIJOYSTATE*>(lpvData);
 
@@ -660,7 +669,7 @@ struct IDirectInputDeviceA {
         return DI_OK;
     }
 
-    HRESULT GetDeviceData(DWORD cbObjectData,
+    virtual HRESULT GetDeviceData(DWORD cbObjectData,
                         LPDIDEVICEOBJECTDATA rgdod,
                         LPDWORD pdwInOut,
                         DWORD dwFlags)
@@ -732,7 +741,7 @@ struct IDirectInputDeviceA {
         return DI_OK;
     }
 
-    HRESULT SetEventNotification(HANDLE hEvent) {
+    virtual HRESULT SetEventNotification(HANDLE hEvent) {
         // Game only checks FAILED() or not; no real event needed
         return DI_OK;
     }
@@ -787,17 +796,128 @@ typedef struct DIEFFESCAPE {
     DWORD   cbOutBuffer;// size of output data
 } DIEFFESCAPE, *LPDIEFFESCAPE;
 
+// SDL scancode -> DirectInput (set-1 make code) for the keys BoB's
+// commonkeymaps can bind: alnum, F-keys, arrows, modifiers, keypad.
+// 0 means unmapped (skipped in event diffs).
+inline int RowanSdlToDik(int sc)
+{
+    switch (sc) {
+    case SDL_SCANCODE_ESCAPE: return 0x01;
+    case SDL_SCANCODE_1: return 0x02; case SDL_SCANCODE_2: return 0x03;
+    case SDL_SCANCODE_3: return 0x04; case SDL_SCANCODE_4: return 0x05;
+    case SDL_SCANCODE_5: return 0x06; case SDL_SCANCODE_6: return 0x07;
+    case SDL_SCANCODE_7: return 0x08; case SDL_SCANCODE_8: return 0x09;
+    case SDL_SCANCODE_9: return 0x0A; case SDL_SCANCODE_0: return 0x0B;
+    case SDL_SCANCODE_MINUS: return 0x0C; case SDL_SCANCODE_EQUALS: return 0x0D;
+    case SDL_SCANCODE_BACKSPACE: return 0x0E; case SDL_SCANCODE_TAB: return 0x0F;
+    case SDL_SCANCODE_Q: return 0x10; case SDL_SCANCODE_W: return 0x11;
+    case SDL_SCANCODE_E: return 0x12; case SDL_SCANCODE_R: return 0x13;
+    case SDL_SCANCODE_T: return 0x14; case SDL_SCANCODE_Y: return 0x15;
+    case SDL_SCANCODE_U: return 0x16; case SDL_SCANCODE_I: return 0x17;
+    case SDL_SCANCODE_O: return 0x18; case SDL_SCANCODE_P: return 0x19;
+    case SDL_SCANCODE_LEFTBRACKET: return 0x1A;
+    case SDL_SCANCODE_RIGHTBRACKET: return 0x1B;
+    case SDL_SCANCODE_RETURN: return 0x1C; case SDL_SCANCODE_LCTRL: return 0x1D;
+    case SDL_SCANCODE_A: return 0x1E; case SDL_SCANCODE_S: return 0x1F;
+    case SDL_SCANCODE_D: return 0x20; case SDL_SCANCODE_F: return 0x21;
+    case SDL_SCANCODE_G: return 0x22; case SDL_SCANCODE_H: return 0x23;
+    case SDL_SCANCODE_J: return 0x24; case SDL_SCANCODE_K: return 0x25;
+    case SDL_SCANCODE_L: return 0x26; case SDL_SCANCODE_SEMICOLON: return 0x27;
+    case SDL_SCANCODE_APOSTROPHE: return 0x28;
+    case SDL_SCANCODE_GRAVE: return 0x29; case SDL_SCANCODE_LSHIFT: return 0x2A;
+    case SDL_SCANCODE_BACKSLASH: return 0x2B;
+    case SDL_SCANCODE_Z: return 0x2C; case SDL_SCANCODE_X: return 0x2D;
+    case SDL_SCANCODE_C: return 0x2E; case SDL_SCANCODE_V: return 0x2F;
+    case SDL_SCANCODE_B: return 0x30; case SDL_SCANCODE_N: return 0x31;
+    case SDL_SCANCODE_M: return 0x32; case SDL_SCANCODE_COMMA: return 0x33;
+    case SDL_SCANCODE_PERIOD: return 0x34; case SDL_SCANCODE_SLASH: return 0x35;
+    case SDL_SCANCODE_RSHIFT: return 0x36;
+    case SDL_SCANCODE_KP_MULTIPLY: return 0x37;
+    case SDL_SCANCODE_LALT: return 0x38; case SDL_SCANCODE_SPACE: return 0x39;
+    case SDL_SCANCODE_CAPSLOCK: return 0x3A;
+    case SDL_SCANCODE_F1: return 0x3B; case SDL_SCANCODE_F2: return 0x3C;
+    case SDL_SCANCODE_F3: return 0x3D; case SDL_SCANCODE_F4: return 0x3E;
+    case SDL_SCANCODE_F5: return 0x3F; case SDL_SCANCODE_F6: return 0x40;
+    case SDL_SCANCODE_F7: return 0x41; case SDL_SCANCODE_F8: return 0x42;
+    case SDL_SCANCODE_F9: return 0x43; case SDL_SCANCODE_F10: return 0x44;
+    case SDL_SCANCODE_NUMLOCKCLEAR: return 0x45;
+    case SDL_SCANCODE_SCROLLLOCK: return 0x46;
+    case SDL_SCANCODE_KP_7: return 0x47; case SDL_SCANCODE_KP_8: return 0x48;
+    case SDL_SCANCODE_KP_9: return 0x49; case SDL_SCANCODE_KP_MINUS: return 0x4A;
+    case SDL_SCANCODE_KP_4: return 0x4B; case SDL_SCANCODE_KP_5: return 0x4C;
+    case SDL_SCANCODE_KP_6: return 0x4D; case SDL_SCANCODE_KP_PLUS: return 0x4E;
+    case SDL_SCANCODE_KP_1: return 0x4F; case SDL_SCANCODE_KP_2: return 0x50;
+    case SDL_SCANCODE_KP_3: return 0x51; case SDL_SCANCODE_KP_0: return 0x52;
+    case SDL_SCANCODE_KP_PERIOD: return 0x53;
+    case SDL_SCANCODE_NONUSBACKSLASH: return 0x56;
+    case SDL_SCANCODE_F11: return 0x57; case SDL_SCANCODE_F12: return 0x58;
+    case SDL_SCANCODE_KP_ENTER: return 0x9C; case SDL_SCANCODE_RCTRL: return 0x9D;
+    case SDL_SCANCODE_KP_DIVIDE: return 0xB5;
+    case SDL_SCANCODE_HOME: return 0xC7; case SDL_SCANCODE_UP: return 0xC8;
+    case SDL_SCANCODE_PAGEUP: return 0xC9;
+    case SDL_SCANCODE_LEFT: return 0xCB; case SDL_SCANCODE_RIGHT: return 0xCD;
+    case SDL_SCANCODE_END: return 0xCF; case SDL_SCANCODE_DOWN: return 0xD0;
+    case SDL_SCANCODE_PAGEDOWN: return 0xD1;
+    case SDL_SCANCODE_INSERT: return 0xD2; case SDL_SCANCODE_DELETE: return 0xD3;
+    case SDL_SCANCODE_RALT: return 0xB8;
+    }
+    return 0;
+}
+
 struct IDirectInputDevice2A : public IDirectInputDeviceA {
     // Inherit everything from IDirectInputDeviceA
+
+    // The SDL key watch runs as soon as the keyboard is acquired — the
+    // queue fills even if the game never arms a notification handle.
+    HRESULT Acquire() override {
+        if (isKeyboard)
+            RowanDIKeyWatchEnsure();
+        return IDirectInputDeviceA::Acquire();
+    }
+
+    HRESULT SetEventNotification(HANDLE hEvent) override {
+        if (isKeyboard)
+            RowanDISetKeyNotify(hEvent);
+        return DI_OK;
+    }
+
+    // Keyboards don't need Poll to do work — buffered data is generated
+    // by the SDL event watch, not lazily at poll time.
+    HRESULT Poll() override {
+        if (isKeyboard)
+            return DI_OK;
+        return IDirectInputDeviceA::Poll();
+    }
+
+    // c_dfDIKeyboard immediate state: 256 bytes indexed by DIK code.
+    HRESULT GetDeviceState(DWORD cbData, LPVOID lpvData) override {
+        if (isKeyboard) {
+            if (!lpvData) return DIERR_GENERIC;
+            Uint8* kstate = reinterpret_cast<Uint8*>(lpvData);
+            memset(kstate, 0, cbData);
+            const Uint8* ks = SDL_GetKeyboardState(NULL);
+            for (int sc = 0; sc < SDL_NUM_SCANCODES; ++sc) {
+                int dik = RowanSdlToDik(sc) & 0xFF;
+                if (dik && dik < (int)cbData && ks[sc])
+                    kstate[dik] = 0x80;
+            }
+            return DI_OK;
+        }
+        return IDirectInputDeviceA::GetDeviceState(cbData, lpvData);
+    }
 
     // --- Extra methods in Device2 ---
     HRESULT GetDeviceData(DWORD cbObjectData,
                           LPDIDEVICEOBJECTDATA rgdod,
                           LPDWORD pdwInOut,
-                          DWORD dwFlags)
+                          DWORD dwFlags) override
     {
-        // Stub: no buffered data
-        if (pdwInOut) *pdwInOut = 0;
+        if (!pdwInOut) return DIERR_GENERIC;
+        DWORD want = *pdwInOut;
+        *pdwInOut = 0;
+        if (!isKeyboard || !rgdod || !want)
+            return DI_OK;
+        *pdwInOut = RowanDIKeyDrain(rgdod, want, (dwFlags & DIGDD_PEEK) != 0);
         return DI_OK;
     }
 
