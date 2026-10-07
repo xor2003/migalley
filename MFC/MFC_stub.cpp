@@ -1120,6 +1120,41 @@ BOOL OnIdle(LONG lCount)
     return FALSE; // No more idle processing needed
 }
 
+// Win32 treats a dirty update region as a pending QS_PAINT input for
+// MsgWaitForMultipleObjects — the wait must return so the caller reaches
+// PeekMessage, where the stub synthesizes WM_PAINT.  Without this a wait
+// that only saw queued messages would sleep forever while repaints piled
+// up (BoB froze on the last cockpit frame after exiting the 3D view: the
+// debrief's dirty marks never woke the loop).
+static bool AnyDirtyVisibleWindow()
+{
+    for (auto& pair : g_hwndRegistry)
+        if (pair.second.needsRepaint && pair.second.owner &&
+            pair.second.visible)
+            return true;
+    return false;
+}
+
+// ROWAN_DEBUG_REPAINT dump: which backends carry a dirty mark and why
+// each one fails the repaint gate (missing owner, hidden).  Also lists
+// every non-child backend (the SDL window owners) since repaints only
+// reach the screen through them.
+static void DumpDirtyWindows()
+{
+    static const bool dbg = getenv("ROWAN_DEBUG_REPAINT") != nullptr;
+    if (!dbg) return;
+    for (auto& pair : g_hwndRegistry)
+        if (pair.second.needsRepaint || !pair.second.isChild)
+            printf("[REPAINT] %s hwnd=%p win=%p vis=%d owner=%p child=%d dirty=%d tid=%d\n",
+                   pair.second.needsRepaint ? "DIRTY" : "root ",
+                   pair.first, (void*)pair.second.window,
+                   (int)pair.second.visible,
+                   (void*)pair.second.owner, (int)pair.second.isChild,
+                   (int)pair.second.needsRepaint,
+                   (int)pair.second.templateID);
+    fflush(stdout);
+}
+
 DWORD MsgWaitForMultipleObjects(
     DWORD nCount,
     const HANDLE* pHandles,
@@ -1134,7 +1169,8 @@ DWORD MsgWaitForMultipleObjects(
         PumpTimers();
         // RERUN: a pending quit must also wake the caller — WM_QUIT is
         // re-synthesized by PeekMessage once the queue has drained.
-        if (!g_msgQueue.empty() || g_shouldQuit)
+        if (!g_msgQueue.empty() || g_shouldQuit ||
+            AnyDirtyVisibleWindow())
         {
             // Return index equal to nCount to indicate input is available
             return WAIT_OBJECT_0 + nCount;
@@ -1177,8 +1213,11 @@ DWORD MsgWaitForMultipleObjects(
         {
             PumpSDL();
             PumpTimers();
-            if (!g_msgQueue.empty() || g_shouldQuit)
+            if (!g_msgQueue.empty() || g_shouldQuit ||
+                AnyDirtyVisibleWindow())
                 return WAIT_OBJECT_0 + nCount;
+            static int dumpDiv = 0;
+            if (++dumpDiv >= 2000) { dumpDiv = 0; DumpDirtyWindows(); }
         }
 
         // Check timeout
@@ -2489,7 +2528,14 @@ CDC* CWnd::BeginPaint(PAINTSTRUCT* /*ps*/)
     WindowBackend* be = backend_from_hwnd(m_hWnd);
     // Win32 BeginPaint validates the update region — the window stops
     // being dirty here, not in EndPaint.
-    if (be) {
+    // Exception: while DirectDraw presents own the window, EndPaint and
+    // the WM_PAINT present path both refuse to present — clearing the
+    // dirty marks here would drop the repaint on the floor with nothing
+    // left to retry it (BoB froze on the last 3D frame after mission
+    // exit: the debrief's first paint landed inside the 250ms DD-active
+    // window and was silently consumed).  Keep the marks so the dirty
+    // scan re-synthesizes WM_PAINT once presents stop.
+    if (be && !DDPrimaryActive()) {
         be->needsRepaint = false;
         be->fullDirty = false;
         be->dirtyRegions.clear();
