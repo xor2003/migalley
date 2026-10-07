@@ -508,9 +508,16 @@ HWND FindChildWindow(HWND parent, int& x, int& y)
     // std::cout << "[HitTest] Checking parent HWND=" << parent << " at (" << x << "," << y << ")" << std::endl;
 
     // Check children in reverse order (assuming last created is on top)
+    static const bool dbgHit = getenv("ROWAN_DEBUG_INPUT") != nullptr;
     for (auto it = be->children.rbegin(); it != be->children.rend(); ++it) {
         HWND child = *it;
         WindowBackend* childBe = backend_from_hwnd(child);
+        if (dbgHit)
+            fprintf(stderr, "[HIT] parent=%p child=%p be=%p vis=%d owner=%p id=%d type=%s\n",
+                    parent, child, childBe, childBe ? childBe->visible : 0,
+                    (childBe && childBe->owner) ? (void*)childBe->owner : nullptr,
+                    (childBe && childBe->owner) ? childBe->owner->m_nID : -1,
+                    (childBe && childBe->owner) ? typeid(*childBe->owner).name() : "-");
         if (childBe && childBe->visible && childBe->owner) {
             // RERUN: Standard Win32 behavior: Static controls are transparent to mouse 
             // hits unless they have the SS_NOTIFY (0x0100) style.
@@ -535,10 +542,15 @@ HWND FindChildWindow(HWND parent, int& x, int& y)
                 }
             }
 
+            if (dbgHit)
+                fprintf(stderr, "      test child=%p id=%d type=%s rect=(%ld,%ld)-(%ld,%ld) pt=(%d,%d) %s\n",
+                        child, childBe->owner->m_nID, typeid(*childBe->owner).name(),
+                        (long)r.left, (long)r.top, (long)r.right, (long)r.bottom,
+                        x, y,
+                        (x >= r.left && x < r.right && y >= r.top && y < r.bottom) ? "HIT" : "miss");
             if (x >= r.left && x < r.right && y >= r.top && y < r.bottom) {
                 x -= r.left;
                 y -= r.top;
-                // std::cout << "  > Hit child ID=" << childBe->owner->m_nID << " (" << typeid(*childBe->owner).name() << ")" << std::endl;
                 return FindChildWindow(child, x, y);
             }
         }
@@ -2427,12 +2439,14 @@ CWnd* CWnd::GetNextWindow(unsigned int nDirection) const
     auto it = std::find(children.begin(), children.end(), m_hWnd);
     if (it == children.end()) return nullptr;
 
+    // Children are stored bottom->top in Z-order (back() = topmost).
+    // GW_HWNDNEXT steps DOWN the Z-order (toward begin), GW_HWNDPREV up (toward end).
     if (nDirection == GW_HWNDNEXT) {
-        if (++it != children.end())
-            return CWnd::FromHandle(*it);
-    } else if (nDirection == GW_HWNDPREV) {
         if (it != children.begin())
             return CWnd::FromHandle(*(--it));
+    } else if (nDirection == GW_HWNDPREV) {
+        if (++it != children.end())
+            return CWnd::FromHandle(*it);
     }
     return nullptr; 
 }
@@ -3003,16 +3017,13 @@ CWnd* CWnd::GetEventParent()
     return m_pParent;
 }
 
-void CWnd::FireEvent(int eventID, ...)
+void CWnd::FireEvent(int eventID, long l1, long l2, LPCTSTR text, int index)
 {
     CWnd* pParent = GetEventParent();
     if (!pParent) return;
 
     const AFX_EVENTSINKMAP* pMap = pParent->GetSinkMap();
     if (!pMap) return;
-
-    va_list args;
-    va_start(args, eventID);
 
     for (; pMap->idFirst != 0; ++pMap) {
         if (m_nID >= pMap->idFirst && m_nID <= pMap->idLast && pMap->eventid == eventID) {
@@ -3022,26 +3033,32 @@ void CWnd::FireEvent(int eventID, ...)
                 Func f = (Func)pMap->pfn;
                 (pParent->*f)();
             } else if (strcmp(pMap->params, VTS_BSTR) == 0) {
-                LPCTSTR text = va_arg(args, LPCTSTR);
                 typedef void (CCmdTarget::*Func)(LPCTSTR);
                 Func f = (Func)pMap->pfn;
                 (pParent->*f)(text);
             } else if (strcmp(pMap->params, VTS_I4) == 0) {
-                long val = va_arg(args, long);
                 typedef void (CCmdTarget::*Func)(long);
                 Func f = (Func)pMap->pfn;
-                (pParent->*f)(val);
+                (pParent->*f)(l1);
             } else if (strcmp(pMap->params, VTS_I4 VTS_I4) == 0) {
-                long val1 = va_arg(args, long);
-                long val2 = va_arg(args, long);
                 typedef void (CCmdTarget::*Func)(long, long);
                 Func f = (Func)pMap->pfn;
-                (pParent->*f)(val1, val2);
+                (pParent->*f)(l1, l2);
+            } else if (strcmp(pMap->params, VTS_BSTR VTS_I2) == 0) {
+                typedef void (CCmdTarget::*Func)(LPCTSTR, short);
+                Func f = (Func)pMap->pfn;
+                (pParent->*f)(text, (short)index);
+            } else if (strcmp(pMap->params, VTS_I4 VTS_BSTR VTS_I2) == 0) {
+                typedef void (CCmdTarget::*Func)(long, LPCTSTR, short);
+                Func f = (Func)pMap->pfn;
+                (pParent->*f)(l1, text, (short)index);
+            } else {
+                std::cout << "[FireEvent] unhandled params '" << pMap->params
+                          << "' for ctrl " << m_nID << " event " << eventID << std::endl;
             }
             break; // Assume one handler per event
         }
     }
-    va_end(args);
 }
 
 int CListBox::AddString(LPCTSTR lpszItem) {
@@ -3219,7 +3236,11 @@ void CListBox::OnLButtonDown(UINT nFlags, CPoint point) {
             m_pComboOwner->SetCurSel(m_curSel);
 
             // Fire the TextChanged event (1) and send selection change notification.
-            m_pComboOwner->FireEvent(1, selectedText.c_str());
+            // l1 carries the control id so ON_EVENT_RANGE (VTS_I4 VTS_BSTR VTS_I2)
+            // handlers learn which combo fired; plain VTS_BSTR VTS_I2 handlers
+            // ignore it and take (text, index).
+            m_pComboOwner->FireEvent(1, (long)m_pComboOwner->GetDlgCtrlID(), 0,
+                                     selectedText.c_str(), (int)m_curSel);
             if (m_pComboOwner->GetParent()) {
                 m_pComboOwner->GetParent()->SendMessage(WM_COMMAND, MAKEWPARAM(m_pComboOwner->GetDlgCtrlID(), 1 /*CBN_SELCHANGE*/), (LPARAM)m_pComboOwner->m_hWnd);
             }
@@ -4093,6 +4114,18 @@ BOOL CDialog::Create(int id, CWnd* pParent)
     }
     
     } // End of if (!m_hWnd)
+
+    // RERUN: deliver WM_CREATE the way ::CreateDialogIndirect does — before
+    // child controls exist and before WM_INITDIALOG. The stub never sent it,
+    // so RDialog::OnCreate never ran and homesize stayed (0,0,0,0); nested
+    // dials then got zero-height rects and were unreachable by hit-testing.
+    {
+        CREATESTRUCT cs = {};
+        cs.hInstance = nullptr;
+        cs.hMenu = nullptr;
+        cs.hwndParent = (m_pParent) ? m_pParent->m_hWnd : nullptr;
+        SendMessage(WM_CREATE, 0, (LPARAM)&cs);
+    }
 
     // Create controls from template
     if (m_pTemplate) {

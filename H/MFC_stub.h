@@ -1162,7 +1162,7 @@ public:
     virtual LRESULT SendMessageToDescendants(UINT, WPARAM = 0, LPARAM = 0);
 
     virtual CWnd* GetTopWindow() const;
-    virtual CWnd* GetNextWindow(unsigned int nDirection = 0) const;
+    virtual CWnd* GetNextWindow(unsigned int nDirection = GW_HWNDNEXT) const;
     virtual int GetDlgCtrlID() const;
     virtual LRESULT OnCommandHelp(WPARAM /*wParam*/, LPARAM /*lParam*/);
     virtual LRESULT MSG2_OnCommandHelp(int a, int b) { return OnCommandHelp(a, b); }
@@ -1261,7 +1261,15 @@ public:
     // RERUN: Add virtual function to get the target for events.
     virtual CWnd* GetEventParent();
     // RERUN: Generic event firing mechanism to replace ActiveX event sinks.
-    void FireEvent(int eventID, ...);
+    // Fixed payload slots; the sink-map params string selects which slots the
+    // handler actually receives:
+    //   VTS_NONE               -> ()
+    //   VTS_I4                 -> (l1)
+    //   VTS_I4 VTS_I4          -> (l1, l2)
+    //   VTS_BSTR               -> (text)
+    //   VTS_BSTR VTS_I2        -> (text, (short)index)
+    //   VTS_I4 VTS_BSTR VTS_I2 -> (l1, text, (short)index)  (ON_EVENT_RANGE: l1=ctrl id)
+    void FireEvent(int eventID, long l1 = 0, long l2 = 0, LPCTSTR text = nullptr, int index = 0);
     virtual void PreSubclassWindow();
     virtual void WinHelp(DWORD dwData, UINT nCmd);
     virtual void OnCaptureChanged(CWnd* pWnd);

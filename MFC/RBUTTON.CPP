@@ -576,21 +576,10 @@ void CRButton::OnLButtonUp(UINT nFlags, CPoint point)
 	{
 		SetPressed(!m_bPressed); // This toggles the state and invalidates.
 		GetParent()->SendMessage(WM_COMMAND, MAKEWPARAM(GetDlgCtrlID(), BN_CLICKED), (LPARAM)m_hWnd);
-		// RERUN: Fire event to parent for ActiveX compatibility
-		CWnd* pParent = GetParent();
-		if (pParent) {
-			const AFX_EVENTSINKMAP* pSinkMap = pParent->GetSinkMap();
-			if (pSinkMap) {
-				for (; pSinkMap->idFirst != 0; ++pSinkMap) {
-					if (m_nID >= pSinkMap->idFirst && m_nID <= pSinkMap->idLast && pSinkMap->eventid == 1 /* Click/Select */) {
-						typedef void (CCmdTarget::*SelectFunc)(long);
-						SelectFunc pfn = (SelectFunc)pSinkMap->pfn;
-						(pParent->*pfn)((long)m_nID);
-						return;
-					}
-				}
-			}
-		}
+		// RERUN: Fire event to parent for ActiveX compatibility.
+		// Route through FireEvent so the sink-map params string picks the
+		// correct handler signature (VTS_NONE buttons, VTS_I4 selectors).
+		FireEvent(1, (long)m_nID);
 	} else {
 		// Mouse was released outside, don't toggle, just redraw to remove the "pressed" look.
 		Invalidate();
