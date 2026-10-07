@@ -417,6 +417,17 @@ CObject* CDC::SelectStockObject(int object)
 
 std::unordered_map<HWND, WindowBackend> g_hwndRegistry;
 
+// Set by the DirectDraw present bridge (Bob/port/dd_present.cpp, bob exe
+// only) each time a primary-surface frame is uploaded.  While presents are
+// recent the game owns the window (DX7 fullscreen-exclusive semantics), so
+// the MFC dialog repaint must not clear/present over the 3D frame.
+extern "C" volatile unsigned long RowanDDLastPresentMs __attribute__((weak));
+static bool DDPrimaryActive()
+{
+    return &RowanDDLastPresentMs && RowanDDLastPresentMs &&
+           (SDL_GetTicks() - RowanDDLastPresentMs) < 250;
+}
+
 HWND allocate_hwnd() { 
     return new HWND__(); 
 }
@@ -1042,7 +1053,7 @@ BOOL DispatchMessage(const MSG* msg)
             WindowBackend* root = backend;
             while (root && root->isChild && root->parent)
                 root = backend_from_hwnd(root->parent->GetSafeHwnd());
-            if (root && root->renderer) {
+            if (root && root->renderer && !DDPrimaryActive()) {
                 PaintChildrenRecursive((HWND)msg->hwnd, root->renderer, 0, 0, 0);
                 SDL_RenderPresent(root->renderer);
                 root->needsRepaint = false;
@@ -2450,7 +2461,7 @@ CDC* CWnd::BeginPaint(PAINTSTRUCT* /*ps*/)
         be->dirtyRegions.clear();
     }
     // If this window owns its own renderer, clear it to start a new frame
-    if (be && be->renderer && !be->isChild) {
+    if (be && be->renderer && !be->isChild && !DDPrimaryActive()) {
         SDL_SetRenderDrawColor(be->renderer, 192, 192, 192, 255); // Standard dialog gray
         SDL_RenderClear(be->renderer);
     }
@@ -2484,7 +2495,7 @@ void CWnd::EndPaint(PAINTSTRUCT* /*ps*/)
     WindowBackend* be = backend_from_hwnd(m_hWnd);
     
     // Only the root window of an SDL window hierarchy should finish composition and present.
-    if (be && be->renderer && !be->isChild)
+    if (be && be->renderer && !be->isChild && !DDPrimaryActive())
     {
         // Compose the entire child window tree onto the root renderer
         PaintChildrenRecursive(m_hWnd, be->renderer, 0, 0, 0);
@@ -4390,7 +4401,7 @@ static void PaintChildrenRecursive(HWND parentHwnd, SDL_Renderer* renderer, int 
 void CFrameWnd::OnPaint()
 {
     WindowBackend* backend = backend_from_hwnd(m_hWnd);
-    if (backend && backend->renderer) {
+    if (backend && backend->renderer && !DDPrimaryActive()) {
         // Clear background
         SDL_SetRenderDrawColor(backend->renderer, 240, 240, 240, 255);
         SDL_RenderClear(backend->renderer);

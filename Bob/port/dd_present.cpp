@@ -15,6 +15,15 @@ namespace {
 SDL_Texture* g_ddTex = nullptr;
 int g_ddTexW = 0, g_ddTexH = 0, g_ddTexBpp = 0;
 
+} // namespace
+
+// Read by MFC_stub's dialog repaint path: while presents are recent the
+// game owns the window (fullscreen-exclusive semantics) and MFC paints
+// must not clear/present over the 3D frame.
+volatile unsigned long RowanDDLastPresentMs = 0;
+
+namespace {
+
 WindowBackend* TopLevelBackend()
 {
     // The DirectDraw primary covers the whole SDL window (exclusive
@@ -31,6 +40,7 @@ WindowBackend* TopLevelBackend()
 void PresentPrimary(IDirectDrawSurface7* primary)
 {
     if (!primary || !primary->desc.lpSurface) return;
+    RowanDDLastPresentMs = SDL_GetTicks();
     WindowBackend* be = TopLevelBackend();
     if (!be) return;
 
