@@ -27,7 +27,9 @@
 #include "maintbar.h"
 #include "MapFltrs.h"
 #include "fullpane.h"
-#include "migview.h"
+// migview.h deliberately NOT included: it drags MapDlg.h -> uiicons.h ->
+// ddraw.h -> the whole DX7/Vulkan compat chain into every TU.  Every TU that
+// uses CMIGView already #includes migview.h itself.
 #include "msctlbr.h"
 #include "ListBx.h"
 #include "HintBox.h"

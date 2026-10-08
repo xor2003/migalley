@@ -57,3 +57,32 @@ void test_dinput_focus_release()
     RowanDIKeyWatchFn(nullptr, &fe);
     CHECK_EQ((long)g_kbQueue.size(), 2);
 }
+
+// The header's GUIDs were TU-local `static const` — --gc-sections could
+// discard the copy a given TU referenced while another kept its own, so
+// guidType comparisons compared distinct objects.  They are now single
+// extern definitions in dinput_stub.cpp; pin the DX7 values and
+// distinctness so a mis-merge of the definition set can't silently alias
+// every device object class again.
+void test_dinput_guid_identity()
+{
+    CHECK_EQ((long)GUID_XAxis.Data1,   (long)0xA36D02E0);
+    CHECK_EQ((long)GUID_YAxis.Data1,   (long)0xA36D02E1);
+    CHECK_EQ((long)GUID_ZAxis.Data1,   (long)0xA36D02E2);
+    CHECK_EQ((long)GUID_RxAxis.Data1,  (long)0xA36D02E3);
+    CHECK_EQ((long)GUID_RyAxis.Data1,  (long)0xA36D02E4);
+    CHECK_EQ((long)GUID_RzAxis.Data1,  (long)0xA36D02E5);
+    CHECK_EQ((long)GUID_Slider.Data1,  (long)0xA36D02E6);
+    CHECK_EQ((long)GUID_POV.Data1,     (long)0xA36D02F2);
+    CHECK_EQ((long)GUID_Button.Data1,  (long)0xA36D02F0);
+    CHECK_EQ((long)GUID_Key.Data1,     (long)0x55728220);
+    CHECK_EQ((long)GUID_SysKeyboard.Data1, (long)0x6F1D2B61);
+    CHECK_EQ((long)GUID_SysMouse.Data1,    (long)0x6F1D2B60);
+
+    // Device-class GUIDs must not alias each other — the game switches on
+    // guidType during object enumeration.
+    CHECK(memcmp(&GUID_XAxis, &GUID_YAxis, sizeof(GUID)) != 0);
+    CHECK(memcmp(&GUID_Button, &GUID_POV, sizeof(GUID)) != 0);
+    CHECK(memcmp(&GUID_Key, &GUID_Button, sizeof(GUID)) != 0);
+    CHECK(memcmp(&GUID_SysKeyboard, &GUID_SysMouse, sizeof(GUID)) != 0);
+}

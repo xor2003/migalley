@@ -219,6 +219,7 @@ typedef const DSBPOSITIONNOTIFY* LPCDSBPOSITIONNOTIFY;
 
 #include <SDL2/SDL.h>
 #include <vector>
+#include <cstdlib>
 #include <math.h>
 
 namespace rowan_ds {
@@ -251,6 +252,12 @@ inline void Unlock_(){ if (S().dev) SDL_UnlockAudioDevice(S().dev); }
 
 void AudioCb(void* userdata, Uint8* stream, int len);  // defined below IDirectSoundBuffer
 
+inline void CloseDeviceAtExit()
+{
+    MixState& s = S();
+    if (s.dev) { SDL_CloseAudioDevice(s.dev); s.dev = 0; }
+}
+
 inline void EnsureDevice()
 {
     MixState& s = S();
@@ -266,6 +273,10 @@ inline void EnsureDevice()
     s.dev = SDL_OpenAudioDevice(NULL, 0, &want, NULL, 0);
     if (s.dev) {
         SDL_PauseAudioDevice(s.dev, 0);
+        // Close the device before MixState's static dtor frees bufs at
+        // exit: SDL_CloseAudioDevice joins the audio thread, and this
+        // atexit (registered after S() was constructed) runs before it.
+        std::atexit(CloseDeviceAtExit);
         fprintf(stderr, "[dsound] SDL2 audio device open: %d Hz %d ch\n", s.freq, s.ch);
     } else {
         s.openFailed = true;

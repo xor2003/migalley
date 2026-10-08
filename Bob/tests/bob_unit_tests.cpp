@@ -133,9 +133,15 @@ static void test_r3dmatrix_eq_guardpage()
 // Declared in bob_dinput_focus.cpp — drives the real SDL event watch in
 // Hardware/dinput_stub.cpp.
 void test_dinput_focus_release();
+void test_dinput_guid_identity();
 // Declared in bob_keystub_conv.cpp — keymap terminator bound at the last
 // record of keyb3d.bin.
 void test_keystub_reg3dconv_bound();
+// Declared in bob_worldinc_delete.cpp — sized-delete mismatch on the
+// item-hierarchy operator delete overrides.
+void test_worldinc_delete();
+// Declared in bob_analogue_axis.cpp — TransAxis sentinel/upper bound.
+void test_analogue_transaxis_bounds();
 
 int main()
 {
@@ -144,7 +150,10 @@ int main()
     test_r3dmatrix_eq();
     test_r3dmatrix_eq_guardpage();
     test_dinput_focus_release();
+    test_dinput_guid_identity();
     test_keystub_reg3dconv_bound();
+    test_worldinc_delete();
+    test_analogue_transaxis_bounds();
 
     std::printf("%d checks, %d failures\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

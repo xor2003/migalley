@@ -63,8 +63,13 @@ target_include_directories(bob_frontend PRIVATE
 # h/cstring.h before afxwin.h would build BoB's local class — same symbol
 # names as MigCstring's, silent ODR at link.
 target_compile_definitions(bob_frontend PRIVATE ROWAN_USE_MIG_CSTRING)
-target_compile_options(bob_frontend PRIVATE -fpermissive)
 target_link_libraries(bob_frontend PRIVATE ProjectDefaults)
+# Real PCH: the vcxproj built every mfc TU against the stdafx/afxauto
+# precompiled header — under GCC each TU was re-parsing the ~700-header
+# umbrella instead.  cmake_pch.hxx injects stdafx.h first in every TU and
+# compiles it once per target.
+target_precompile_headers(bob_frontend PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/port/stdafx.h)
 
 # Native lib3d (T120a route C): BoB's own CLib3D compiled against the rowan
 # DX7 emulation (rowan-engine/compat/{d3dtypes,d3d,ddraw}.h). Source list is
@@ -91,7 +96,6 @@ target_include_directories(bob_lib3d PRIVATE
     ${CMAKE_SOURCE_DIR}/H
     ${ROWAN_ENGINE}/compat
 )
-target_compile_options(bob_lib3d PRIVATE -fpermissive)
 target_link_libraries(bob_lib3d PRIVATE ProjectDefaults)
 
 # ---------------------------------------------------------------------------
@@ -175,27 +179,25 @@ target_include_directories(bob_game PRIVATE
     ${ROWAN_ENGINE}/compat
 )
 target_compile_definitions(bob_game PRIVATE ROWAN_USE_MIG_CSTRING)
-target_compile_options(bob_game PRIVATE -fpermissive -Wno-narrowing)
-# The vcxproj built every TU on the stdafx.h PCH; under GCC the standalone
-# member TUs need that context injected explicitly (-include stdafx.h ->
-# Bob/port/stdafx.h).  The live unity TUs supply their own context and must
-# NOT get the injection — their members' static LoadResString copies would
-# collide with rdialog.h's inline (MSVC hid it, GCC errors).
-set(BOB_GAME_PCH_SOURCES
-    ${BOB_SRC}/3d/3dcode.cpp ${BOB_SRC}/3d/3dcom.cpp ${BOB_SRC}/3d/btree.cpp
-    ${BOB_SRC}/3d/collided.cpp ${BOB_SRC}/3d/imagemap.cpp
-    ${BOB_SRC}/3d/landscap.cpp ${BOB_SRC}/3d/migland.cpp ${BOB_SRC}/3d/shapes.cpp
-    ${BOB_SRC}/3d/shpbld.cpp ${BOB_SRC}/3d/transite.cpp ${BOB_SRC}/3d/world.cpp
-    ${BOB_SRC}/3d/anmcntrl.cpp ${BOB_SRC}/3d/anmradio.cpp ${BOB_SRC}/3d/impact.cpp
-    ${BOB_SRC}/3d/jimcol.cpp ${BOB_SRC}/3d/overlay.cpp ${BOB_SRC}/3d/viewsel.cpp
-    ${BOB_SRC}/3d/smktrls.cpp ${BOB_SRC}/3d/tilemake.cpp ${BOB_SRC}/3d/weappak.cpp
-    ${BOB_SRC}/3d/loadpcx.cpp
-    ${BOB_SRC}/general/winerror.cpp ${BOB_SRC}/math/math.cpp
-    ${BOB_SRC}/math/matrix.cpp ${BOB_SRC}/missman/nodebob.cpp
-    ${BOB_SRC}/movecode/sagmove.cpp ${BOB_SRC}/input/keystub.cpp
+target_compile_options(bob_game PRIVATE -Wno-narrowing)
+# The vcxproj built every TU on the stdafx.h PCH.  Real PCH gives the
+# standalone member TUs the same context (cmake_pch.hxx -> port/stdafx.h),
+# compiled once for the whole target instead of re-parsed per TU.
+# The live unity TUs supply their own context and must NOT get the
+# injection — their members' static LoadResString copies would collide with
+# rdialog.h's inline (MSVC hid it, GCC errors).
+target_precompile_headers(bob_game PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/port/stdafx.h)
+set(BOB_GAME_UNITY_SOURCES
+    ${BOB_SRC}/3d/_3d.cpp ${BOB_SRC}/ai/_ai.cpp ${BOB_SRC}/aircraft/_airc.cpp
+    ${BOB_SRC}/bfields/_bfie.cpp ${BOB_SRC}/comms/_comm.cpp
+    ${BOB_SRC}/files/_file.cpp ${BOB_SRC}/general/_gene.cpp
+    ${BOB_SRC}/hardware/_hard.cpp ${BOB_SRC}/input/_inpu.cpp
+    ${BOB_SRC}/math/_math.cpp ${BOB_SRC}/missman/_miss.cpp
+    ${BOB_SRC}/model/_mode.cpp ${BOB_SRC}/movecode/_move.cpp
 )
-set_source_files_properties(${BOB_GAME_PCH_SOURCES}
-    PROPERTIES COMPILE_OPTIONS "-include;stdafx.h")
+set_source_files_properties(${BOB_GAME_UNITY_SOURCES}
+    PROPERTIES SKIP_PRECOMPILE_HEADERS ON)
 target_link_libraries(bob_game PRIVATE ProjectDefaults)
 
 # T120b smoke: stub3d's init sequence (Create/Initialise/GetDrivers/GetModes/
@@ -208,7 +210,6 @@ target_include_directories(bob_lib3d_smoke PRIVATE
     ${ROWAN_ENGINE}/compat
     ${BOB_SRC}/lib3d
 )
-target_compile_options(bob_lib3d_smoke PRIVATE -fpermissive)
 target_link_libraries(bob_lib3d_smoke PRIVATE bob_lib3d ProjectDefaults)
 add_test(NAME bob_lib3d_smoke COMMAND bob_lib3d_smoke)
 
@@ -221,6 +222,8 @@ add_executable(bob_unit_tests
     tests/bob_unit_tests.cpp
     tests/bob_dinput_focus.cpp
     tests/bob_keystub_conv.cpp
+    tests/bob_worldinc_delete.cpp
+    tests/bob_analogue_axis.cpp
 )
 target_include_directories(bob_unit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/port
@@ -230,11 +233,12 @@ target_include_directories(bob_unit_tests PRIVATE
     ${ROWAN_ENGINE}/compat
     ${BOB_SRC}/lib3d
     ${BOB_SRC}/input
+    ${BOB_SRC}/h
 )
-target_compile_options(bob_unit_tests PRIVATE -fpermissive)
+target_compile_definitions(bob_unit_tests PRIVATE ROWAN_USE_MIG_CSTRING)
 # The included implementation TUs carry globals/methods this test never
 # touches (fileman paths etc.); section GC drops them so no stubs needed.
-set_source_files_properties(tests/bob_keystub_conv.cpp
+set_source_files_properties(tests/bob_keystub_conv.cpp tests/bob_analogue_axis.cpp
     PROPERTIES COMPILE_OPTIONS "-ffunction-sections")
 target_link_options(bob_unit_tests PRIVATE -Wl,--gc-sections)
 target_link_libraries(bob_unit_tests PRIVATE ProjectDefaults)
@@ -266,7 +270,6 @@ target_include_directories(bob PRIVATE
     ${ROWAN_ENGINE}/compat
 )
 target_compile_definitions(bob PRIVATE ROWAN_USE_MIG_CSTRING)
-target_compile_options(bob PRIVATE -fpermissive)
 target_link_libraries(bob PRIVATE ProjectDefaults)
 # BoB module stack — game + frontend + lib3d built on the shared compat
 # layer; --start-group for the frontend<->game circular references.

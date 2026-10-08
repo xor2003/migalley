@@ -847,7 +847,7 @@ public: \
     CRuntimeClass class_name::class##class_name( \
         #class_name, \
         &base_class_name::class##base_class_name, \
-        reinterpret_cast<CObject*(*)()>(pfnNew) \
+        reinterpret_cast<CObject*(PASCAL *)()>(pfnNew) \
     ); \
     CRuntimeClass* class_name::GetRuntimeClass() const { \
         return &class_name::class##class_name; \

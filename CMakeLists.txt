@@ -7,6 +7,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Needed so clang-check/cppcheck can consume per-file flags
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# ccache: recompiles whose preprocessed output is unchanged (header edits that
+# a TU doesn't consume, rebuild loops, branch switches) hit the cache instead
+# of re-running cc1plus.  Inert when ccache isn't installed.
+find_program(ROWAN_CCACHE_PROGRAM ccache
+    PATHS "$ENV{HOME}/.local/bin" "$ENV{HOME}/bin")
+if(ROWAN_CCACHE_PROGRAM)
+    message(STATUS "ccache: ${ROWAN_CCACHE_PROGRAM}")
+    set(CMAKE_C_COMPILER_LAUNCHER   ${ROWAN_CCACHE_PROGRAM})
+    set(CMAKE_CXX_COMPILER_LAUNCHER ${ROWAN_CCACHE_PROGRAM})
+endif()
+
 option(MIG_SANITIZERS "Build with AddressSanitizer + UBSan (GCC, 32-bit)" OFF)
 option(MIG_LINT "Run cppcheck during the build" OFF)
 
