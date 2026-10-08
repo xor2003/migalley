@@ -685,6 +685,11 @@ void PumpSDL()
     SDL_Event e;
     while (SDL_PollEvent(&e))
     {
+        static const bool dbgEv = getenv("ROWAN_DEBUG_EVENTS") != nullptr;
+        if (dbgEv && e.type != SDL_MOUSEMOTION && e.type != 0x200)
+            fprintf(stderr, "[EV] type=0x%x winid=%u\n", e.type,
+                    e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP ? e.button.windowID :
+                    e.type == SDL_KEYDOWN || e.type == SDL_KEYUP ? e.key.windowID : 0);
         MSG msg = {};
         msg.time = SDL_GetTicks();
 
@@ -762,6 +767,13 @@ void PumpSDL()
                     msg.wParam = (e.type == SDL_MOUSEBUTTONDOWN) ? 1 : 0; // MK_LBUTTON approx
 
                     g_msgQueue.push_back(msg);
+                }
+                else
+                {
+                    static const bool dbgInput = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+                    if (dbgInput)
+                        fprintf(stderr, "[DROP] btn winid=%u sdlwin=%p regsz=%zu\n",
+                                e.button.windowID, (void*)sdlWin, g_hwndRegistry.size());
                 }
                 break;
             }
