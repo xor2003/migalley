@@ -72,17 +72,10 @@ inline  bool __fastcall	BITRESET(void* num1,ULong num2)
 }
 #elif defined(__GNUC__)
 inline bool BITRESET(void* base, unsigned long bit_index) {
-    unsigned char prev;
-    unsigned char* addr = static_cast<unsigned char*>(base) + ((bit_index >> 5) * 4);
-    unsigned long bit = bit_index & 31UL;
-
-    asm volatile (
-        "btrl %2, (%1)\n\t"
-        "setc %0"
-        : "=q"(prev)
-        : "r"(addr), "r"(bit)
-        : "memory"
-    );
+    unsigned char* p = static_cast<unsigned char*>(base) + (bit_index >> 3);
+    unsigned char mask = static_cast<unsigned char>(1u << (bit_index & 7));
+    bool prev = (*p & mask) != 0;
+    *p = static_cast<unsigned char>(*p & ~mask);
     return prev;
 }
 
@@ -167,18 +160,10 @@ inline bool __fastcall BITSET(void* num1,ULong num2)
 }
 #elif defined(__GNUC__)
 inline bool BITSET(void* base, unsigned long bit_index) {
-    unsigned char prev;
-    // Compute address for dword at (bit_index >> 5)
-    unsigned char* addr = static_cast<unsigned char*>(base) + ((bit_index >> 5) * 4);
-    unsigned long bit = bit_index & 31UL;
-
-    asm volatile (
-        "btsl %2, (%1)\n\t"
-        "setc %0"
-        : "=q"(prev)              // output: prev in a byte reg
-        : "r"(addr), "r"(bit)     // inputs: addr, bit within dword
-        : "memory"                // clobbers: memory (RMW)
-    );
+    unsigned char* p = static_cast<unsigned char*>(base) + (bit_index >> 3);
+    unsigned char mask = static_cast<unsigned char>(1u << (bit_index & 7));
+    bool prev = (*p & mask) != 0;
+    *p = static_cast<unsigned char>(*p | mask);
     return prev;
 }
 
@@ -267,11 +252,7 @@ inline bool __fastcall BITTEST(const void* num1,ULong num2)
 #elif defined(__GNUC__)
 inline bool BITTEST(const void* base, uint64_t bit_index)
 {
-    const uint8_t* ptr = static_cast<const uint8_t*>(base);
-    const uint32_t* dword = reinterpret_cast<const uint32_t*>(
-        ptr + ((bit_index >> 5) * 4)
-    );
-    return (*dword & (1u << (bit_index & 31))) != 0;
+    return (static_cast<const uint8_t*>(base)[bit_index >> 3] >> (bit_index & 7)) & 1;
 }
 #else
 extern	Bool	BITTEST(const void*,ULong);
@@ -357,14 +338,10 @@ inline bool __fastcall BITCOMP(void* num1,ULong num2)
 #elif defined(__GNUC__)
 inline bool BITCOMP(void* base, ULong bit_index)
 {
-    uint8_t* p = static_cast<uint8_t*>(base);
-    volatile uint32_t* word = reinterpret_cast<volatile uint32_t*>(
-        p + ((bit_index >> 5) * 4)
-    );
-    const uint32_t mask = 1u << (bit_index & 31);
-
-    bool was_set = (*word & mask) != 0;
-    *word ^= mask;
+    uint8_t* p = static_cast<uint8_t*>(base) + (bit_index >> 3);
+    const uint8_t mask = static_cast<uint8_t>(1u << (bit_index & 7));
+    bool was_set = (*p & mask) != 0;
+    *p ^= mask;
     return was_set;
 }
 #else

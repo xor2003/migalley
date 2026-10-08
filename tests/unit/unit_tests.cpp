@@ -55,6 +55,8 @@
 #include <cstring>
 #include <cstdint>
 #include <cstddef>
+#include <sys/mman.h>
+#include <unistd.h>
 
 // The game headers use MSVC-era keywords; ProjectDefaults supplies -m32 and
 // -fms-extensions so the same headers compile here unchanged.
@@ -4014,6 +4016,36 @@ static void test_mathasm_bits()
     CHECK_EQ(BITSCANHIGHEST(0x80000000UL, 0), 31);
 }
 
+// Narrow MakeField storage: BITSET & friends are used on bitfields as small
+// as 2 bytes (e.g. BoB QFDField).  A 32-bit bt* RMW writes 2 bytes past such
+// a field — invisible to value checks because it writes back what it read.
+// The field sits flush against a PROT_NONE page so a word-wide access
+// faults instead of silently clobbering the neighbour.
+static void test_mathasm_bits_narrow()
+{
+    long ps = sysconf(_SC_PAGESIZE);
+    char* r = (char*)mmap(NULL, 2 * ps, PROT_READ | PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    CHECK(r != MAP_FAILED);
+    if (r == MAP_FAILED) return;
+    CHECK_EQ(mprotect(r + ps, ps, PROT_NONE), 0);
+
+    UWord* f = (UWord*)(r + ps - 2);
+    *f = 0;
+
+    CHECK_EQ(BITSET(f, 0), 0);
+    CHECK_EQ(BITSET(f, 15), 0);
+    CHECK_EQ(*f, 0x8001);
+    CHECK_EQ(BITTEST(f, 15), 1);
+    CHECK_EQ(BITTEST(f, 14), 0);
+    CHECK_EQ(BITCOMP(f, 0), 1);
+    CHECK_EQ(*f, 0x8000);
+    CHECK_EQ(BITRESET(f, 15), 1);
+    CHECK_EQ(*f, 0);
+
+    munmap(r, 2 * ps);
+}
+
 //------------------------------------------------------------------------------
 // MATHASM fixed-point mul/div - 64-bit intermediates like the original
 // mul/imul + shrd/div sequences. Quirk pinned: MULSHSIN shifts the 64-bit
@@ -5199,6 +5231,7 @@ int main()
     test_mathlib_misc();
     test_fileman();
     test_mathasm_bits();
+    test_mathasm_bits_narrow();
     test_mathasm_muldiv();
     test_mathasm_misc();
     test_bitcount_macros();

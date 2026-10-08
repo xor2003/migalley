@@ -212,6 +212,34 @@ target_compile_options(bob_lib3d_smoke PRIVATE -fpermissive)
 target_link_libraries(bob_lib3d_smoke PRIVATE bob_lib3d ProjectDefaults)
 add_test(NAME bob_lib3d_smoke COMMAND bob_lib3d_smoke)
 
+# bob_unit_tests — regression tests for ASan/UBSan-found defects in the BoB
+# code paths (mathasm narrow bitfields, R3DMATRIX operator==, dinput
+# focus-loss key release, keystub Reg3dConv terminator bound).  Each test
+# TU includes the real implementation/headers; guard pages make the
+# original byte-granularity violations fault without a sanitizer.
+add_executable(bob_unit_tests
+    tests/bob_unit_tests.cpp
+    tests/bob_dinput_focus.cpp
+    tests/bob_keystub_conv.cpp
+)
+target_include_directories(bob_unit_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/port
+    ${BOB_OVERLAY}
+    ${CMAKE_SOURCE_DIR}/H
+    ${CMAKE_SOURCE_DIR}/Hardware
+    ${ROWAN_ENGINE}/compat
+    ${BOB_SRC}/lib3d
+    ${BOB_SRC}/input
+)
+target_compile_options(bob_unit_tests PRIVATE -fpermissive)
+# The included implementation TUs carry globals/methods this test never
+# touches (fileman paths etc.); section GC drops them so no stubs needed.
+set_source_files_properties(tests/bob_keystub_conv.cpp
+    PROPERTIES COMPILE_OPTIONS "-ffunction-sections")
+target_link_options(bob_unit_tests PRIVATE -Wl,--gc-sections)
+target_link_libraries(bob_unit_tests PRIVATE ProjectDefaults)
+add_test(NAME bob_unit_tests COMMAND bob_unit_tests)
+
 # ---------------------------------------------------------------------------
 # The `bob` executable (REQ-LAUNCH-02) — shell gate + real BoB entry.
 # Declared last: needs BOB_OVERLAY set and the module libs defined above.
