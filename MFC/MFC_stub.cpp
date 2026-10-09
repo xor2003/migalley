@@ -4388,7 +4388,7 @@ BOOL CFrameWnd::LoadFrame(UINT nIDResource, DWORD dwDefaultStyle, CWnd* pParentW
         "MFC Stub Window",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        1280, 960,
+        1024, 768,
         SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE
     );
     if (backend.window && !g_migOSWindow)
