@@ -182,6 +182,11 @@ void	MigDisplay::XX_SetGraphicsMode()
 
 	ULong res;
 
+	//DDCurrMode stays 0xffff when no enumerated mode matches the window
+	//size (the SDL mode list needn't contain winmode_w/h); fall back to
+	//the first mode rather than indexing DDModes[0xffff].
+	if (DD.DDCurrMode>=DD.cModes)
+		DD.DDCurrMode=0;
 	res = SetDirectDrawMode (DD.DDModes[DD.DDCurrMode]);
 
 	if (res != 0)

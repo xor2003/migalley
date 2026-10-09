@@ -3329,7 +3329,13 @@ void	RFullPanelDial::SetTitleText(bool clear)
 	}
 	else
 	{
-		CString missioname = RESSTRING(MIGALLEY) + ": " + LoadResString(CSQuick1::quickmissions[CSQuick1::currquickmiss].missionname);
+		//currquickmiss stays -1 until the QM list is built; indexing
+		//quickmissions[-1] was a global-buffer-overflow (ASan). The
+		//table ends in a {0} sentinel, so missionname==0 also marks it.
+		CString missioname = RESSTRING(MIGALLEY) + ": ";
+		if (CSQuick1::currquickmiss>=0
+			&& CSQuick1::quickmissions[CSQuick1::currquickmiss].missionname)
+			missioname += LoadResString(CSQuick1::quickmissions[CSQuick1::currquickmiss].missionname);
 		AfxGetMainWnd()->SetWindowText(missioname);
 	}
 

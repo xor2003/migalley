@@ -636,9 +636,9 @@ shape::shape()
 //------------------------------------------------------------------------------
 shape::~shape()
 {
-	delete InterpTable;											//RJS 01Dec97
+	delete []InterpTable;										//RJS 01Dec97
 	delete []AnimDeltaList;											  //JIM 02/05/99
-	delete animflags;											//PD 27Mar96
+	delete []animflags;											//PD 27Mar96
 	delete []SphereTreeTable;									//RJS 09Jul98
 	pTrailItm = NULL;											//RJS 02Sep98
 }

@@ -3469,9 +3469,9 @@ LandMapNumRecord::~LandMapNumRecord()
 	for(int i=0;i<MAXMAPS;i++)
 		if (lm[i].body!=NULL)
 		{
-			delete lm[i].body;						//RJS 09Feb98
-			delete lm[i].palette;					//RJS 09Feb98
-			delete lm[i].alpha;						//RJS 09Feb98
+			delete[] lm[i].body;					//RJS 09Feb98
+			delete[] lm[i].palette;					//RJS 09Feb98
+			delete[] lm[i].alpha;					//RJS 09Feb98
 			lm[i].body=NULL;						//RJS 09Feb98
 			lm[i].palette=NULL;						//RJS 09Feb98
 			lm[i].alpha=NULL;						//RJS 09Feb98
@@ -3488,7 +3488,7 @@ void LandMapNumRecord::Reset(FileNum dir)
 	for (int i=0;i<MAXMAPS;i++)
 		if (lm[i].body != NULL)			 //RJS 09Feb98
 		{
-			delete lm[i].body;			//RJS 09Feb98
+			delete[] lm[i].body;		//RJS 09Feb98
 			lm[i].body=NULL;			//RJS 09Feb98
 		}
 }

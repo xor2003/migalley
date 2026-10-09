@@ -316,19 +316,13 @@ shapestuff::shapestuff()
 //------------------------------------------------------------------------------
 shapestuff::~shapestuff()
 {
-	UWord	index;
-
-	delete fixuptable;											//RJS 01Dec97
-
-	for(index=0;index<list_size;index++)
-		if(shapetable[index]!=NULL)
-		{
-			delete shapetable[index];
-			shapetable[index]=NULL;
-		}
-			
-	delete shapetable;
-	shapetable = NULL; //RERUN
+	//RERUN port: SHAPESTUFF is a global; at process exit other statics'
+	//dtors (~Mast3d/~Inst3d/~Replay -> DeadStream::SetWorldDead ->
+	//GetShapePtr, which may lazy-load via fixuptable) still run *after*
+	//this dtor. Deliberately leak the cache so it stays valid: avoids a
+	//static-destruction-order UAF and the delete/new[] mismatch on
+	//shapetable (ASan alloc-dealloc-mismatch at exit); the OS reclaims.
+	(void)shapetable; (void)fixuptable;
 }
 
 //Old_Code PD 27Aug96 //------------------------------------------------------------------------------

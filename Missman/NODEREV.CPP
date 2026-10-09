@@ -2954,8 +2954,9 @@ void	SupplyTree::SetNodeNationalities(UniqueID eastfront,UniqueID centralfront,U
 	while(gotone)
 		for (gotone=false,node=FirstNode;node->next!=node;node=node->next)
 			if (node->status!=BEHINDBLUELINES)
-				for (routeind=0;route=node->route[routeind],routeind<3;routeind++)
-					if (route && route->supplier->status==BEHINDBLUELINES)
+				for (routeind=0;routeind<3;routeind++)
+					if (	(route=node->route[routeind])
+						&&	route->supplier->status==BEHINDBLUELINES)
 					{
 						gotone=true;
 						route->supplier->status=BEHINDREDLINES;

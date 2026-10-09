@@ -592,7 +592,7 @@ Bool MigDisplay::ExitDirectDraw ()
 	// Free Palette Table
 	if (DD.PaletteBuffer!=NULL)
 	{
-		delete (DD.PaletteBuffer);
+		delete[] (DD.PaletteBuffer);
 		DD.PaletteBuffer=NULL;
 	}
 
