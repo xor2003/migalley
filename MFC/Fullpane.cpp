@@ -1955,7 +1955,7 @@ void RFullPanelDial::OnLButtonUp(UINT nFlags, CPoint point)
 	if (SDL_GetTicks() - s_screenLaunchTick < 500)
 		return;
 
-	if (m_currentscreen->textlists[0].text==0 && !_DPlay.PossibleLobby) 
+	if (m_currentscreen && m_currentscreen->textlists[0].text==0 && !_DPlay.PossibleLobby)
 	{
 		OnSelectRlistbox(0,0);
 	}
@@ -2036,6 +2036,9 @@ void RFullPanelDial::LaunchScreen(FullScreen * pfullscreen)
 	pdial[0]=pdial[1]=pdial[2]=NULL;
 	Invalidate();
 	m_currentscreen=pfullscreen;
+	//m_currentres starts at -1; a screen launched before the first
+	//UpdateSize would read resolutions[-1] (UBSan).  Resolve it lazily.
+	if (m_currentres<0) m_currentres=GetCurrentRes();
 	artnum=pfullscreen->resolutions[m_currentres].artwork;
 	PositionRListBox();
 	localnote=NULL;
@@ -2077,14 +2080,26 @@ BEGIN_EVENTSINK_MAP(RFullPanelDial, CDialog)
 	//}}AFX_EVENTSINK_MAP
 END_EVENTSINK_MAP()
 
-void RFullPanelDial::OnSelectRlistbox(long row, long column) 
+void RFullPanelDial::OnSelectRlistbox(long row, long column)
 {
 	int x=std::max(row,column);
 	Bool retval=TRUE;
 
+	//textlists has 10 slots; entries past the NULL-text terminator are
+	//all-NULL and no-op below (onselect/nextscreen are checked), so only
+	//the index needs bounding.  Intro/clickmap screens legitimately have
+	//textlists[0].text==NULL with a nextscreen - that IS the click-
+	//anywhere-to-continue path, so don't gate on text.
+	if (!m_currentscreen || x<0 || x>9)
+		return;
+
 	FullScreen* nextscreen=m_currentscreen->textlists[x].nextscreen;
-	if (m_currentscreen->textlists[x].onselect) 
-		retval=(this->*m_currentscreen->textlists[x].onselect)(nextscreen);
+	//Copy the member-fn-ptr out of the (packed) FullScreen before calling:
+	//(this->*field)() on a pack(1) struct member miscompiles under
+	//sanitizers (slot-reuse feeds a garbage index into the bounds check).
+	SelProc onselect=m_currentscreen->textlists[x].onselect;
+	if (onselect)
+		retval=(this->*onselect)(nextscreen);
 	if (retval && nextscreen)
 	{
 		// Nuke all panels then launch relevant sheet.
