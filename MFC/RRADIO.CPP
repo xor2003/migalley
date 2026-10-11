@@ -199,8 +199,9 @@ void CRRadio::OnPaint()
 
     // Send WM_GETGLOBALFONT to the parent window, allowing it to handle font retrieval
     // or propagate the message up the hierarchy until an RDialog or RFullPanelDial handles it.
+    // The OCX stores FontNum signed (negative = styled face) and looks up abs(n).
     if (GetParent()) {
-        pFont = (CFont*)GetParent()->SendMessage(WM_GETGLOBALFONT, m_fontNum);
+        pFont = (CFont*)GetParent()->SendMessage(WM_GETGLOBALFONT, abs(m_fontNum));
     }
     CFont* pOldFont = nullptr;
     if (pFont) {
@@ -224,15 +225,35 @@ void CRRadio::OnPaint()
     int cols = m_cols;
     if (cols == 1 && rect.Width() > rect.Height() * 2 && m_buttons.size() > 1)
         cols = m_buttons.size();
+    if (cols < 1) cols = 1;
 
-    int colWidth = (m_colWidth > 0) ? m_colWidth : rect.Width() / cols;
+    // Original CRRadioCtrl::OnDraw semantics: ColumnWidth is in average-char
+    // units — column pitch = m_ColumnWidth * tm.tmAveCharWidth, row pitch =
+    // tm.tmHeight * m_ColumnWidth / 10 + 2.
+    TEXTMETRIC tm;
+    memset(&tm, 0, sizeof(tm));
+    dc.GetTextMetrics(&tm);
+    int aveCharWidth = (tm.tmAveCharWidth > 0) ? tm.tmAveCharWidth : textSize.cx / 2;
+    int colWidth = (m_colWidth > 0) ? m_colWidth * aveCharWidth : rect.Width() / cols;
+    int rowHeight = (tm.tmHeight > 0) ? tm.tmHeight * m_colWidth / 10 + 2 : buttonHeight;
+    // Our TTF faces run wider than the retail raster fonts the OCX was tuned
+    // for; clamp the pitch so trailing columns stay inside the control.
+    if (colWidth * cols > rect.Width())
+        colWidth = rect.Width() / cols;
+    if (colWidth < 1) colWidth = 1;
+    if (rowHeight < buttonHeight) rowHeight = buttonHeight;
+
+    if (getenv("ROWAN_DEBUG_RADIO"))
+        fprintf(stderr, "[rradio] rect=%dx%d fontNum=%ld pFont=%p cols=%d colW=%d rowH=%d aveW=%d textH=%ld btns=%zu sel=%ld\n",
+            rect.Width(), rect.Height(), m_fontNum, (void*)pFont, cols, colWidth,
+            rowHeight, aveCharWidth, (long)textSize.cy, m_buttons.size(), m_currentSelection);
 
     for (size_t i = 0; i < m_buttons.size(); ++i) {
         int row = i / cols;
         int col = i % cols;
 
         int x = col * colWidth;
-        int y = row * buttonHeight;
+        int y = row * rowHeight;
 
         int circleY = y + buttonHeight / 2;
 
@@ -308,13 +329,16 @@ void CRRadio::OnLButtonDown(UINT nFlags, CPoint point)
 {
     if (m_buttons.empty()) return;
 
-    CFont* pFont = (CFont*)SendMessage(WM_GETGLOBALFONT, m_fontNum);
+    CFont* pFont = GetParent() ? (CFont*)GetParent()->SendMessage(WM_GETGLOBALFONT, abs(m_fontNum)) : nullptr;
     CDC dc(this);
     CFont* pOldFont = nullptr;
     if (pFont) {
         pOldFont = dc.SelectObject(pFont);
     }
     CSize textSize = dc.GetTextExtent("Wg");
+    TEXTMETRIC tm;
+    memset(&tm, 0, sizeof(tm));
+    dc.GetTextMetrics(&tm);
     if (pOldFont) {
         dc.SelectObject(pOldFont);
     }
@@ -327,17 +351,26 @@ void CRRadio::OnLButtonDown(UINT nFlags, CPoint point)
     int cols = m_cols;
     if (cols == 1 && rect.Width() > rect.Height() * 2 && m_buttons.size() > 1)
         cols = m_buttons.size();
+    if (cols < 1) cols = 1;
 
-    int colWidth = (m_colWidth > 0) ? m_colWidth : rect.Width() / cols;
-    if (colWidth <= 0) return;
+    // Same layout math as OnPaint — ColumnWidth is in average-char units.
+    int aveCharWidth = (tm.tmAveCharWidth > 0) ? tm.tmAveCharWidth : textSize.cx / 2;
+    int colWidth = (m_colWidth > 0) ? m_colWidth * aveCharWidth : rect.Width() / cols;
+    int rowHeight = (tm.tmHeight > 0) ? tm.tmHeight * m_colWidth / 10 + 2 : buttonHeight;
+    if (colWidth * cols > rect.Width())
+        colWidth = rect.Width() / cols;
+    if (colWidth < 1) colWidth = 1;
+    if (rowHeight < buttonHeight) rowHeight = buttonHeight;
 
-    int row = point.y / buttonHeight;
     int col = point.x / colWidth;
+    int row = point.y / rowHeight;
+    if (col >= cols) col = cols - 1;
+    if (row > (int)m_buttons.size() / cols) row = (int)m_buttons.size() / cols;
     int index = row * cols + col;
-    int totalRows = (m_buttons.size() + cols - 1) / cols;
+    if (index >= (int)m_buttons.size()) index -= cols;
 
     // Only process the click if it actually hits a button in the grid
-    if (index >= 0 && index < (int)m_buttons.size() && row < totalRows) 
+    if (index >= 0 && index < (int)m_buttons.size())
     {
         SetCurrentSelection(index);
         // RERUN: Fire event only on user interaction to avoid init loops

@@ -1860,6 +1860,35 @@ CSize CDC::GetTextExtent(const CString& str) const
     return CSize(str.GetLength() * 8, 16);
 }
 CSize CDC::GetTextExtent(LPCTSTR text) const { return GetTextExtent(CString(text)); }
+BOOL CDC::GetTextMetrics(TEXTMETRIC* pTM) const
+{
+    if (!pTM) return FALSE;
+    TTF_Font* font = nullptr;
+    if (m_pCurrentFont && m_pCurrentFont->m_hObject) {
+        font = (TTF_Font*)m_pCurrentFont->m_hObject;
+    }
+    if (!font) {
+        static TTF_Font* s_defaultFont = nullptr;
+        if (!s_defaultFont) {
+            std::string path = GetSystemFontPath();
+            if (!path.empty()) s_defaultFont = TTF_OpenFont(path.c_str(), 24);
+        }
+        font = s_defaultFont;
+    }
+    if (!font) return FALSE;
+    memset(pTM, 0, sizeof(*pTM));
+    pTM->tmHeight = TTF_FontHeight(font);
+    pTM->tmAscent = TTF_FontAscent(font);
+    pTM->tmDescent = TTF_FontDescent(font);
+    // GDI's tmAveCharWidth is a weighted lowercase average; the alphabet
+    // mean is the closest approximation SDL_ttf can give us.
+    int w = 0, h = 0;
+    if (TTF_SizeText(font, "abcdefghijklmnopqrstuvwxyz", &w, &h) == 0 && w > 0)
+        pTM->tmAveCharWidth = (w + 13) / 26;
+    else
+        pTM->tmAveCharWidth = pTM->tmHeight / 2;
+    return TRUE;
+}
 UINT CDC::SetTextAlign(UINT align) 
 { 
     UINT old = m_textAlign; 
@@ -3753,9 +3782,26 @@ void AFXAPI DDX_Control(CDataExchange* pDX, int nIDC, CWnd& rControl)
                         }
                         else
                             pRadio->SetFileNum(meta.icon_enum);
-                        // RERUN: Apply the length as ColumnWidth if present in metadata
-                        if (meta.length > 0) {
-                            pRadio->SetColumnWidth(meta.length);
+                        // RERUN: Apply the OCX persist blob. DDX_Control subclasses
+                        // the template child with this member object, so the props
+                        // must land here — meta.length is only the blob byte count.
+                        auto itRW = g_dlgInitWords.find(dlgID);
+                        if (itRW != g_dlgInitWords.end()) {
+                            auto itW = itRW->second.find(nIDC);
+                            if (itW != itRW->second.end()) {
+                                const std::vector<long>& w = itW->second;
+                                if (w.size() >= 14 &&
+                                    (w[4] & 0xffff) == 0x0008 && (w[5] & 0xffff) == 0) {
+                                    long foreColor = (long)((w[6] & 0xffff) | ((w[7] & 0xffff) << 16));
+                                    long fontNum   = (long)(int)((w[8] & 0xffff) | ((w[9] & 0xffff) << 16));
+                                    long cols      = (long)(int)((w[10] & 0xffff) | ((w[11] & 0xffff) << 16));
+                                    long colWidth  = (long)(int)((w[12] & 0xffff) | ((w[13] & 0xffff) << 16));
+                                    if (foreColor >= 0 && foreColor <= 0xffffff) pRadio->SetForeColor((OLE_COLOR)foreColor);
+                                    pRadio->SetFontNum(fontNum);
+                                    pRadio->SetCols(cols);
+                                    pRadio->SetColumnWidth(colWidth);
+                                }
+                            }
                         }
                     } else if (pStatic) {
                         // RERUN: Apply font number from metadata if present
@@ -3764,6 +3810,22 @@ void AFXAPI DDX_Control(CDataExchange* pDX, int nIDC, CWnd& rControl)
                         }
                     } else if (pEdit) {
                         if (meta.icon_enum != 0) pEdit->SetLimitText(meta.icon_enum);
+                    } else if (CRListBox* pLB = dynamic_cast<CRListBox*>(&rControl)) {
+                        // RERUN: The subclassed member paints, so the OCX persist
+                        // blob must land here too — FontNum/FontNum2 signed LE
+                        // dwords in the version-9 RListBox tail.
+                        auto itRW = g_dlgInitWords.find(dlgID);
+                        if (itRW != g_dlgInitWords.end()) {
+                            auto itW = itRW->second.find(nIDC);
+                            if (itW != itRW->second.end()) {
+                                const std::vector<long>& w = itW->second;
+                                if (w.size() >= 31 &&
+                                    (w[4] & 0xffff) == 0x0009 && (w[5] & 0xffff) == 0) {
+                                    pLB->SetFontNum((long)(int)((w[27] & 0xffff) | ((w[28] & 0xffff) << 16)));
+                                    pLB->SetFontNum2((long)(int)((w[29] & 0xffff) | ((w[30] & 0xffff) << 16)));
+                                }
+                            }
+                        }
                     } else if (rControl.IsKindOf(RUNTIME_CLASS(CRCombo))) {
                         // Apply initial string from DLGINIT if it exists
                         if (!g_dlgInitStrings[dlgID][nIDC].empty()) {
@@ -4431,14 +4493,42 @@ BOOL CDialog::Create(int id, CWnd* pParent)
                 auto itRW = g_dlgInitWords.find(id);
                 if (itRW != g_dlgInitWords.end()) {
                     auto itW = itRW->second.find(ctl.id);
-                    if (itW != itRW->second.end() && itW->second.size() >= 31 &&
-                        (itW->second[4] & 0xffff) == 0x0009 && (itW->second[5] & 0xffff) == 0) {
+                    if (itW != itRW->second.end() && getenv("ROWAN_DEBUG_RADIO"))
+                        fprintf(stderr, "[rradio-blob] dlg=%d ctl=%d words=%zu w4=%lx w5=%lx\n",
+                            id, ctl.id, itW->second.size(),
+                            itW->second.size()>4 ? (itW->second[4]&0xffff) : 0,
+                            itW->second.size()>5 ? (itW->second[5]&0xffff) : 0);
+                    if (itW != itRW->second.end()) {
                         const std::vector<long>& w = itW->second;
-                        long fontNum  = (long)(int)((w[27] & 0xffff) | ((w[28] & 0xffff) << 16));
-                        long fontNum2 = (long)(int)((w[29] & 0xffff) | ((w[30] & 0xffff) << 16));
-                        if (CRListBox* pLB = dynamic_cast<CRListBox*>(pChild)) {
-                            pLB->SetFontNum(fontNum);
-                            pLB->SetFontNum2(fontNum2);
+                        if (w.size() >= 31 &&
+                            (w[4] & 0xffff) == 0x0009 && (w[5] & 0xffff) == 0) {
+                            long fontNum  = (long)(int)((w[27] & 0xffff) | ((w[28] & 0xffff) << 16));
+                            long fontNum2 = (long)(int)((w[29] & 0xffff) | ((w[30] & 0xffff) << 16));
+                            if (CRListBox* pLB = dynamic_cast<CRListBox*>(pChild)) {
+                                pLB->SetFontNum(fontNum);
+                                pLB->SetFontNum2(fontNum2);
+                            }
+                        }
+                        // RERUN: RRadio persist blob (version 8). Tail dwords after
+                        // the two signature words: ForeColor, FontNum (signed; the
+                        // OCX uses abs(n) with a styled face), Cols, ColumnWidth in
+                        // character units — decoded from CRRadioCtrl::DoPropExchange.
+                        else if (w.size() >= 14 &&
+                                 (w[4] & 0xffff) == 0x0008 && (w[5] & 0xffff) == 0) {
+                            CRRadio* pR = dynamic_cast<CRRadio*>(pChild);
+                            if (getenv("ROWAN_DEBUG_RADIO"))
+                                fprintf(stderr, "[rradio-blob] apply dlg=%d ctl=%d pChild=%p radio=%p\n",
+                                    id, ctl.id, (void*)pChild, (void*)pR);
+                            if (pR) {
+                                long foreColor = (long)((w[6] & 0xffff) | ((w[7] & 0xffff) << 16));
+                                long fontNum   = (long)(int)((w[8] & 0xffff) | ((w[9] & 0xffff) << 16));
+                                long cols      = (long)(int)((w[10] & 0xffff) | ((w[11] & 0xffff) << 16));
+                                long colWidth  = (long)(int)((w[12] & 0xffff) | ((w[13] & 0xffff) << 16));
+                                if (foreColor >= 0 && foreColor <= 0xffffff) pR->SetForeColor((OLE_COLOR)foreColor);
+                                pR->SetFontNum(fontNum);
+                                pR->SetCols(cols);
+                                pR->SetColumnWidth(colWidth);
+                            }
                         }
                     }
                 }

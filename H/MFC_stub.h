@@ -1063,6 +1063,7 @@ public:
     COLORREF SetBkColor(COLORREF color);
     CSize GetTextExtent(const CString& str) const;
     CSize GetTextExtent(LPCTSTR text) const;
+    BOOL GetTextMetrics(TEXTMETRIC* pTM) const;
 
     CObject* SelectStockObject(int object); //defined in cpp
     virtual UINT SetTextAlign(UINT align);
