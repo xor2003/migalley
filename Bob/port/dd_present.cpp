@@ -97,6 +97,15 @@ void PresentPrimary(IDirectDrawSurface7* primary)
 void QueuePresent(IDirectDrawSurface7* primary)
 {
     if (!primary || !primary->desc.lpSurface) return;
+    static bool bmpdbg = getenv("ROWAN_DEBUG_BMP") != nullptr;
+    if (bmpdbg) {
+        static unsigned npq = 0;
+        if (++npq < 40)
+            fprintf(stderr,"[ddpr] %dx%d bpp=%d pitch=%d flags=%lx\n",
+                (int)primary->desc.dwWidth,(int)primary->desc.dwHeight,
+                (int)primary->desc.ddpfPixelFormat.dwRGBBitCount,
+                (int)primary->desc.lPitch,(unsigned long)primary->desc.dwFlags);
+    }
     RowanDDLastPresentMs = SDL_GetTicks();
     static bool fpsdbg = getenv("ROWAN_DEBUG_FPS") != nullptr;
     if (fpsdbg) {

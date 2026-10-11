@@ -121,7 +121,7 @@ static int GetRowHeight(CWnd* pWnd)
 	CWnd* pParent = pWnd->GetParent();
     RListBoxData& data = GetData(pWnd);
 	if (pParent) {
-		CFont* pGlobalFont = (CFont*)pParent->SendMessage(WM_GETGLOBALFONT, data.fontNum);
+		CFont* pGlobalFont = (CFont*)pParent->SendMessage(WM_GETGLOBALFONT, abs(data.fontNum));
 		if (pGlobalFont) {
 			pOldFont = dc.SelectObject(pGlobalFont);
 		}
@@ -182,13 +182,13 @@ void CRListBox::OnPaint()
 	CFont* pOldFont = nullptr;
 	CWnd* pParent = GetParent();
 	if (pParent) {
-		CFont* pGlobalFont = (CFont*)pParent->SendMessage(WM_GETGLOBALFONT, data.fontNum);
+		CFont* pGlobalFont = (CFont*)pParent->SendMessage(WM_GETGLOBALFONT, abs(data.fontNum));
 		if (pGlobalFont) {
 			pOldFont = dc.SelectObject(pGlobalFont);
 		}
 	}
 
-	
+
 	int y = 0;
     int startRow = data.scrollPos;
     
@@ -225,7 +225,12 @@ void CRListBox::OnPaint()
 		int x = 0;
 		for (size_t col = 0; col < data.colWidths.size(); ++col) {
 			int width = data.colWidths[col];
-			
+			static bool ldb = getenv("ROWAN_DEBUG_BMP") != nullptr;
+			if (ldb && row < 12 && data.columns.count(col) && row < (int)data.columns[col].size())
+				fprintf(stderr,"[lb] row=%d col=%d x=%d w=%d text='%s' ext=%d\n",
+					row,(int)col,x,width,data.columns[col][row].c_str(),
+					(int)dc.GetTextExtent(data.columns[col][row].c_str()).cx);
+
             // Draw Icon if present
             if (data.icons.count({row, (int)col})) {
                 int artNum = data.icons[{row, (int)col}];
@@ -991,7 +996,7 @@ void CRListBox::Shrink()
 	
 	CWnd* pParent = GetParent();
 	if (pParent) {
-		CFont* pGlobalFont = (CFont*)pParent->SendMessage(WM_GETGLOBALFONT, data.fontNum);
+		CFont* pGlobalFont = (CFont*)pParent->SendMessage(WM_GETGLOBALFONT, abs(data.fontNum));
 		if (pGlobalFont) {
 			pOldFont = dc.SelectObject(pGlobalFont);
 		}

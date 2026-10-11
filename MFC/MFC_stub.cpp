@@ -213,50 +213,62 @@ static void MigArmQuitTeardown()
 }
 
 // Helper to find a system font
-static std::string GetSystemFontPath(const char* faceName = nullptr)
+static std::string GetSystemFontPath(const char* faceName = nullptr, bool bold = false, bool italic = false)
 {
-    std::string target = "DejaVuSans.ttf";
+    // Map Windows face names to Linux file families.  Serif faces
+    // (Times) get a serif, sans get sans, mono gets mono; weight and
+    // italic pick the matching style file when one exists.
+    std::string family = "DejaVuSans";
+    bool serif = false, mono = false, glamour = false;
     if (faceName) {
         std::string face = faceName;
-        if (face == "MS Sans Serif" || face == "Helv") target = "DejaVuSans.ttf";
-        else if (face == "Arial") target = "Arial.TTF";
-        else if (face == "Arial Italic") target = "Ariali.TTF";
-        else if (face == "Times New Roman") target = "Times.TTF";
-        else if (face == "Courier New") target = "cour.ttf";
-        else if (face == "Intel") target = "Intel.ttf";
+        if (face == "Times New Roman" || face == "Times" || face == "MS Serif" ||
+            face == "Times New Roman Bold" ||
+            face == "Georgia" || face == "Book Antiqua") { family = "DejaVuSerif"; serif = true; }
+        else if (face == "Courier New" || face == "Courier" || face == "Fixedsys") { family = "DejaVuSansMono"; mono = true; }
+        else if (face == "Intel") family = "Intel";
+        // RERUN: Rowan's display faces — FC-Glamour(-Bold) is a wide decorative
+        // serif; DejaVu Serif is the closest installed match (Liberation Serif
+        // is much narrower), so skip the Liberation candidates for it.
+        else if (face == "FC-Glamour-Bold" || face == "FC-Glamour") { family = "DejaVuSerif"; glamour = true; }
+        if (glamour && face == "FC-Glamour-Bold") bold = true;
     }
 
-    const char* fonts[] = {
-        "/usr/share/fonts/TTF/cour.ttf",
-        "/usr/share/fonts/TTF/Arial.TTF",
-        "/usr/share/fonts/TTF/Ariali.TTF",
-        "/usr/share/fonts/TTF/Times.TTF",
-        "/usr/share/fonts/Intel/Intel.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf",
-        "/usr/share/fonts/TTF/IosevkaNerdFont-Regular.ttf",
-        "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "./INTEL.TTF",
-        "./Intel.ttf"
-    };
-    
-    // First try to find the specific target
-    for (const char* f : fonts) {
-        if (strstr(f, target.c_str())) {
-             FILE* fp = fopen(f, "rb");
-             if (fp) {
-                 fclose(fp);
-                 std::cout << "[MFC_stub] Found system font (first try): " << f << std::endl;
-                 return f;
-             }
-        }
-    }
+    const char* styleSuffix = "";
+    if (bold && italic) styleSuffix = "-BoldOblique";
+    else if (bold)      styleSuffix = "-Bold";
+    else if (italic)    styleSuffix = "-Oblique";
+    const char* libSuffix = "-Regular";
+    if (bold && italic) libSuffix = "-BoldItalic";
+    else if (bold)      libSuffix = "-Bold";
+    else if (italic)    libSuffix = "-Italic";
 
-    for (const char* f : fonts) {
-        FILE* fp = fopen(f, "rb");
+    std::vector<std::string> candidates;
+    if (family == "Intel") {
+        candidates.push_back("./INTEL.TTF");
+        candidates.push_back("./Intel.ttf");
+        candidates.push_back("/usr/share/fonts/Intel/Intel.ttf");
+    } else {
+        if (serif)
+            candidates.push_back(std::string("/usr/share/fonts/truetype/liberation/LiberationSerif") + libSuffix + ".ttf");
+        else if (!mono && !glamour)
+            candidates.push_back(std::string("/usr/share/fonts/truetype/liberation/LiberationSans") + libSuffix + ".ttf");
+        candidates.push_back("/usr/share/fonts/truetype/dejavu/" + family + styleSuffix + ".ttf");
+        candidates.push_back("/usr/share/fonts/truetype/dejavu/" + family + ".ttf");
+    }
+    // generic fallbacks
+    candidates.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf");
+    candidates.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    candidates.push_back("./INTEL.TTF");
+
+    static bool fdbg = getenv("ROWAN_DEBUG_BMP") != nullptr;
+    for (const auto& f : candidates) {
+        FILE* fp = fopen(f.c_str(), "rb");
         if (fp) {
             fclose(fp);
-            std::cout << "[MFC_stub] Found system font: " << f << std::endl;
+            if (fdbg)
+                std::cout << "[MFC_stub] font '" << (faceName?faceName:"") << "'"
+                          << (bold?" bold":"") << (italic?" ital":"") << " -> " << f << std::endl;
             return f;
         }
     }
@@ -283,7 +295,9 @@ BOOL CFont::CreateFontIndirect(const LOGFONT* lpLogFont)
         m_hObject = nullptr;
     }
 
-    std::string path = GetSystemFontPath(m_lf.lfFaceName);
+    std::string path = GetSystemFontPath(m_lf.lfFaceName,
+                                         m_lf.lfWeight >= 600,
+                                         m_lf.lfItalic != 0);
     if (path.empty()) {
         std::cout << "[MFC_stub] CFont::CreateFontIndirect: No system font found!" << std::endl;
         return FALSE;
@@ -1867,6 +1881,10 @@ CFont* CDC::GetCurrentFont() const
 BOOL CDC::BitBlt(int x, int y, int cx, int cy,
                  CDC* pSrcDC, int srcX, int srcY, DWORD /*rop*/)
 {
+    if (getenv("ROWAN_DEBUG_BMP"))
+        fprintf(stderr,"[bitblt] dest=(%d,%d) %dx%d srcdc=%p selbmp=%p\n",
+            x,y,cx,cy,(void*)pSrcDC,
+            pSrcDC?(void*)pSrcDC->m_selectedBitmap:0);
     if (!pSrcDC || !pSrcDC->m_selectedBitmap)
         return FALSE;
 
@@ -1939,6 +1957,12 @@ static bool rle8_decode(const BYTE* src, DWORD srcSize, int w, int h, std::vecto
 int CDC::SetDIBitsToDevice(int xDest, int yDest, DWORD w, DWORD h, int xSrc, int ySrc, UINT uStartScan, UINT cScanLines, const void *lpvBits, const BITMAPINFO *lpbmi, UINT fuColorUse)
 {
     if (!m_renderer || !lpvBits || !lpbmi) return 0;
+
+    if (getenv("ROWAN_DEBUG_BMP"))
+        fprintf(stderr,"[dib] %dx%d bpp=%d comp=%d clrused=%d dest=(%d,%d) wh=%dx%d use=%d rdr=%p\n",
+            (int)lpbmi->bmiHeader.biWidth,(int)lpbmi->bmiHeader.biHeight,
+            (int)lpbmi->bmiHeader.biBitCount,(int)lpbmi->bmiHeader.biCompression,
+            (int)lpbmi->bmiHeader.biClrUsed,xDest,yDest,(int)w,(int)h,(int)fuColorUse,(void*)m_renderer);
 
     int width = lpbmi->bmiHeader.biWidth;
     int height = lpbmi->bmiHeader.biHeight; // Can be negative for top-down
@@ -3675,6 +3699,7 @@ void CComboBox::ResetContent() {}
 std::map<int, DlgTemplate> g_dlgTemplates;
 // RERUN: Store DLGINIT strings for controls (DialogID -> ControlID -> Text)
 std::map<int, std::map<int, std::string>> g_dlgInitStrings;
+std::map<int, std::map<int, std::vector<long>>> g_dlgInitWords;
 // RERUN: Store dialog captions (DialogID -> Caption)
 std::map<int, std::string> g_dlgCaptions;
 
@@ -3948,6 +3973,20 @@ void ParseRCFile(const std::string& filename)
                             // RERUN: Capture 'length' field from the DLGINIT entry
                             if (entry_json.contains("length") && entry_json["length"].is_number()) {
                                 g_buttonMetadataMap[dlgID][control_id].length = entry_json["length"].get<int>();
+                            }
+
+                            // RERUN: Capture raw OCX property blob (DLGINIT raw_words) for
+                            // custom controls such as the Rowan RListBox.
+                            if (entry_json.contains("raw_words") && entry_json["raw_words"].is_array()) {
+                                std::vector<long> words;
+                                for (const auto& w : entry_json["raw_words"]) {
+                                    if (w.is_string()) {
+                                        try { words.push_back(std::stol(w.get<std::string>(), nullptr, 0)); } catch (...) {}
+                                    }
+                                }
+                                if (!words.empty()) {
+                                    g_dlgInitWords[dlgID][control_id] = words;
+                                }
                             }
 
                             // 2. Initialization Strings (for CRStatic labels etc.)
@@ -4381,6 +4420,26 @@ BOOL CDialog::Create(int id, CWnd* pParent)
                     if (itCtl != itDlg->second.end()) {
                         pChild->SetWindowText(itCtl->second.c_str());
                         //std::cout << "[DEBUG] CDialog::Create: Applied text '" << itCtl->second << "' to Control " << ctl.id << " in Dialog " << id << std::endl;
+                    }
+                }
+
+                // RERUN: Apply OCX property blob to Rowan listboxes. The persisted
+                // stream tail is: two ID dwords, a DWORD version(9), then property
+                // dwords — FontNum/FontNum2 are signed LE dwords at byte offsets
+                // 54 and 58 of the tail (verified across all BoB dialogs). A
+                // negative value selects abs(n) with a heavier text style.
+                auto itRW = g_dlgInitWords.find(id);
+                if (itRW != g_dlgInitWords.end()) {
+                    auto itW = itRW->second.find(ctl.id);
+                    if (itW != itRW->second.end() && itW->second.size() >= 31 &&
+                        (itW->second[4] & 0xffff) == 0x0009 && (itW->second[5] & 0xffff) == 0) {
+                        const std::vector<long>& w = itW->second;
+                        long fontNum  = (long)(int)((w[27] & 0xffff) | ((w[28] & 0xffff) << 16));
+                        long fontNum2 = (long)(int)((w[29] & 0xffff) | ((w[30] & 0xffff) << 16));
+                        if (CRListBox* pLB = dynamic_cast<CRListBox*>(pChild)) {
+                            pLB->SetFontNum(fontNum);
+                            pLB->SetFontNum2(fontNum2);
+                        }
                     }
                 }
             } else {
@@ -5415,7 +5474,8 @@ int EnumFontFamiliesEx(HDC, LOGFONT* lpLogFont, FONTENUMPROC proc, long lParam, 
     if (!proc) return 0;
     const char* face = lpLogFont ? lpLogFont->lfFaceName : nullptr;
     static const char* known[] = { "MS Sans Serif", "Helv", "Arial",
-        "Arial Italic", "Times New Roman", "Courier New", "Intel" };
+        "Arial Italic", "Times New Roman", "Times New Roman Bold", "Times",
+        "Courier New", "Intel", "FC-Glamour-Bold", "FC-Glamour" };
     bool found = !face || !*face;
     for (const char* k : known)
         if (face && strcmp(face, k) == 0) { found = true; break; }
