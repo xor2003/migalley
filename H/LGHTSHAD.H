@@ -9,6 +9,10 @@
 #ifndef	LGHTSHAD_Included
 #define	LGHTSHAD_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_LGHTSHAD 0
 
 // Day-time palette fade minimum values...
@@ -37,4 +41,5 @@ const UByte	PAL_DUSK = (UByte) 1;
 const UByte	PAL_NIGHT = (UByte) 2;
 const UByte	PAL_DAWN = (UByte) 3;
 
+#pragma pack(pop)
 #endif

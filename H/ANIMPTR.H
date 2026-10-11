@@ -1,3 +1,6 @@
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifdef	NDEBUG
 #define NANIMDEBUG
 #endif
@@ -254,3 +257,6 @@ inline ULong	animptr::Offset(void*	a)
 	return ULong((UByteP)a - (UByteP)ptr);
 #endif
 }
+
+
+#pragma pack(pop)

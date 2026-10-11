@@ -8,6 +8,10 @@
 #ifndef	FLYINIT_Included
 #define	FLYINIT_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_FLYINIT 0
 
 enum	QuitGameConditions {ALT_X = 0,STANDARDQUIT,SEENBYLEADER , COMECLOSETOLEADER, LEADERREACHEDDESTINATION,ACMTRAININGTIMEUP,
@@ -313,6 +317,7 @@ enum	CallNames	{	Call_Pilot0=1,Call_Pilot29=30,
 //amber are aggressive neutral forces (bugger me)
 //	 moved from worldinc 7/8/98
 enum	Nationality	{NAT_RED=1,NAT_BLUE=2,NAT_GREEN=0,NAT_AMBER=3,NAT_ALIGN=255};
+#pragma pack(pop)
 #endif
 
 

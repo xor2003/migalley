@@ -40,6 +40,9 @@
 //
 //
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifdef	SG2C_CLEANUP
 #undef	SG2C_CLEANUP
 #undef	SG2C_WRITEBACK
@@ -252,3 +255,6 @@ whatbit													 \
 #undef SG2C_CHANGEFIELD
 #endif
 ////////////////////////////////////////////////////////////////////////////
+
+
+#pragma pack(pop)

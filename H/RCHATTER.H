@@ -8,6 +8,10 @@
 #ifndef	RCHATTER_Included
 #define	RCHATTER_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_RCHATTER 0
 
 #include "WIN32_COMPAT.H" // RERUN
@@ -597,4 +601,5 @@ extern	RadioChatter	_Radio;
 #define	TriggerMsg(param) AfxTrace(#param,_Radio.totmess).TriggerMsg(param)	
 #endif
 
+#pragma pack(pop)
 #endif

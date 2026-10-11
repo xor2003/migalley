@@ -8,6 +8,10 @@
 #ifndef	PERSONS2_Included
 #define	PERSONS2_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 	#include	"FLYINIT.H"
 	#include	"ENUMBITS.M"
 	#include	"WORLDINC.H"
@@ -600,4 +604,5 @@ static void ShutDownViewFromMap();
 //extern	Persons2	Persons_2;
 //------------------------------------------------------------------------------
 
+#pragma pack(pop)
 #endif

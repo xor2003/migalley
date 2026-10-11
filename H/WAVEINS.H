@@ -1,6 +1,10 @@
 #if !defined(AFX_WAVEINS_H__357542A0_7EC5_11D2_9684_0000476073D8__INCLUDED_)
 #define AFX_WAVEINS_H__357542A0_7EC5_11D2_9684_0000476073D8__INCLUDED_
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #if _MSC_VER >= 1000
 #pragma once
 #endif // _MSC_VER >= 1000
@@ -52,4 +56,5 @@ protected:
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.
 
+#pragma pack(pop)
 #endif // !defined(AFX_WAVEINS_H__357542A0_7EC5_11D2_9684_0000476073D8__INCLUDED_)

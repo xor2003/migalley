@@ -8,6 +8,10 @@
 #ifndef	OFFSET_Included
 #define	OFFSET_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_OFFSET 0
 
 
@@ -24,4 +28,5 @@ enum tOffset{
 
 
 
+#pragma pack(pop)
 #endif

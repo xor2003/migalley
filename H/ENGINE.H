@@ -9,6 +9,10 @@
 #ifndef	ENGINE_Included
 #define	ENGINE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 
 enum ENGINE_TYPE
 {
@@ -84,4 +88,5 @@ public:
 };
 typedef class  Engine ENGINE, *PENGINE, **PPENGINE;
 
+#pragma pack(pop)
 #endif

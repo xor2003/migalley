@@ -18,6 +18,10 @@
 #ifndef	MODEL_Included
 #define	MODEL_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 typedef class Ctrl *PCTRL;
 typedef class NewCtrl *PNEWCTRL;
 typedef class Surface *PSURFACE;
@@ -506,4 +510,5 @@ void SFURY_SetupAI (AirStrucPtr const, ULong);
 void YAK9_SetupAI (AirStrucPtr const, ULong);
 
 
+#pragma pack(pop)
 #endif

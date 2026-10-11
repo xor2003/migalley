@@ -7,6 +7,10 @@
 //------------------------------------------------------------------------------
 #ifndef	LANDSCAP_Included
 #define	LANDSCAP_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 		#include "ENUMBITS.M"									//PD 04Dec95
 		#include "MYVECTOR.H"										//PD 06Sep96
 		#include "MYSTACK.H"										//PD 18Oct96
@@ -446,5 +450,6 @@ private:
 
 extern class LandScape Land_Scape;
 
+#pragma pack(pop)
 #endif
 

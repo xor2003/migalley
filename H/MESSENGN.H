@@ -10,6 +10,10 @@
 
 #define	DEFAULT_MESSENGN 0
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include	"PALETTE.H"
 
 
@@ -91,4 +95,5 @@ extern	MessageBuffer	_MsgBuffer;
 
 
 
+#pragma pack(pop)
 #endif

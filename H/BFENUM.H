@@ -8,6 +8,10 @@
 #ifndef	BFENUM_Included
 #define	BFENUM_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_BFENUM 0
 
 enum	EnumListNames		//this enum indexes the list maintained by PERSONS6!
@@ -31,4 +35,5 @@ enum	EnableComplexVal		//different names for the same thing...
 	};
 
 
+#pragma pack(pop)
 #endif

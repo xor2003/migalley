@@ -10,6 +10,10 @@
 
 #define	DEFAULT_MILESXTR 0
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 struct SampleRec
 {
 	fileblock	*blockptr;
@@ -169,5 +173,6 @@ struct	EnginePlayInfo
 
 
 
+#pragma pack(pop)
 #endif
 

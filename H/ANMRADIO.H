@@ -11,6 +11,10 @@
 #ifndef	ANMRADIO_Included
 #define	ANMRADIO_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_ANMRADIO 0
 
 
@@ -75,4 +79,5 @@ private:
 
 extern	DamageChat	_DamageChat;
 
+#pragma pack(pop)
 #endif

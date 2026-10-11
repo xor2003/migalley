@@ -8,6 +8,10 @@
 #ifndef	WORLD_Included
 #define	WORLD_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include	"WORLDINC.H"
 class ViewPoint;
 //#include    "display.h"
@@ -117,4 +121,5 @@ struct	WorldSearch
 			return(currelt);
 		}
 };
+#pragma pack(pop)
 #endif

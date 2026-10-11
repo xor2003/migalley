@@ -10,6 +10,10 @@
 
 #define	DEFAULT_MILES 0
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #ifdef __DOS__													//ARM 02Aug96
 typedef struct  _sequence              // XMIDI sequence state table//JIM 29Jul96
 SEQUENCE;
@@ -430,4 +434,5 @@ public:
 };
 extern Miles _Miles;
 
+#pragma pack(pop)
 #endif

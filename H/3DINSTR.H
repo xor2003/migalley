@@ -8,6 +8,10 @@
 #ifndef	Dinstr_Included
 #define	Dinstr_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 //Offset in animdata...
 #define	ABITOFF		9											//RJS 21Apr99
 
@@ -90,4 +94,5 @@ enum DamageTypes
 
 
 
+#pragma pack(pop)
 #endif

@@ -8,6 +8,10 @@
 #ifndef	VERTEX_Included
 #define	VERTEX_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_VERTEX 0
 
 //typedef	signed	char	SByte,*SByteP;
@@ -53,4 +57,5 @@ struct	vertex
 //DEAD	float fsy;
 };
 
+#pragma pack(pop)
 #endif

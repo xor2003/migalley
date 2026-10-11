@@ -8,6 +8,10 @@
 #ifndef	LIBDEFS_Included
 #define	LIBDEFS_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_LIBDEFS 0
 
 //Change this #define to change the library resolution used
@@ -31,4 +35,5 @@
 #endif
 
 
+#pragma pack(pop)
 #endif

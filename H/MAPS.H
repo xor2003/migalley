@@ -8,6 +8,10 @@
 #ifndef	MAPS_Included
 #define	MAPS_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_MAPS 0
 
 enum	{	
@@ -51,4 +55,5 @@ enum	{	NODISPLAY = 0,REDAIRFIELDBAND,REDMILITARYBAND,
 
 			MAXDISPLAY = BLUEGICBAND};
 
+#pragma pack(pop)
 #endif

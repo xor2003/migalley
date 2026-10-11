@@ -11,6 +11,10 @@
 
 #include	"MYANGLES.H"
 #define	DEFAULT_TIME 0
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 enum	Times
 {
 
@@ -229,4 +233,5 @@ struct	DummyTime
 };
 extern 	DummyTime	Timer_Code;
 
+#pragma pack(pop)
 #endif

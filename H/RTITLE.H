@@ -2,6 +2,11 @@
 #if !defined(AFX_RTITLE_H__67C77A84_A927_11D1_9B68_444553540000__INCLUDED_)
 #define AFX_RTITLE_H__67C77A84_A927_11D1_9B68_444553540000__INCLUDED_
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 #if _MSC_VER >= 1000
 #pragma once
 #endif // _MSC_VER >= 1000
@@ -59,4 +64,5 @@ public:
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.
 
+#pragma pack(pop)
 #endif // !defined(AFX_RTITLE_H__67C77A84_A927_11D1_9B68_444553540000__INCLUDED_)

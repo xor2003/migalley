@@ -17,6 +17,10 @@
 
 #ifndef	ACMMODEL_Included
 #define	ACMMODEL_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #include	<math.h>
 #include	"BITFIELD.H"											//RJS 02Dec97
 #include	"WINMOVE.H"
@@ -437,4 +441,5 @@ inline Float AngleSign (Float ang)
 	return ang;
 }
 
+#pragma pack(pop)
 #endif

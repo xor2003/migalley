@@ -13,6 +13,10 @@
 //To disable profiling code comment out the next line...
 #define PROFILING_ON	"TRUE"
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 struct _timerData{
  	ULong	ht,lt;
 };
@@ -176,4 +180,5 @@ inline struct _timerData _readTimer(){
 	Mono_Text.PrintAt(0,(lno),outVal,_textOut);\
 }
 
+#pragma pack(pop)
 #endif

@@ -5,6 +5,10 @@
 #if !defined(AFX_ROWTASKS_H__C2978741_E0E8_11D1_9FD6_D0EC00C10000__INCLUDED_)
 #define AFX_ROWTASKS_H__C2978741_E0E8_11D1_9FD6_D0EC00C10000__INCLUDED_
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #if _MSC_VER >= 1000
 #pragma once
 #endif // _MSC_VER >= 1000
@@ -61,4 +65,5 @@ public:
 	static 	StackTimes&	GetStackTimeStats(int);
 };
 
+#pragma pack(pop)
 #endif // !defined(AFX_ROWTASKS_H__C2978741_E0E8_11D1_9FD6_D0EC00C10000__INCLUDED_)

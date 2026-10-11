@@ -13,6 +13,10 @@
 struct RequestHeader; struct CDComm; struct dir_entry;
 
 #define	DEFAULT_FILEMAN 0
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 //v1: (Being implemented)
 //File number translation:
 // to pathname (low level)					fileman
@@ -491,5 +495,6 @@ public:
 };
 
 
+#pragma pack(pop)
 #endif
 

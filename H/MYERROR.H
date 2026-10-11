@@ -8,6 +8,10 @@
 #ifndef	error_Included
 #define	error_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include <cassert> // RERUN for e.g. in FILEMAN.H
 
 class	 Error  
@@ -77,4 +81,5 @@ extern	Error	_Error;
 #define EmitSysErr ExitMode().Say("%s:%d: ", __FILE__, __LINE__).SayAndQuit
 #define ReallyEmitSysErr ExitMode().Say("%s:%d: ", __FILE__, __LINE__).SayAndQuit
 
+#pragma pack(pop)
 #endif

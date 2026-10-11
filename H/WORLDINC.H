@@ -7,6 +7,10 @@
 //------------------------------------------------------------------------------
 #ifndef	WORLDINC_Included
 #define	WORLDINC_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #include	"MOVEMENT.H"										//RDH 19Feb96
 #include	"MYANGLES.H"
 #include	"SHAPENUM.G"										//JIM 31Oct95
@@ -1418,4 +1422,5 @@ public:
 
 enum	ScaleType {SHP_1CM=0,SHP_4CM,SHP_16CM,SHP_GRP};			//PD 06Mar96
 
+#pragma pack(pop)
 #endif

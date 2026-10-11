@@ -8,6 +8,10 @@
 #ifndef	MEMBLOCK_Included
 #define	MEMBLOCK_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 struct	MemManage1K;
 typedef	MemManage1K*	MemPtr1K;
 
@@ -56,4 +60,5 @@ struct	MemManage1K
 
 #define	DEFAULT_MEMBLOCK 0
 
+#pragma pack(pop)
 #endif

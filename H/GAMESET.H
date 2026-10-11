@@ -10,6 +10,10 @@
 
 #define	DEFAULT_GAMESET 0
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 struct GameSettings
 {
  	bool 	m_bUse16;			//force the use of 16-bit textures
@@ -31,4 +35,5 @@ struct GameSettings
 
 extern struct GameSettings gameSettings;
 
+#pragma pack(pop)
 #endif

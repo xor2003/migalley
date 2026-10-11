@@ -28,6 +28,10 @@
 #ifndef	UI_Included
 #define	UI_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 
 #define	DEFAULT_UI 0
 #define	DEFAULT_COMPONENTW	TAB
@@ -1062,5 +1066,6 @@ inline	void	SheetBase::TextIntRefDefaultWBProc	(SheetBase *,TextIntRefWBComp& UI
 
 
 
+#pragma pack(pop)
 #endif
 

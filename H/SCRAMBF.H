@@ -8,6 +8,10 @@
 #ifndef	SCRAMBF_Included
 #define	SCRAMBF_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_SCRAMBF 0
 
 
@@ -37,4 +41,5 @@
 				BF_OverHavrincourt,
 				BF_SquadEncounter};
 
+#pragma pack(pop)
 #endif

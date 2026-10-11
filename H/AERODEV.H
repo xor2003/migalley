@@ -8,6 +8,10 @@
 #ifndef	AERODEV_Included
 #define	AERODEV_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_AERODEV 0
 
 
@@ -84,4 +88,5 @@ public:
 typedef AeroDevice AERODEVICE, *PAERODEVICE;
 
 
+#pragma pack(pop)
 #endif

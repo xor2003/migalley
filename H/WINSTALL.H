@@ -16,6 +16,10 @@
 #ifndef WINSTALL_Included
 #define WINSTALL_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include	"WINSTALL.SMB"
 
 #define	INSTALL_MAXCHARS 256
@@ -354,6 +358,7 @@ DWORD GetSizeOfFile (char* Name);
 
 extern Winstall _Winstall;
 
+#pragma pack(pop)
 #endif
 
 

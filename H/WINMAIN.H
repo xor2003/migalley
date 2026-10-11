@@ -8,6 +8,10 @@
 #ifndef	main_Included
 #define	main_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include	"GETSET.H"
 #include	"SCREENXY.H"
 
@@ -60,6 +64,7 @@ class	Main : public	GetSet
 
 	extern Main _Main;		//For 'EmitSysErr'			//JIM 21Sep95
 
+#pragma pack(pop)
 #endif
 
 

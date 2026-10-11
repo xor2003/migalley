@@ -8,6 +8,11 @@
 #ifndef spinbut_included_ksjfhskghsdkhgala
 #define spinbut_included_ksjfhskghsdkhgala
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 //RERUN class CRSpinBut : public CWnd
 #include "DLGITEM.H" // RERUN: DlgItem base used below
 class CRSpinBut : public DlgItem //RERUN
@@ -59,4 +64,5 @@ public:
 	BOOL SetSearchValueOption(long min, long max, long current);
 	BOOL SetPlayerNegPriceOption(long min, long max, long current);
 };
+#pragma pack(pop)
 #endif

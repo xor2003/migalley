@@ -8,6 +8,10 @@
 #ifndef	SHAPES_Included
 #define	SHAPES_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include	"SHAPENUM.G"										//PD 27Aug96
 #include	"BITFIELD.H"										//PD 27Aug96
 #include "FILEMAN.H" //RERUN
@@ -208,4 +212,5 @@ class	shapestuff
 
 		extern class shapestuff SHAPESTUFF;
 
+#pragma pack(pop)
 #endif

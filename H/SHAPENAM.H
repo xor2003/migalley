@@ -8,6 +8,10 @@
 #ifndef	SHAPENAM_Included
 #define	SHAPENAM_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_SHAPENAM 0
 
 #include	"SHAPENUM.G"
@@ -82,4 +86,5 @@ const	ShapeNum	LargeScatFireShape	=	CLLFIR;
 const	ShapeNum	SparkShape	=	TRACER;
 
 const	ShapeNum	SmallFlashShape		=	WRECKT;
+#pragma pack(pop)
 #endif

@@ -1,6 +1,10 @@
 #ifndef MIGOPENGL_H
 #define MIGOPENGL_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define GL3DTEXTUREFILTER D3DTEXTUREFILTER /* see d3dtypes.h for now */
 
 #define GL3DTEXTUREBLEND D3DBLEND /* see d3dtypes.h for now */
@@ -92,4 +96,5 @@ typedef struct _GL3DTLVERTEX
 } GL3DTLVERTEX, *PGL3DTLVERTEX;
 
 
+#pragma pack(pop)
 #endif //MIGOPENGL_H

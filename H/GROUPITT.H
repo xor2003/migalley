@@ -8,6 +8,10 @@
 #ifndef	GROUPITT_Included
 #define	GROUPITT_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_GROUPITT 0
 
 //
@@ -150,5 +154,6 @@ struct DamageDef
 	char*		remaininganimbytes;
 };
 
+#pragma pack(pop)
 #endif
 

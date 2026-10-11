@@ -8,6 +8,10 @@
 #ifndef	CONFIG_Included
 #define	CONFIG_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_CONFIG 0
 
 struct SModeFlags
@@ -47,4 +51,5 @@ struct SDrivers
 
 void Configure(bool fFullConfig,HWND hWnd);
 
+#pragma pack(pop)
 #endif

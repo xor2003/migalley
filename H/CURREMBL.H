@@ -1,6 +1,10 @@
 #if !defined(AFX_CURREMBL_H__79CD4BA1_59D1_11D2_9FD5_D0EC00C10000__INCLUDED_)
 #define AFX_CURREMBL_H__79CD4BA1_59D1_11D2_9FD5_D0EC00C10000__INCLUDED_
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #if _MSC_VER >= 1000
 #pragma once
 #endif // _MSC_VER >= 1000
@@ -45,4 +49,5 @@ protected:
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.
 
+#pragma pack(pop)
 #endif // !defined(AFX_CURREMBL_H__79CD4BA1_59D1_11D2_9FD5_D0EC00C10000__INCLUDED_)

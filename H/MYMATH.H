@@ -8,6 +8,10 @@
 #ifndef	MATH_Included
 #define	MATH_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 //stuff stolen from the system includes - why we have to use system file names - who knows
 #if defined (__MSVC__)
 	#include <intrin.h>
@@ -180,5 +184,6 @@ inline Float FPACos(Float x) // returns arccos(x) in radians
 
 
 
+#pragma pack(pop)
 #endif
 

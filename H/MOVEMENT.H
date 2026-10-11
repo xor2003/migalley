@@ -8,6 +8,10 @@
 #ifndef	MOVEMENT_Included
 #define	MOVEMENT_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_MOVEMENT 0
 
 
@@ -386,4 +390,5 @@ enum	PhaseFAC	{	FAC_WAIT=0,			FAC_WAITRECONNECT,			FAC_WELCOME_LONGRANGE,		FAC_W
 						FAC_STAGEMASK=-16,FAC_SUBSTAGEMASK=15
 					};
 
+#pragma pack(pop)
 #endif

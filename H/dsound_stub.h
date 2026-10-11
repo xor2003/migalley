@@ -5,6 +5,10 @@
 
 #pragma once
 
+// RERUN: natural-alignment self-guard - contains std/system types or
+// port-side structs; never byte-pack regardless of ambient packing.
+#pragma pack(push)
+#pragma pack()
 #include <string.h>
 
 #ifndef __stdcall
@@ -752,3 +756,6 @@ static inline HRESULT DirectSoundEnumerateA(LPDSENUMCALLBACK cb, void* ctx)
 #define IDirectSoundBuffer_SetPan(p,v)            (p)->SetPan(v)
 #define IDirectSoundBuffer_SetFrequency(p,v)      (p)->SetFrequency(v)
 #define IDirectSoundBuffer_SetCurrentPosition(p,v) (p)->SetCurrentPosition(v)
+
+
+#pragma pack(pop)

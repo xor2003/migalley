@@ -8,6 +8,10 @@
 #ifndef	ANIMDATA_Included
 #define	ANIMDATA_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_ANIMDATA 0
 
 typedef	void	*detectrtnref;
@@ -365,4 +369,5 @@ public:
 
 
 
+#pragma pack(pop)
 #endif

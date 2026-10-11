@@ -1,6 +1,10 @@
 #ifndef INST3D_H
 #define INST3D_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 class Inst3d
 {	//master control for ongoing 3d world instances
 	friend	class	wxMIGApp;
@@ -66,4 +70,5 @@ private:
 	static void OnKeyInput();
 };
 
+#pragma pack(pop)
 #endif //INST3D_H

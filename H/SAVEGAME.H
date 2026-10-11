@@ -8,6 +8,10 @@
 #ifndef	SAVEGAME_Included
 #define	SAVEGAME_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include "ANALOGUE.H"
 #include "MYANGLES.H"
 #include "BITCOUNT.H"
@@ -483,4 +487,5 @@ public:
 #endif
 
 
+#pragma pack(pop)
 #endif

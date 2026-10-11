@@ -1,4 +1,8 @@
 #pragma once
+// RERUN: natural-alignment self-guard - contains std/system types or
+// port-side structs; never byte-pack regardless of ambient packing.
+#pragma pack(push)
+#pragma pack()
 #include <string>
 #include <algorithm>
 #include <cctype>
@@ -354,3 +358,5 @@ inline	CString	LoadResString(int resnum)
 };
 #endif
 #define	RESSTRING(name)	LoadResString(IDS_##name)
+
+#pragma pack(pop)

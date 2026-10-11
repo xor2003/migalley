@@ -13,6 +13,10 @@
 #define WM_RELEASELASTFILE (WM_USER + 5)
 #define WM_SELECTTAB (WM_USER + 6)
 #define WM_CANACCEPTDROP (WM_USER + 7)
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #define WM_DROPPEDON (WM_USER + 8)
 #define WM_GETX2FLAG (WM_USER + 9)
 #define WM_GETOFFSCREENDC (WM_USER + 10)
@@ -23,4 +27,5 @@
 #define WM_ACTIVEXSCROLL (WM_USER + 15)
 #define WM_GETSTRING (WM_USER + 16)
 
+#pragma pack(pop)
 #endif

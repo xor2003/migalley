@@ -8,6 +8,10 @@
 #ifndef	H2H_Included
 #define	H2H_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_H2H 0
 
 enum	{BF_H2HRandom = 0, BF_H2Himplode, BF_H2Hexplode,BF_H2Hmax = 3};
@@ -44,4 +48,5 @@ enum	{
 		};
 
 
+#pragma pack(pop)
 #endif

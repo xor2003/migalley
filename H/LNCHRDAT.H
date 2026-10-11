@@ -8,6 +8,10 @@
 #ifndef	LNCHRDAT_Included
 #define	LNCHRDAT_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_LNCHRDAT 0
 
 struct	LaunchInfo
@@ -36,4 +40,5 @@ static LaunchInfo	launcherdata[] =							//RJS 27May99
 	{LT_CONTACT,0,0,0}											//RJS 27May99
 };																//RJS 27May99
 
+#pragma pack(pop)
 #endif

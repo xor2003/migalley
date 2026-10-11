@@ -49,6 +49,10 @@
 #define SINE			1
 #define COSINE			2
 #define SQUARE_HIGH		3
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #define SQUARE_LOW		4
 #define TRIANGLE_UP		5
 #define TRIANGLE_DOWN	6
@@ -459,4 +463,5 @@ typedef struct _VFX_PARAM
 } VFX_PARAM, *PVFX_PARAM;
 
 
+#pragma pack(pop)
 #endif // of ifdef _SW_Force_SEEN

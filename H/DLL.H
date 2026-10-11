@@ -5,6 +5,10 @@
 #ifndef DLL_H
 #define DLL_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 //Old_Code PD 04Jun96 #include <string.h>  // (for size_t definition)
 #ifndef _SIZE_T_DEFINED_
 #define _SIZE_T_DEFINED_
@@ -121,5 +125,6 @@ LONG   cdecl FILE_append(BYTE *filename, void *buf, ULONG len);
 #pragma Global_aliasing_convention();
 #endif
 
+#pragma pack(pop)
 #endif
 

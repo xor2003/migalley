@@ -8,6 +8,10 @@
 #ifndef	MOUSE_Included
 #define	MOUSE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_MOUSE 0
 
 extern	class	Mouse
@@ -21,4 +25,5 @@ public:
 }	_Mouse;
 
 
+#pragma pack(pop)
 #endif

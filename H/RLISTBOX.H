@@ -6,6 +6,11 @@
 #ifndef RLISTBOX_H
 #define RLISTBOX_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 /////////////////////////////////////////////////////////////////////////////
 // CRListBox wrapper class
 
@@ -142,4 +147,5 @@ protected:
 	DECLARE_MESSAGE_MAP()
 	virtual CWnd* GetEventParent() override;
 };
+#pragma pack(pop)
 #endif

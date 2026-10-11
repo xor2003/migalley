@@ -1,6 +1,10 @@
 #ifndef D3D_STUB_H
 #define D3D_STUB_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -466,5 +470,6 @@ typedef IDirect3DViewport* LPDIRECT3DVIEWPORT;
 
 ////////////
 
+#pragma pack(pop)
 #endif // D3D_STUB_H
 

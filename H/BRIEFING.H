@@ -9,6 +9,10 @@
 #ifndef	BRIEFING_Included
 #define	BRIEFING_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_BRIEFING 0
 
 
@@ -154,4 +158,5 @@ enum	AirfieldStatus{
 
 
 
+#pragma pack(pop)
 #endif

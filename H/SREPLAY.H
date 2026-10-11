@@ -1,6 +1,10 @@
 #ifndef SREPLAY_INCLUDED
 #pragma once
 #define SREPLAY_INCLUDED
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 //#include "..\h\SREPLAY.H"
 
 /////////////////////////////////////////////////////////////////////////////
@@ -38,4 +42,5 @@ protected:
 	//}}AFX_MSG
 	DECLARE_MESSAGE_MAP()
 };
+#pragma pack(pop)
 #endif

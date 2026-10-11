@@ -10,6 +10,10 @@
 
 #define	DEFAULT_MISSSUB 0
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include "FILES.H" // RERUN
 #include "WORLDINC.H" // RERUN
 #include "BITFIELD.H" // RERUN
@@ -534,4 +538,5 @@ char	propfirst[SQ_B_NONFLYABLE];
 
 };
 
+#pragma pack(pop)
 #endif

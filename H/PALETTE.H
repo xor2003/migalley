@@ -8,6 +8,10 @@
 #ifndef	palette_Included
 #define	palette_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 typedef	char PAL[256*3*8];										//RJS 19Mar98
 
 typedef	SWord	ColourRange;
@@ -212,4 +216,5 @@ const	Colour		PAL_ICNACT_COLOUR = (Colour )48;		//Icon greyed out base colour//R
 const	Colour		TEXT_MIDGRY_COLOUR = (Colour )40;
 const	Colour		TEXT_TYPEWRITERRED = (Colour )16;
 
+#pragma pack(pop)
 #endif

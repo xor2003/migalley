@@ -8,6 +8,10 @@
 #ifndef	INSTALL_Included
 #define	INSTALL_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_INSTALL 0
 #include	<s:\watcom\h\time.h>
 
@@ -76,4 +80,5 @@ class	Install
 		ULong	ClustersRequired;		//Howman Clusters are reqired for Installed version
 		clock_t	Time;					//How long to copy
 };
+#pragma pack(pop)
 #endif

@@ -8,6 +8,10 @@
 #ifndef	HDATA_Included
 #define	HDATA_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_HDATA 0
 
 #include "RANGES.H"
@@ -1195,4 +1199,5 @@ CPointList	cpointList[TOTAL_HPOLYS] =
 
 #endif
 
+#pragma pack(pop)
 #endif

@@ -7,6 +7,10 @@
 //------------------------------------------------------------------------------
 #ifndef	BITFTMP_Included
 #define	BITFTMP_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 	#include	<assert.h>
 	#include	"HARDPASM.H"
 #define	DEFAULT_BITFTMP 0
@@ -57,4 +61,5 @@ BitField&	operator	|=(counttype	s)
 }
 /*squillions more functions...*/
 };
+#pragma pack(pop)
 #endif

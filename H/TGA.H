@@ -8,6 +8,10 @@
 #ifndef	TGA_Included
 #define	TGA_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_TGA 0
 
 #define	RLCOPY 1
@@ -76,4 +80,5 @@ class	TGA
 		void	PutTGABody(FILE*,UWord*,ULong);
 };
 
+#pragma pack(pop)
 #endif

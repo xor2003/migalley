@@ -12,6 +12,10 @@
 #ifndef __D3DMACS_H__
 #define __D3DMACS_H__
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #undef RELEASE
 
 #ifndef __cplusplus
@@ -144,4 +148,5 @@
 #define QWORD_ALIGNED(ptr) \
     !(0x00000007L & (ULONG)(ptr))
 
+#pragma pack(pop)
 #endif // __D3DMACS_H__

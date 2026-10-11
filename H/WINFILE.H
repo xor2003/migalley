@@ -8,6 +8,10 @@
 #ifndef	WINFILE_Included
 #define	WINFILE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_WINFILE 0
 
 #if defined (__MSVC__)
@@ -23,4 +27,5 @@ extern "C"
 static inline UWord InitCDFS(void) { return 0; }
 static inline void ExitCDFS(void) { }
 static inline BOOL SeekToLocation(UWord hFile, ULong fOffset) { return 0; }
+#pragma pack(pop)
 #endif

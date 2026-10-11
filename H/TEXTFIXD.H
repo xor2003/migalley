@@ -1,3 +1,6 @@
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifdef	TEXTREF_NOTYPES
 #define	TextList0MIN	0
 #define	TextList19MAX	0
@@ -94,3 +97,6 @@ inline	TextRef		operator+(TextConst t)	{return (TextRef) t;}
 inline	TextRef		operator+(TextOffset t)	{return (TextRef) t;}
 inline	TextRef		operator+(TextSeq t)	{return	(TextRef) t;}	
 #endif
+
+
+#pragma pack(pop)

@@ -18,6 +18,10 @@
 #ifndef __SFMAN_H
 #define __SFMAN_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 ///// W I N D O W S   I N C L U D E S  //////////////////////////////////////
 
 #include "WIN32_COMPAT.H"
@@ -269,5 +273,6 @@ typedef struct SFMANL101TAG {
 } SFMANL101API , *PSFMANL101API ;
 
 
+#pragma pack(pop)
 #endif /* __SFMAN_H */
 

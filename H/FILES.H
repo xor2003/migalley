@@ -5,6 +5,10 @@
 #ifndef	FILE_Included
 #define	FILE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #ifndef F_COMMON
 #ifndef F_GRAFIX
 #ifndef F_SOUNDS
@@ -1906,4 +1910,5 @@ inline dirindex dirnum(FileNum	filenum)
 inline FileNum dirnum(dirindex idx)
 {	return	(FileNum)	((int)idx<<(int)DIRNUMSH);	}
 
+#pragma pack(pop)
 #endif

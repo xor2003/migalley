@@ -49,6 +49,9 @@
 //	#define LOADVALUE(x)	TRANSFERVALUE=*(TRANSFERVALUESIZE*)(ExpandBuff[x])
 //	#define COPYVALUE(x,y)	*((TRANSFERVALUESIZE*&)x)++=*(TRANSFERVALUESIZE*)(ExpandBuff[x])
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 	#ifndef SAVEVALUE
 	#define SAVEVALUE(x)	*((TRANSFERVALUESIZE*&)x)++=TRANSFERVALUE
 	#endif
@@ -300,3 +303,6 @@
 #undef	COPYVALUE
 #undef	DELTAVALUE
 #undef TRANSFERVALUESIZE
+
+
+#pragma pack(pop)

@@ -8,6 +8,10 @@
 #ifndef	INTCONV_Included
 #define	INTCONV_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_INTCONV 0
 
 //TempCode MGA 26Jan96 #include "textref.h"
@@ -31,4 +35,5 @@ struct GetRetVal
 	TextBlockPtr loadintblock(TextRef );
 	char *	  TextintDeref(TextBlockPtr, TextRef);
 
+#pragma pack(pop)
 #endif

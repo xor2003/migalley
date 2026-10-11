@@ -8,6 +8,10 @@
 #ifndef	MSN_CTRL_Included
 #define	MSN_CTRL_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_MSN_CTRL 0
 
 	enum CtrlVar {	CTRL_NONE =0,CTRL_LOAD,CTRL_FLY,
@@ -37,4 +41,5 @@ enum	{		CLIPBOARDAREAX = PIXEL640 * 85,					//RDH 20Jul96
 
 
 
+#pragma pack(pop)
 #endif

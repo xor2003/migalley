@@ -62,6 +62,9 @@
 //In addition, the following line must be placed in SHEETLST.H
 //	static	UISheetPtr	MakeSHEETNAME();
 //------------------------------------------------------------------------------
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifndef	SHEETNAME
 #error	"Before including SHEETTOP.h #define SHEETNAME"
 #endif
@@ -350,3 +353,6 @@ public:
 #undef	SHEETPARENT
 #endif
 //------------------------------------------------------------------------------
+
+
+#pragma pack(pop)

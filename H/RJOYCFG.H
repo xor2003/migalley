@@ -2,6 +2,11 @@
 #if !defined(AFX_RJOYCFG_H__D53F1A21_C590_11D1_896D_00004760745C__INCLUDED_)
 #define AFX_RJOYCFG_H__D53F1A21_C590_11D1_896D_00004760745C__INCLUDED_
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 #if _MSC_VER >= 1000
 #pragma once
 #endif // _MSC_VER >= 1000
@@ -58,4 +63,5 @@ public:
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.
 
+#pragma pack(pop)
 #endif // !defined(AFX_RJOYCFG_H__D53F1A21_C590_11D1_896D_00004760745C__INCLUDED_)

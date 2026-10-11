@@ -23,6 +23,10 @@
 //------------------------------------------------------------------------------
 #ifndef	BITFIELD_Included
 #define	BITFIELD_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifndef	assert
 //RERUN	#define assert(txt)
 #define assert(txt) do {} while (0)
@@ -253,4 +257,5 @@ bool	operator	[] (const src s) const				\
 
 //----------------------------------------------------------------------------
 //
+#pragma pack(pop)
 #endif

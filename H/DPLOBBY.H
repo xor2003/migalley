@@ -59,6 +59,10 @@
 #ifndef __DPLOBBY_INCLUDED__
 #define __DPLOBBY_INCLUDED__
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include "WIN32_COMPAT.H"
 #include "SW_GUID.HPP" //RERUN tryout
 #include "dplay_stub.h"
@@ -838,4 +842,5 @@ DEFINE_GUID(DPAID_ComPort,
 };
 #endif /* __cplusplus */
 
+#pragma pack(pop)
 #endif /* __DPLOBBY_INCLUDED__ */

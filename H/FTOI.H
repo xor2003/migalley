@@ -6,6 +6,10 @@
 #ifndef FTOI_H
 #define FTOI_H
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 inline void FtoITexture(VERTEX_PTR* ppv)
 {
 	while (*ppv)
@@ -16,4 +20,5 @@ inline void FtoITexture(VERTEX_PTR* ppv)
 	}
 }
 
+#pragma pack(pop)
 #endif

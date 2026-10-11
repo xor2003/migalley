@@ -3,6 +3,11 @@
 #if !defined(AFX_RRADIO_H__73CBE701_2DE1_11D2_83A5_00004760763D__INCLUDED_)
 #define AFX_RRADIO_H__73CBE701_2DE1_11D2_83A5_00004760763D__INCLUDED_
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 #if _MSC_VER >= 1000
 #pragma once
 #endif // _MSC_VER >= 1000
@@ -61,4 +66,5 @@ protected:
     afx_msg void OnLButtonUp(UINT nFlags, CPoint point);
 };
 
+#pragma pack(pop)
 #endif // !defined(AFX_RRADIO_H__73CBE701_2DE1_11D2_83A5_00004760763D__INCLUDED_)

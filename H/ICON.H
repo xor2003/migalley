@@ -8,6 +8,10 @@
 #ifndef	ICON_Included
 #define	ICON_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_ICON 0
 enum	Icons	{	NOMOUSE = 0, MOUSE = 1,
 
@@ -57,4 +61,5 @@ enum	Icons	{	NOMOUSE = 0, MOUSE = 1,
 			H2HVERTICALSLIDERPUCKHI = 80, H2HVERTICALSLIDERUPHI = 81, ITEMTOGGLEICONSHI = 82,
 			MAPRETURNTOJUNCTIONHI = 83,MAPWPHI = 84,
 			};
+#pragma pack(pop)
 #endif

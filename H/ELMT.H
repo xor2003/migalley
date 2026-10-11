@@ -9,6 +9,10 @@
 #ifndef	ELMT_Included
 #define	ELMT_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 
 // Aircraft Element Types (order specific)
 enum ELMT_TYPE
@@ -552,4 +556,5 @@ public:
 typedef class ThrustPoint THRUSTPOINT, *PTHRUSTPOINT;
 //TempCode ARM 10Sep97 	void SetControl (ULong, FP, FP);	// not implemented
 
+#pragma pack(pop)
 #endif

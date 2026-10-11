@@ -12,6 +12,11 @@
 #define _A_NORMAL 0x00
 #define _A_RDONLY 0x01
 #define _A_HIDDEN 0x02
+
+// RERUN: natural-alignment self-guard - contains std/system types or
+// port-side structs; never byte-pack regardless of ambient packing.
+#pragma pack(push)
+#pragma pack()
 #define _A_SYSTEM 0x04
 #define _A_SUBDIR 0x10
 #define _A_ARCH   0x20
@@ -45,4 +50,5 @@ FILE* fopen_ci(const char* path, const char* mode);
 // on-disk spelling, the unresolved tail is kept verbatim (so a file yet
 // to be created lands in the correctly-cased directory).
 std::string resolve_ci_path(const char* path);
+#pragma pack(pop)
 #endif

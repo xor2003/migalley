@@ -9,6 +9,10 @@
 #ifndef	HARDPASM_Included
 #define	HARDPASM_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_HARDPASM 0
 
 //������������������������������������������������������������������������������
@@ -773,6 +777,7 @@ inline	Bool	ASM_DEXint31(DPMIregs*	registers)
 
 #include	"MATHASM.H"
 
+#pragma pack(pop)
 #endif
 
 

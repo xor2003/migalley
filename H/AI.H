@@ -7,6 +7,10 @@
 //------------------------------------------------------------------------------
 #ifndef	AI_Included
 #define	AI_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifndef	__BCPLUSPLUS__
 #include	"RCHATTER.H"
 #else
@@ -323,4 +327,5 @@ OPTIONAI(SetUpDefensiveSplitLeftHi, AirStrucPtr);
 OPTIONAI(SetUpDefensiveSplitBothHi, AirStrucPtr);
 // RERUN end: moved from spotted.cpp
 
+#pragma pack(pop)
 #endif

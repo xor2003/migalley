@@ -13,6 +13,10 @@
 #ifndef	NODE_Included
 #define	NODE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_NODE 0
 #include	"UNIQUEID.H"
 #include	"MOVEMENT.H"
@@ -908,4 +912,5 @@ inline SupplyFightFiles* SupplyNode::FightFiles::operator->()
 	{if (fightfiles) return  fightfiles;else return &SupplyTree::DummyBlank;}
 
 
+#pragma pack(pop)
 #endif

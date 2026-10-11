@@ -8,6 +8,10 @@
 #ifndef	TEXTREFL_Included
 #define	TEXTREFL_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_TEXTREFL 0
 
 #include	"TEXT.H"
@@ -145,4 +149,5 @@ struct GetRetVal
   	CharOutputForm	outputform;
 };
 
+#pragma pack(pop)
 #endif

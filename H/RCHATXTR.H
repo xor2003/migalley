@@ -1,3 +1,6 @@
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifndef		RCHATEXTRA_Defined
 #define	RCHATEXTRA_Defined
 typedef struct	SIMPLEWAVHEADER									//RJS 09Jun98
@@ -31,3 +34,5 @@ struct RadioSampleRec											//RJS 09Jun98
 };
 
 #endif
+
+#pragma pack(pop)

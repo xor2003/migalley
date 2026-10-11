@@ -8,6 +8,10 @@
 #ifndef	STACK_Included
 #define	STACK_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include "MYERROR.H" // For _Error
 
 #define	DEFAULT_STACK 0
@@ -154,5 +158,6 @@ class	Heap
 		}
 };
 
+#pragma pack(pop)
 #endif
 

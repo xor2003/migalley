@@ -8,6 +8,10 @@
 #ifndef	GEAR_Included
 #define	GEAR_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_GEAR 0
 
 enum UC_STATUS
@@ -94,5 +98,6 @@ public:
 typedef class Gear  GEAR, *PGEAR, **PPGEAR;
 //TempCode ARM 10Mar97 void CalcOriFromPoints (FORI& ori, FCRD& p1, FCRD& p2, FCRD& p3, Bool Tail);
 
+#pragma pack(pop)
 #endif
 

@@ -8,6 +8,10 @@
 #ifndef	MODVEC_Included
 #define	MODVEC_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_MODVEC 0
 
 #define F1PIE2	1.570796326795
@@ -243,4 +247,5 @@ void RotOriZVec (FORI&, FP);
 void SetOri (FORI&, FP, FP, FP);
 
 
+#pragma pack(pop)
 #endif

@@ -8,6 +8,10 @@
 #ifndef	TRANSITE_Included
 #define	TRANSITE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include "WORLDINC.H"
 #include	"ANIMDATA.H"									//RJS 10Feb97
 
@@ -379,4 +383,5 @@ private:
 
 extern TransObj Trans_Obj;
 
+#pragma pack(pop)
 #endif

@@ -1,4 +1,9 @@
 ////TEMPCODE DAW 07/05/99 #if !defined(AFX_RESIZABLEDLGBAR_H__5AF5D1E1_3653_11D1_A1F0_444553540000__INCLUDED_)
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
 ////TEMPCODE DAW 07/05/99 #define AFX_RESIZABLEDLGBAR_H__5AF5D1E1_3653_11D1_A1F0_444553540000__INCLUDED_
 ////TEMPCODE DAW 07/05/99 
 ////TEMPCODE DAW 07/05/99 #if _MSC_VER >= 1000
@@ -77,3 +82,4 @@
 ////TEMPCODE DAW 07/05/99 
 ////TEMPCODE DAW 07/05/99 #endif // !defined(AFX_RESIZABLEDLGBAR_H__5AF5D1E1_3653_11D1_A1F0_444553540000__INCLUDED_)
 ////TEMPCODE DAW 07/05/99 
+#pragma pack(pop)

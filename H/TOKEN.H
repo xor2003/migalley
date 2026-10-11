@@ -8,6 +8,10 @@
 #ifndef	TOKEN_Included
 #define	TOKEN_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_TOKEN 0
 
 
@@ -272,5 +276,6 @@ class	TokenSpell:public DataInst
 };
 extern	TokenSpell _Token;
 
+#pragma pack(pop)
 #endif
 

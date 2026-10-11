@@ -13,6 +13,10 @@
 #ifndef	VECTOR_Included
 #define	VECTOR_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_VECTOR 0
 
 class	sdlong;
@@ -1277,5 +1281,6 @@ inline	Bool operator!=(vector A,vector B)
 
 //const vector ORIGIN = vector(0,0,0);
 
+#pragma pack(pop)
 #endif
 

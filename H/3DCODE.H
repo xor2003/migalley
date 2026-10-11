@@ -8,6 +8,10 @@
 #ifndef	Dcode_Included
 #define	Dcode_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 	#include	"MYANGLES.H"
 	#include	"ENUMBITS.M"
 	#include	"LANDSCAP.H"									//PD 01Oct96
@@ -318,4 +322,5 @@ class	ThreeDee
 
 	extern	class	ThreeDee	Three_Dee;
 
+#pragma pack(pop)
 #endif

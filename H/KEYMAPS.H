@@ -86,6 +86,9 @@
 //
 //
 //------------------------------------------------------------------------------
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #ifndef	KEYMAPS_Included
 #define	KEYMAPS_Included
 
@@ -1119,3 +1122,6 @@ static	KeyMapping	ThisKeyMapping[]	=	{
 #undef	SPECIAL_KEYMAPS
 #endif
 
+
+
+#pragma pack(pop)

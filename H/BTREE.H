@@ -8,6 +8,10 @@
 #ifndef	BTREE_Included
 #define	BTREE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 //#include	"display.h"											//ARM 05Aug96
 
 typedef	struct 	Base_Obj3D 	BaseObj3D,	*BaseObj3DPtr;
@@ -77,4 +81,5 @@ class	btree
 
 		};
 
+#pragma pack(pop)
 #endif

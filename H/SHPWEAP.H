@@ -15,6 +15,10 @@
 #ifndef	SHPWEAP_Included
 #define	SHPWEAP_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_SHPWEAP 0
 
 #define MaxWeapTypes	8
@@ -100,4 +104,5 @@ static ShpToWeapType	ShpToWeap[] =
 
 //This should now get filled in by Init Launcher routine using above values
 
+#pragma pack(pop)
 #endif

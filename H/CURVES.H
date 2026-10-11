@@ -8,6 +8,10 @@
 #ifndef	CRSC_Included
 #define	CRSC_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #include "LINK.H"
 
 #define	DEFAULT_CRSC 0
@@ -116,4 +120,5 @@ void LoadCurvesSFURY ();
 void LoadCurvesFFLY ();
 void LoadCurvesA1 ();
 
+#pragma pack(pop)
 #endif

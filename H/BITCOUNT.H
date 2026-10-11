@@ -29,6 +29,10 @@
 //------------------------------------------------------------------------------
 #ifndef	BITF2_Included
 #define	BITF2_Included
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 //   "limits.h"
 constexpr int	DEFAULT_BITF2 = 0;
 //TEMPCODE RDH 24/05/99 #define	TRACKBADASSIGNMENTS
@@ -130,4 +134,5 @@ constexpr int	DEFAULT_BITF2 = 0;
     };                                                                          \
     Name Name;       /* this line automatically creates the member */
 
+#pragma pack(pop)
 #endif

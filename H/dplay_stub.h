@@ -1,6 +1,11 @@
 #ifndef __DPLAY_H__
 #define __DPLAY_H__
 
+// RERUN: natural-alignment self-guard - contains std/system types or
+// port-side structs; never byte-pack regardless of ambient packing.
+#pragma pack(push)
+#pragma pack()
+
 #include <stdint.h>
 
 /* Boolean values */
@@ -917,4 +922,5 @@ static const GUID IID_IDirectPlayLobby3 =
 #define DPCONNECT_RETURNSTATUS        0x00000008
 #endif
 
+#pragma pack(pop)
 #endif /* __DPLAY_H__ */

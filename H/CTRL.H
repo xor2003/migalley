@@ -9,6 +9,10 @@
 #ifndef	CTRL_Included
 #define	CTRL_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 
 // control types
 enum CTRL_TYPE
@@ -96,4 +100,5 @@ public:
 };
 typedef class NewCtrl NEWCTRL, *PNEWCTRL;
 
+#pragma pack(pop)
 #endif

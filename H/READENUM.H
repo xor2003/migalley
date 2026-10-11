@@ -1,6 +1,10 @@
 #ifndef	READENUM_Included
 #define	READENUM_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 class ifstream;
 
 class	EnumCtrl
@@ -79,4 +83,5 @@ inline	EnumCtrl& GetList(EnumListNames i)
                                        
 extern	EnumStuff	IEnumStuff;
 
+#pragma pack(pop)
 #endif

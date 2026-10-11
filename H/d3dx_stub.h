@@ -3,6 +3,10 @@
 
 #pragma once
 
+// RERUN: natural-alignment self-guard - contains std/system types or
+// port-side structs; never byte-pack regardless of ambient packing.
+#pragma pack(push)
+#pragma pack()
 #include "WIN32_COMPAT.H"
 #include "d3d_stub.h"
 
@@ -16,3 +20,6 @@ static inline HRESULT D3DXMatrixIdentity(D3DMATRIX* out)
     out->_41 = 0.0f; out->_42 = 0.0f; out->_43 = 0.0f; out->_44 = 1.0f;
     return D3D_OK;
 }
+
+
+#pragma pack(pop)

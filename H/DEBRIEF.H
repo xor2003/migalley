@@ -8,6 +8,10 @@
 //
 #ifndef	DEBRIEF_INCLUDED
 #define	DEBRIEF_INCLUDED
+
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
 #include "BITCOUNT.H"
 #include "INFOITEM.H"
 class	Debrief
@@ -254,5 +258,6 @@ ONLYFIELD(UWord,	UniqueID,	target2);
 //	void	NextDay();
 };
 
+#pragma pack(pop)
 #endif
 

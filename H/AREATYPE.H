@@ -8,6 +8,10 @@
 #ifndef	AREATYPE_Included
 #define	AREATYPE_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 #define	DEFAULT_AREATYPE 0
 
 //Landscape area type enums
@@ -41,4 +45,5 @@ inline bool IsForest(UByte at) {at&=AT_MASK; if (at==AT_woods||at==AT_forestHill
 inline bool IsWooded(UByte at) {at&=AT_MASK; if (at==AT_smallHill||at==AT_denseBush) return true; return false;}
 inline bool IsValidRoute(UByte at) {if (at==RT_river||at==RT_track||at==RT_rail||at==RT_road) return true; return false;}
 
+#pragma pack(pop)
 #endif

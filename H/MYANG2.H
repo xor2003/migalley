@@ -9,6 +9,10 @@
 #ifndef	ANGLES_Included
 #define	ANGLES_Included
 
+// RERUN: self-assert packing - DOSDEFS-era headers assumed ambient pack(1);
+// guard so include order cannot change this layout across TUs (ODR).
+#pragma pack(push,1)
+
 enum	AnglesFract			{ANGLES_FRACT=32768};
 enum	AnglesShift			{ANGLES_SHIFT=15};
 enum	AnglesShiftTwice	{ANGLES_SHIFT_TWICE=30};
@@ -212,3 +216,5 @@ inline bool operator > (Angles& b,Angles a)
 {return (ANGLES::IType)(a-b)>0;}
 inline bool operator >= (Angles& b,Angles a)
 {return (ANGLES::IType)(a-b)>=0;}
+
+#pragma pack(pop)
