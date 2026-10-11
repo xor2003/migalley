@@ -10,6 +10,12 @@
 #include "MFC_stub.h"
 #include "GLOBDEFS.H"
 
+// Force natural layout for the classes below - this header is included
+// after DOSDEFS.H's leaked pack(1) in some TUs and before it in others;
+// without this RDialog/DlgItem/DialBox member offsets differ per TU (ODR).
+#pragma pack(push)
+#pragma pack()
+
 //#define F_SOUNDS
 #define F_BATTLE
 //#define F_COMMON
@@ -587,4 +593,5 @@ public:
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.
 
+#pragma pack(pop)
 #endif // !defined(AFX_RDIALOG_H__19CD38F4_A868_11D1_9B68_444553540000__INCLUDED_)

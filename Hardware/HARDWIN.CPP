@@ -364,11 +364,11 @@ else
 	case 0:
 	break;
 	case 1:
-		::GetWindowRect(DD.hWnd,&winrect);
-		rect.h = winrect.bottom - winrect.top;
-		rect.w = winrect.right - winrect.left;
-		rect.x = winrect.left;
-		rect.y = winrect.top;
+		// The update rect is in TEXTURE space, not window space: upload the
+		// whole back surface (its size matches SdlMigTexture).
+		rect.x = rect.y = 0;
+		rect.w = DD.lpDDSBack ? DD.lpDDSBack->w : 0;
+		rect.h = DD.lpDDSBack ? DD.lpDDSBack->h : 0;
 
 		ddbltfx.dwSize = sizeof (DDBLTFX);
 
@@ -967,14 +967,18 @@ ULong MigDisplay::SetDirectDrawMode (InitDisplayDef& Mode)
 
 		if (ddrval!=DD_OK)	return 4;
 #else
-		DD.lpDDSPrimary = SDL_CreateRGBSurface(0, (int)winmode_w, (int)winmode_h, SDL_PIXELBITCOUNT,
+		// Surfaces follow the display window's reported size (window_width/
+		// window_height above): the frontend's window reports its virtual
+		// client (800x600 artwork mode) while the 3D flybox reports the
+		// physical window size.
+		DD.lpDDSPrimary = SDL_CreateRGBSurface(0, window_width, window_height, SDL_PIXELBITCOUNT,
 			0, 0, 0, 0);
 
 		if (DD.lpDDSPrimary == NULL)
 		{
 			printf("Error creating primary surface: %s.\n", SDL_GetError());
 		}
-		DD.lpDDSBack = SDL_CreateRGBSurface(0, winmode_w, winmode_h, SDL_PIXELBITCOUNT,
+		DD.lpDDSBack = SDL_CreateRGBSurface(0, window_width, window_height, SDL_PIXELBITCOUNT,
 			0, 0, 0, 0);
 
 		if (DD.lpDDSBack == NULL)
@@ -990,6 +994,17 @@ ULong MigDisplay::SetDirectDrawMode (InitDisplayDef& Mode)
 		DD.lpddsd->ddpfPixelFormat.dwRBitMask = DD.lpDDSBack->format->Rmask;
 		DD.lpddsd->ddpfPixelFormat.dwGBitMask = DD.lpDDSBack->format->Gmask;
 		DD.lpddsd->ddpfPixelFormat.dwBBitMask = DD.lpDDSBack->format->Bmask;
+
+		// The present texture must match the surface it uploads from; the
+		// size differs between the 800x600 frontend mode and the 3D window.
+		if (DD.lpDD2)
+		{
+			if (Master_3d.SdlMigTexture)
+				SDL_DestroyTexture(Master_3d.SdlMigTexture);
+			Master_3d.SdlMigTexture = SDL_CreateTexture((SDL_Renderer*)DD.lpDD2,
+					SDL_PIXELFORMAT_RGB565, SDL_TEXTUREACCESS_STREAMING,
+					window_width, window_height);
+		}
 #endif
 		break;
 	case 2:

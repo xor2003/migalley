@@ -2687,6 +2687,7 @@ bool RFullPanelDial::OnFlyingClosed(RDialog*,int rv)
 		}														//AMM 18Feb99
 
 		in3d=false;
+		Master_3d.RestoreFrontendDisplay(); // release Vulkan, restore UI presentation
 
 #ifndef	MIG_DEMO_VER
 		CMainFrame* main=(CMainFrame*)AfxGetMainWnd();

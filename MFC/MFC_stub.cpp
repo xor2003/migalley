@@ -2,6 +2,7 @@
 #include <thread>
 #include <chrono>
 #include <deque>
+#include <vector>
 #include <algorithm>
 #include <unordered_map>
 #include <mutex>
@@ -439,6 +440,47 @@ WindowBackend* backend_from_hwnd(HWND h)
     return (it == g_hwndRegistry.end()) ? nullptr : &it->second;
 }
 
+void MFC_SetVirtualClient(HWND h, int w, int hgt)
+{
+    WindowBackend* be = backend_from_hwnd(h);
+    if (!be) return;
+    be->virt_w = w;
+    be->virt_h = hgt;
+    if (be->renderer)
+        SDL_RenderSetLogicalSize(be->renderer, w, hgt); // (0,0) = track output
+}
+
+// SDL_RenderSetLogicalSize letterboxes the logical area inside the window
+// (aspect-preserving, centered) and, since SDL 2.26, also pre-scales mouse
+// events into logical coords.  This helper is the fallback for paths that
+// still hand us physical window coords (e.g. SDL_GetMouseState, or events
+// delivered while no logical-size renderer exists).
+static void window_to_logical(WindowBackend* be, int& x, int& y)
+{
+    if (!be || !be->window || !be->virt_w || !be->virt_h) return;
+    if (be->renderer) {
+        int lw = 0, lh = 0;
+        SDL_RenderGetLogicalSize(be->renderer, &lw, &lh);
+        if (lw > 0 && lh > 0)
+            return; // SDL >= 2.26 already maps mouse events to logical coords
+    }
+    int winW, winH;
+    SDL_GetWindowSize(be->window, &winW, &winH);
+    if (winW <= 0 || winH <= 0) return;
+    float scale = (float)winW / be->virt_w;
+    float scaleY = (float)winH / be->virt_h;
+    if (scaleY < scale) scale = scaleY;
+    float offX = (winW - be->virt_w * scale) * 0.5f;
+    float offY = (winH - be->virt_h * scale) * 0.5f;
+    int inX = x, inY = y;
+    x = (int)((x - offX) / scale);
+    y = (int)((y - offY) / scale);
+    static const bool dbgW2L = getenv("ROWAN_DEBUG_INPUT") != nullptr;
+    if (dbgW2L)
+        fprintf(stderr, "[W2L] win=%dx%d virt=%dx%d scale=%.3f in=(%d,%d) out=(%d,%d)\n",
+                winW, winH, be->virt_w, be->virt_h, scale, inX, inY, x, y);
+}
+
 CWnd* AfxGetWndFromSDLWindow(SDL_Window* sdlWin)
 {
     if (!sdlWin) return nullptr;
@@ -720,6 +762,7 @@ void PumpSDL()
                 {
                     int x = e.button.x;
                     int y = e.button.y;
+                    window_to_logical(backend_from_hwnd(wnd->GetSafeHwnd()), x, y);
                     HWND targetHwnd = nullptr;
 
                     if (g_pCaptureWnd) {
@@ -786,6 +829,7 @@ void PumpSDL()
                 {
                     int x = e.motion.x;
                     int y = e.motion.y;
+                    window_to_logical(backend_from_hwnd(wnd->GetSafeHwnd()), x, y);
                     HWND targetHwnd = nullptr;
 
                     if (g_pCaptureWnd) {
@@ -1282,6 +1326,21 @@ void backend_mark_dirty(HWND hwnd, const SDL_Rect* rect)
         auto parentIt = g_hwndRegistry.find(pBe->parent->m_hWnd);
         if (parentIt == g_hwndRegistry.end()) break;
         pBe = &parentIt->second;
+    }
+
+    // The 3D path destroys the shared renderer for Vulkan; lazily recreate
+    // it so frontend repaints have somewhere to land after 3D exits.
+    if (pBe->window && !pBe->renderer)
+    {
+        pBe->renderer = SDL_CreateRenderer(pBe->window, -1, SDL_RENDERER_ACCELERATED);
+        if (!pBe->renderer)
+            pBe->renderer = SDL_CreateRenderer(pBe->window, -1, 0);
+        if (pBe->renderer && pBe->virt_w && pBe->virt_h)
+            SDL_RenderSetLogicalSize(pBe->renderer, pBe->virt_w, pBe->virt_h);
+        // Keep routed children pointing at the live renderer too.
+        for (auto& pair : g_hwndRegistry)
+            if (pair.second.isChild && pair.second.window == pBe->window)
+                pair.second.renderer = pBe->renderer;
     }
 
     // Mark the window as needing repaint
@@ -1842,6 +1901,41 @@ BOOL CDC::BitBlt(int x, int y, int cx, int cy,
     return TRUE;
 }
 
+// Decode a BI_RLE8 compressed DIB into a raw 8bpp pixel buffer.
+// GDI did this transparently; several shipped 800x600 art files are RLE8
+// (biCompression=1), and wrapping them as raw pixels reads past the buffer.
+static bool rle8_decode(const BYTE* src, DWORD srcSize, int w, int h, std::vector<BYTE>& out)
+{
+    out.assign((size_t)w * h, 0);
+    // RLE data is stored bottom-up: the first encoded row is the image's bottom row.
+    int x = 0, y = h - 1;
+    const BYTE* p = src;
+    const BYTE* end = src + srcSize;
+    while (p + 1 < end && y >= 0)
+    {
+        BYTE count = *p++, code = *p++;
+        if (count) {
+            for (int i = 0; i < count && x < w; i++)
+                out[(size_t)y * w + x++] = code;
+            continue;
+        }
+        if (code == 0) { x = 0; y--; continue; }   // end of line
+        if (code == 1) return true;                 // end of bitmap
+        if (code == 2) {                            // delta
+            if (p + 1 >= end) return true;
+            x += *p++; y -= *p++;
+            continue;
+        }
+        // literal run: `code` raw bytes follow, padded to word
+        for (int i = 0; i < code; i++) {
+            BYTE b = (p < end) ? *p++ : 0;
+            if (x < w) out[(size_t)y * w + x++] = b;
+        }
+        if (code & 1) ++p;                          // pad byte
+    }
+    return true;
+}
+
 int CDC::SetDIBitsToDevice(int xDest, int yDest, DWORD w, DWORD h, int xSrc, int ySrc, UINT uStartScan, UINT cScanLines, const void *lpvBits, const BITMAPINFO *lpbmi, UINT fuColorUse)
 {
     if (!m_renderer || !lpvBits || !lpbmi) return 0;
@@ -1851,12 +1945,23 @@ int CDC::SetDIBitsToDevice(int xDest, int yDest, DWORD w, DWORD h, int xSrc, int
     bool bottomUp = (height > 0);
     height = abs(height);
 
+    std::vector<BYTE> rlePixels;
+    int rlePitch = 0;
+    if (lpbmi->bmiHeader.biCompression == 1 /*BI_RLE8*/ && lpbmi->bmiHeader.biBitCount == 8) {
+        DWORD srcSize = lpbmi->bmiHeader.biSizeImage;
+        if (!srcSize) srcSize = (DWORD)width * height;
+        if (!rle8_decode((const BYTE*)lpvBits, srcSize, width, height, rlePixels))
+            return 0;
+        lpvBits = rlePixels.data();
+        rlePitch = width;
+    }
+
     SDL_Surface* surface = nullptr;
 
     if (lpbmi->bmiHeader.biBitCount == 8) {
         // 8-bit palettized
-        surface = SDL_CreateRGBSurfaceWithFormatFrom((void*)lpvBits, width, height, 8, 
-                                                     (width + 3) & ~3, // 4-byte aligned pitch
+        surface = SDL_CreateRGBSurfaceWithFormatFrom((void*)lpvBits, width, height, 8,
+                                                     rlePitch ? rlePitch : ((width + 3) & ~3), // 4-byte aligned pitch
                                                      SDL_PIXELFORMAT_INDEX8);
         if (surface) {
             SDL_Color colors[256];
@@ -1925,12 +2030,23 @@ int StretchDIBits(HDC hdc, int xDest, int yDest, int nDestWidth, int nDestHeight
     bool bottomUp = (height > 0);
     height = abs(height);
 
+    std::vector<BYTE> rlePixels;
+    int rlePitch = 0;
+    if (lpbmi->bmiHeader.biCompression == 1 /*BI_RLE8*/ && lpbmi->bmiHeader.biBitCount == 8) {
+        DWORD srcSize = lpbmi->bmiHeader.biSizeImage;
+        if (!srcSize) srcSize = (DWORD)width * height;
+        if (!rle8_decode((const BYTE*)lpBits, srcSize, width, height, rlePixels))
+            return 0;
+        lpBits = rlePixels.data();
+        rlePitch = width;
+    }
+
     SDL_Surface* surface = nullptr;
 
     if (lpbmi->bmiHeader.biBitCount == 8) {
         // 8-bit palettized
-        surface = SDL_CreateRGBSurfaceWithFormatFrom((void*)lpBits, width, height, 8, 
-                                                     (width + 3) & ~3, // 4-byte aligned pitch
+        surface = SDL_CreateRGBSurfaceWithFormatFrom((void*)lpBits, width, height, 8,
+                                                     rlePitch ? rlePitch : ((width + 3) & ~3), // 4-byte aligned pitch
                                                      SDL_PIXELFORMAT_INDEX8);
         if (surface) {
             SDL_Color colors[256];
@@ -2312,7 +2428,12 @@ void CWnd::GetClientRect(LPRECT lpRect) const
              WindowBackend* be = backend_from_hwnd(m_hWnd);
              if (be && be->window && !be->isChild && be->owner == this) {
                  int w, h;
-                 SDL_GetWindowSize(be->window, &w, &h);
+                 if (be->virt_w && be->virt_h) {
+                     w = be->virt_w;
+                     h = be->virt_h;
+                 } else {
+                     SDL_GetWindowSize(be->window, &w, &h);
+                 }
                  lpRect->left = 0;
                  lpRect->top = 0;
                  lpRect->right = w;
@@ -2372,7 +2493,12 @@ void CWnd::GetWindowRect(LPRECT lpRect) const
 			// This is a top-level window, get rect directly from SDL.
             int x, y, w, h;
             SDL_GetWindowPosition(be->window, &x, &y);
-            SDL_GetWindowSize(be->window, &w, &h);
+            if (be->virt_w && be->virt_h) {
+                w = be->virt_w;
+                h = be->virt_h;
+            } else {
+                SDL_GetWindowSize(be->window, &w, &h);
+            }
             lpRect->left = x;
             lpRect->top = y;
             lpRect->right = x + w;
@@ -2750,7 +2876,14 @@ BOOL CWnd::SetWindowPos(const CWnd* pWndInsertAfter, int x, int y, int cx, int c
                 SDL_SetWindowPosition(be->window, x, y);
             }
             if (!(nFlags & SWP_NOSIZE)) {
-                SDL_SetWindowSize(be->window, cx, cy);
+                // Under a virtual client size, a request for exactly the
+                // virtual size means "fill the client area" - the physical
+                // window already provides it; resizing to it would shrink
+                // the OS window to the logical size.
+                bool fillsVirtual = be->virt_w && be->virt_h &&
+                                    cx == be->virt_w && cy == be->virt_h;
+                if (!fillsVirtual)
+                    SDL_SetWindowSize(be->window, cx, cy);
             }
         }
     
@@ -4602,7 +4735,12 @@ void CFrameWnd::OnSize(UINT nType, int cx, int cy)
     {
         // Update the logical size to match the new window dimensions.
         // This ensures mouse coordinates in SDL events map 1:1 to the window client area.
-        SDL_RenderSetLogicalSize(be->renderer, cx, cy);
+        // A virtual client size (frontend artwork mode) stays fixed: SDL
+        // letterbox-scales it to the physical window.
+        if (be->virt_w && be->virt_h)
+            SDL_RenderSetLogicalSize(be->renderer, be->virt_w, be->virt_h);
+        else
+            SDL_RenderSetLogicalSize(be->renderer, cx, cy);
     }
     // RERUN: Real MFC calls RecalcLayout on frame resize; the derived class
     // repositions docked toolbars and resizes the view around them. Sizing the

@@ -1,4 +1,16 @@
 #pragma once
+// Force natural layout for the whole stub layer (incl. the STL/system
+// headers below) - DOSDEFS.H's leaked pack(1) reaches this header in any
+// TU that includes it after DOSDEFS (e.g. RowTasks.cpp), giving every
+// CWnd/CDC/CRect class different member offsets there than in the rest
+// of the program.  One-definition rule: whichever inline copy the linker
+// picks then runs against objects seen with a different layout - the
+// deque<DIDEVICEOBJECTDATA> teardown/Acquire crashes were this.  All ABI
+// structs here are DWORD-aligned, so natural packing changes nothing for
+// them.
+#pragma pack(push)
+#pragma pack()
+
 #include <algorithm>
 #include <deque>
 #include <mutex>
@@ -74,6 +86,14 @@ struct WindowBackend {
     std::vector<HWND> children;  // Child HWNDs
     bool isChild = false;        // Is this a child window sharing the SDL window?
 
+    // Virtual client size: when nonzero the window presents a fixed-size
+    // logical client area (e.g. the frontend's 800x600 artwork mode) scaled
+    // to the physical SDL window.  GetClientRect/GetWindowRect report the
+    // virtual size and mouse coords are transformed into logical space.
+    // 0 = track the physical window (default, unchanged behaviour).
+    int virt_w = 0;
+    int virt_h = 0;
+
     bool fullDirty = false;
     bool needsRepaint = false;
     std::vector<SDL_Rect> dirtyRegions;
@@ -82,6 +102,8 @@ struct WindowBackend {
 extern std::unordered_map<HWND, WindowBackend> g_hwndRegistry;
 HWND allocate_hwnd(); // declaration only
 WindowBackend* backend_from_hwnd(HWND h);
+// Set a virtual client size on the backend owning `h` (0,0 disables).
+void MFC_SetVirtualClient(HWND h, int w, int hgt);
 ///SDL
 
 // MFC message‑map annotation compatibility
@@ -2651,3 +2673,5 @@ extern bool g_rowanGameIsBoB;
 // fields that MiG Alley treats as FileNums, and an out-of-range FileNum is
 // fatal inside fileman, so BoB-facing paint code must filter first.
 bool RowanFileNumSafe(long fnum);
+
+#pragma pack(pop)

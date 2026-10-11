@@ -4,6 +4,18 @@
 
 #pragma once
 
+// DOSDEFS.H leaks #pragma pack(1) into TUs that include it before this
+// header (e.g. ANALOGUE.CPP).  A different ambient packing per TU gives the
+// device classes different member offsets across the program — an ODR
+// violation: the linker picks one copy of each inline, and callers built
+// with the other layout then operate on wrong bytes (this was the
+// std::deque<DIDEVICEOBJECTDATA>::clear() crash in Acquire: evq sat at
+// offset 0x2af in packed TUs vs 0x2b4 in natural ones).  Force natural
+// layout for everything declared here; the ABI structs are all
+// DWORD-aligned so pack() changes nothing for them.
+#pragma pack(push)
+#pragma pack()
+
 #include "WIN32_COMPAT.H"
 #include <deque>
 #include <string.h>
@@ -599,7 +611,11 @@ struct IDirectInputDeviceA {
         }
         // Reprime so the next drain emits a fresh initial-state burst.
         primed = false;
-        evq.clear();
+        // evq is only fed by RefreshEvents, which early-returns for the
+        // keyboard (keys arrive via g_kbQueue/RowanDIKeyDrain) — it stays
+        // empty, so clearing it is dead work for keyboards.
+        if (!isKeyboard)
+            evq.clear();
         return DI_OK;
     }
 
@@ -1578,3 +1594,5 @@ const DIDATAFORMAT c_dfDIKeyboard = {
 #ifdef __cplusplus
 } // extern "C"
 #endif
+
+#pragma pack(pop)

@@ -1,4 +1,12 @@
 #pragma once
+// Force natural layout for every shim type (incl. the system headers
+// below) - DOSDEFS.H's leaked pack(1) reaches this header in TUs that
+// include it after DOSDEFS (e.g. RowTasks.cpp) and would give
+// CRect/CPoint/MSG etc. different member offsets than the rest of the
+// program sees.  See MFC_stub.h for the full ODR rationale.
+#pragma pack(push)
+#pragma pack()
+
 #include <stdlib.h>   // abs, labs, llabs
 #include <math.h>     // fabs, fabsf, fabsl if needed
 #include <cstdint>
@@ -2705,4 +2713,5 @@ typedef unsigned long DWORD_PTR;
    impls need UINT/DWORD/MMRESULT/CALLBACK/DWORD_PTR, all defined above. */
 #include "timeapi.h"
 
+#pragma pack(pop)
 #endif // WIN32_COMPAT_H

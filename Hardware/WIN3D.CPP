@@ -503,7 +503,22 @@ CON	direct_draw::direct_draw()
 	softpallookup=NULL;
 
 	RECT rect;
-	::GetWindowRect(Master_3d.winst,&rect);
+	// winmode tracks the PHYSICAL window size: 3D sizing and mode matching
+	// consume it, so the frontend's virtual client rect must not leak in.
+	{
+		RECT phys = {0,0,0,0};
+		auto* wbe = backend_from_hwnd(Master_3d.winst);
+		if (wbe && wbe->window)
+		{
+			int w, h;
+			SDL_GetWindowSize(wbe->window, &w, &h);
+			phys.right = w;
+			phys.bottom = h;
+		}
+		else
+			::GetWindowRect(Master_3d.winst,&phys);
+		rect = phys;
+	}
 	winmode_w = rect.right - rect.left;
 	winmode_h = rect.bottom - rect.top;
 
@@ -598,22 +613,40 @@ CON	direct_draw::direct_draw()
 	}
 	CurrDriver = 0; 
 
-	// Determine at runtime whether to use the SDL presentation path (for UI) 
+	// Determine at runtime whether to use the SDL presentation path (for UI)
 	// or the Vulkan path (for the 3D World in the simulator).
 	if (!RFullPanelDial::in3d)
 	{
 		// UI/Map Mode: Use the existing SDL renderer from the window backend.
 		auto* backend = backend_from_hwnd(Master_3d.winst);
+		// The 3D path destroys this renderer for Vulkan; recreate it on the
+		// way back to the frontend.
+		if (backend && !backend->renderer && backend->window)
+			backend->renderer = SDL_CreateRenderer(backend->window, -1,
+					SDL_RENDERER_ACCELERATED);
+		if (backend && !backend->renderer && backend->window)
+			backend->renderer = SDL_CreateRenderer(backend->window, -1, 0);
 		if (backend && backend->renderer)
 		{
 			lpDD = backend->renderer;
 			lpDD2 = lpDD;
 
+			// Present the frontend at its minimum supported resolution:
+			// the game treats res index 0 (640x480) as "below minimum" and
+			// exits, so a real 800x600 desktop is the smallest layout the
+			// screens are designed for.  SDL letterbox-scales the 800x600
+			// logical client to the physical window (4:3 -> fills 1024x768),
+			// GetClientRect/UpdateSize run in virtual space, and mouse
+			// coords transform back through the same mapping.
+			const int ui_w = 800, ui_h = 600;
+			MFC_SetVirtualClient(Master_3d.winst, ui_w, ui_h);
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
-			SDL_RenderSetLogicalSize(lpDD, winmode_w, winmode_h);
+			SDL_RenderSetLogicalSize(lpDD, ui_w, ui_h);
+			if (Master_3d.SdlMigTexture)
+				SDL_DestroyTexture(Master_3d.SdlMigTexture);
 			Master_3d.SdlMigTexture = SDL_CreateTexture(lpDD2, SDL_PIXELFORMAT_RGB565,
 					SDL_TEXTUREACCESS_STREAMING,
-					winmode_w, winmode_h);
+					ui_w, ui_h);
 		}
 	}
 	else
@@ -630,6 +663,9 @@ CON	direct_draw::direct_draw()
 			SDL_DestroyRenderer(backend->renderer);
 			backend->renderer = nullptr;
 		}
+		// 3D owns the window now: drop the frontend's virtual client so
+		// reported rects and mouse coords are physical again.
+		MFC_SetVirtualClient(Master_3d.winst, 0, 0);
 
 		try {
 			if (Vulkan_Init(Master_3d.winst))

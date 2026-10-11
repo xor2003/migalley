@@ -328,8 +328,12 @@ UWord	DoSmack(int h)
 	if (surface) {
 		SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surface);
 		if (texture) {
-			int winW, winH;
-			SDL_GetRendererOutputSize(renderer, &winW, &winH);
+			// dstRect is in renderer LOGICAL space (e.g. the frontend's
+			// virtual 800x600), not physical pixels.
+			int winW = 0, winH = 0;
+			SDL_RenderGetLogicalSize(renderer, &winW, &winH);
+			if (winW <= 0 || winH <= 0)
+				SDL_GetRendererOutputSize(renderer, &winW, &winH);
 
 			// To play at original size, use frame_width and frame_height.
 			// Use Xoff/Yoff for position (or center if -1).

@@ -19,6 +19,11 @@
 #include "RESOURCE.H"
 #include "STUB3D.H" //RERUN
 
+// Force natural layout for CMIGApp - this header straddles DOSDEFS.H's
+// leaked pack(1) across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 /////////////////////////////////////////////////////////////////////////////
 // CMIGApp:
 // See MIG.cpp for the implementation of this class
@@ -58,4 +63,5 @@ public:
 //{{AFX_INSERT_LOCATION}}
 // Microsoft Developer Studio will insert additional declarations immediately before the previous line.
 
+#pragma pack(pop)
 #endif // !defined(AFX_MIG_H__19CD38C5_A868_11D1_9B68_444553540000__INCLUDED_)

@@ -18,6 +18,10 @@
 #include <time.h>
 #include <SDL2/SDL.h>
 
+/* Force natural layout - straddles DOSDEFS.H's leaked pack(1) across TUs (ODR). */
+#pragma pack(push)
+#pragma pack()
+
 /* Return codes */
 #define TIMERR_NOERROR 0
 #define TIMERR_NOCANDO 1
@@ -135,4 +139,5 @@ static inline MMRESULT timeKillEvent(UINT uTimerID)
 }
 #endif /* !TIME_PERIODIC */
 
+#pragma pack(pop)
 #endif /* __TIMEAPI_H__ */

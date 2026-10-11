@@ -1,5 +1,10 @@
 #pragma once
 
+// Force natural layout - included both before and after DOSDEFS.H's
+// leaked pack(1) across TUs; DlgItem offsets must agree everywhere (ODR).
+#pragma pack(push)
+#pragma pack()
+
 class COleFont;
 class CPicture;
 class CRButton;
@@ -38,3 +43,5 @@ public:
 //	operator *()		{return	(*)this;}
 //	operator *()		{return	(*)this;}
 };
+
+#pragma pack(pop)

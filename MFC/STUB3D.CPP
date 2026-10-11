@@ -243,6 +243,15 @@ void	Mast3d::MainInit(void)
 
 	_DirectDraw::lpDirectDD=new DirectDD;
 }
+
+// Leaving 3D for the frontend: ~direct_draw releases Vulkan (bounded)
+// and the ctor re-inits the UI presentation path - SDL renderer,
+// virtual 800x600 client / logical size, and the present texture.
+void	Mast3d::RestoreFrontendDisplay()
+{
+	delete _DirectDraw::lpDirectDD;
+	_DirectDraw::lpDirectDD=new DirectDD;
+}
 	
 //////////////////////////////////////////////////////////////////////
 Mast3d::~Mast3d()
@@ -654,13 +663,18 @@ Inst3d::~Inst3d()
 
 	OverLay.pCurScr=OverLay.pNewScr=NULL;
 
- 	AfxGetMainWnd()->ModifyStyle(WS_THICKFRAME,0); // Bye bye border!
+	// At static-destruction time (exit()) the main window is already gone;
+	// AfxGetMainWnd() returns NULL and every call below would deref it.
+	if (CWnd* mainw = AfxGetMainWnd())
+	{
+	 	mainw->ModifyStyle(WS_THICKFRAME,0); // Bye bye border!
 #if defined(NDEBUG)
 	//AfxGetMainWnd()->SetWindowPos(&CWnd::wndTopMost,0,0,0,0,SWP_NOACTIVATE+SWP_NOMOVE+SWP_NOSIZE);
-	AfxGetMainWnd()->SetWindowPos(&wndTopMost,0,0,0,0,SWP_NOACTIVATE+SWP_NOMOVE+SWP_NOSIZE);
+		mainw->SetWindowPos(&wndTopMost,0,0,0,0,SWP_NOACTIVATE+SWP_NOMOVE+SWP_NOSIZE);
 #endif
 //	SystemParametersInfo(SPI_SETDRAGFULLWINDOWS,FALSE,NULL,NULL);
-	AfxGetMainWnd()->ShowWindow(SW_SHOWMAXIMIZED);
+		mainw->ShowWindow(SW_SHOWMAXIMIZED);
+	}
 
 // release semaphore and mutex handles
 	if (semaphore==0 || mutex==0)

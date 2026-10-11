@@ -41,6 +41,13 @@ inline	int	LockExchange(int* loc,int newval=0)
 }
 #define STUB3d_defined
 
+// Force natural layout for the runtime classes below - same ODR trap as
+// dinput_stub.h: ANALOGUE.CPP includes this header after DOSDEFS.H's leaked
+// pack(1), which shifts bool/pointer members to different offsets than in
+// naturally-packed TUs.  These types are never serialized to disk.
+#pragma pack(push)
+#pragma pack()
+
 class	WorldStuff;
 class	WorldRef
 {
@@ -212,6 +219,7 @@ public:
 	void	Stop();
 	void	SmallWin();
 	void	BigWin();
+	void	RestoreFrontendDisplay();
 	
 }
 #endif
@@ -360,6 +368,8 @@ public:
 	View3d(Inst3d* i,HWND,CWnd*); 	
 	~View3d();
 };
+
+#pragma pack(pop)
 #endif
 
 

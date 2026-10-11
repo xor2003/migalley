@@ -6,6 +6,10 @@
 #include <AL/al.h>
 #include <AL/alc.h>
 
+// Force natural layout - straddles DOSDEFS.H's leaked pack(1) across TUs (ODR).
+#pragma pack(push)
+#pragma pack()
+
 ///// RERUN Miles to SDL Start
 #pragma once
 
@@ -1001,4 +1005,5 @@ static inline void AIL_register_event_callback(HMDIDRIVER mdi,
 }
 #endif
 
+#pragma pack(pop)
 #endif // MSSW_COMPAT_H
