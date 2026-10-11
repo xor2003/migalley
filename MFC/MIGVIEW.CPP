@@ -942,24 +942,25 @@ void CMIGView::PlotFrontLine(CDC* pDC)
 	CPen pen (PS_SOLID,4,RGB(252,156,12));
 	CPen* oldpen=pDC->SelectObject(&pen);
 
-	pt=Persons2::ConvertPtrUID(UniqueID(SupplyTree::WestRoute.frontline->forward->suppliee->associated_item));
-	if (pt)
+	// The route chain is only populated once a campaign/battlefield has
+	// loaded; a map launched straight from the menus has no supply tree
+	// yet.  Guard every hop - the polyline stops at the first gap.
+	SupplyNode*	flnodes[3] = {
+		SupplyTree::WestRoute.frontline,
+		SupplyTree::CentralRoute.frontline,
+		SupplyTree::EastRoute.frontline};
+	bool started = false;
+	for (int i = 0; i < 3; i++)
 	{
+		SupplyNode* n = flnodes[i];
+		if (!n || !n->forward || !n->forward->suppliee)
+			break;
+		pt=Persons2::ConvertPtrUID(UniqueID(n->forward->suppliee->associated_item));
+		if (!pt)
+			break;
 		ScreenXY(pt->World.X,pt->World.Z,px,py,-m_scrollpoint.x,-m_scrollpoint.y);
-		pDC->MoveTo(px,py);
-		pt=Persons2::ConvertPtrUID(UniqueID(SupplyTree::CentralRoute.frontline->forward->suppliee->associated_item));
-		if (pt)
-		{
-			ScreenXY(pt->World.X,pt->World.Z,px,py,-m_scrollpoint.x,-m_scrollpoint.y);
-			pDC->LineTo(px,py);
-			pt=Persons2::ConvertPtrUID(UniqueID(SupplyTree::EastRoute.frontline->forward->suppliee->associated_item));
-			if (pt)
-			{
-				ScreenXY(pt->World.X,pt->World.Z,px,py,-m_scrollpoint.x,-m_scrollpoint.y);
-				pDC->LineTo(px,py);
-			}
-		}
-
+		if (!started) { pDC->MoveTo(px,py); started = true; }
+		else          { pDC->LineTo(px,py); }
 	}
 
 	pDC->SelectObject(oldpen);
@@ -1607,9 +1608,20 @@ FileNum  CMIGView::DrawIconTest(ItemBasePtr p, UniqueID i, bool hilight,UniqueID
 //DEADCODE RDH 13/02/99 				||	(hilight)
 //DEADCODE RDH 13/02/99 					)
 //DEADCODE RDH 13/02/99 		)
-	if (	 ( 	(SupplyTree::WestRoute.frontline->forward->suppliee->associated_item == i)
-				||	(SupplyTree::CentralRoute.frontline->forward->suppliee->associated_item == i)
-				||	(SupplyTree::EastRoute.frontline->forward->suppliee->associated_item == i)
+	// Route chain is unpopulated until a campaign/battlefield loads (map
+	// launched straight from the menus) - an empty chain just means this
+	// item is not a frontline position.
+	UniqueID	flitem[3] = {UID_Null,UID_Null,UID_Null};
+	SupplyNode*	flnodes[3] = {
+		SupplyTree::WestRoute.frontline,
+		SupplyTree::CentralRoute.frontline,
+		SupplyTree::EastRoute.frontline};
+	for (int f = 0; f < 3; f++)
+		if (flnodes[f] && flnodes[f]->forward && flnodes[f]->forward->suppliee)
+			flitem[f] = flnodes[f]->forward->suppliee->associated_item;
+	if (	 ( 	(flitem[0] == i)
+				||	(flitem[1] == i)
+				||	(flitem[2] == i)
 			 )
 		  &&	(		(Save_Data.mapfilters[FILT_FRONTLINE])
 				||	(hilight)

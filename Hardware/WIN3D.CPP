@@ -631,14 +631,20 @@ CON	direct_draw::direct_draw()
 			lpDD = backend->renderer;
 			lpDD2 = lpDD;
 
-			// Present the frontend at its minimum supported resolution:
-			// the game treats res index 0 (640x480) as "below minimum" and
-			// exits, so a real 800x600 desktop is the smallest layout the
-			// screens are designed for.  SDL letterbox-scales the 800x600
-			// logical client to the physical window (4:3 -> fills 1024x768),
+			// Emulate the display mode the original game would run the
+			// frontend in: the largest DIAL art tier that fits the physical
+			// window (640 is "below minimum spec" and exits).  At a
+			// 1024x768 window that is res2 -> native dial1024 art at 1:1,
+			// full composition, no scaling.  Smaller/odd windows fall back
+			// to the 800x600 floor and SDL letterbox-scales up.
 			// GetClientRect/UpdateSize run in virtual space, and mouse
 			// coords transform back through the same mapping.
-			const int ui_w = 800, ui_h = 600;
+			int phys_w = 0, phys_h = 0;
+			if (backend->window)
+				SDL_GetWindowSize(backend->window, &phys_w, &phys_h);
+			int ui_w = 800, ui_h = 600;
+			if (phys_w >= 1280 && phys_h >= 1024)		{ ui_w = 1280; ui_h = 1024; }
+			else if (phys_w >= 1024 && phys_h >= 768)	{ ui_w = 1024; ui_h = 768; }
 			MFC_SetVirtualClient(Master_3d.winst, ui_w, ui_h);
 			SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "linear");
 			SDL_RenderSetLogicalSize(lpDD, ui_w, ui_h);
