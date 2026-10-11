@@ -660,8 +660,15 @@ CON	direct_draw::direct_draw()
 		auto* backend = backend_from_hwnd(Master_3d.winst);
 		if (backend && backend->renderer)
 		{
-			SDL_DestroyRenderer(backend->renderer);
-			backend->renderer = nullptr;
+			SDL_Renderer* dead = backend->renderer;
+			// Its texture dies with it - stop anyone re-destroying/using it.
+			Master_3d.SdlMigTexture = nullptr;
+			SDL_DestroyRenderer(dead);
+			// Routed children copy the shared renderer pointer; clear every
+			// copy so the lazy recreate in backend_mark_dirty still fires.
+			for (auto& pair : g_hwndRegistry)
+				if (pair.second.renderer == dead)
+					pair.second.renderer = nullptr;
 		}
 		// 3D owns the window now: drop the frontend's virtual client so
 		// reported rects and mouse coords are physical again.

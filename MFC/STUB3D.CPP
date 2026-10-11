@@ -249,6 +249,12 @@ void	Mast3d::MainInit(void)
 // virtual 800x600 client / logical size, and the present texture.
 void	Mast3d::RestoreFrontendDisplay()
 {
+	// StartFlying left winst pointing at the flybox's parent dialog, which
+	// dies with the flybox - re-anchor to the live main window so the ctor
+	// finds its WindowBackend (renderer/virt client/texture hang off it).
+	if (CWnd* mw = AfxGetMainWnd())
+		if (mw->GetSafeHwnd())
+			Master_3d.winst = mw->GetSafeHwnd();
 	delete _DirectDraw::lpDirectDD;
 	_DirectDraw::lpDirectDD=new DirectDD;
 }
